@@ -1,0 +1,20 @@
+server {
+    listen 80;
+    server_name ${DEVFLOW_DOMAIN};
+    add_header Retry-After "120" always;
+    return 503;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DEVFLOW_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DEVFLOW_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DEVFLOW_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header Retry-After "120" always;
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    return 503;
+}

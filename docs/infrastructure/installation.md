@@ -9,7 +9,8 @@ O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrit
 | sem argumento / `--check` | diagnóstico sem mutação |
 | `--dry-run` | valida entradas e exibe o plano |
 | `--install` | primeira instalação, após confirmação |
-| `--update` | atualização preliminar de instalação existente |
+
+O instalador rejeita uma instalação existente. Toda atualização pertence exclusivamente a `scripts/update.sh`.
 
 O fluxo é `detectar → validar → resumir → confirmar → aplicar → verificar → promover`. Qualquer incompatibilidade antes da confirmação interrompe a execução. Depois que a aplicação começa, falhas removem apenas o link candidato e registram relatório; dados existentes são preservados.
 
@@ -46,6 +47,7 @@ A coexistência só pode avançar depois que um ponto de extensão persistente, 
 - banco: `/opt/devflow/data/postgres`;
 - uploads: `/opt/devflow/storage/uploads`;
 - configuração: `/opt/devflow/config/devflow.env`;
+- checkout operacional: `/opt/devflow/source`;
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/conf.d/devflow.conf`;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.
@@ -54,6 +56,6 @@ Não são definidos `container_name` globais: os nomes derivados do projeto Comp
 
 ## Idempotência e reversibilidade
 
-Uma instalação existente exige `--update`; a primeira instalação não sobrescreve `app`. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA, e `app.candidate` só é promovido após probes HTTPS.
+Uma instalação existente exige o updater dedicado; o instalador nunca sobrescreve `app`. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA. O checkout operacional pertence a root, tem hooks desabilitados e não é ambiente de desenvolvimento.
 
-O rollback transacional de migrations ainda não está implementado. A versão anterior e o backup permanecem disponíveis para recuperação manual. Essa limitação impede classificar a solução como pronta para produção.
+O rollback automático pertence ao updater, não ao instalador. A aplicação continua classificada como alpha porque instalação e recuperação ainda precisam de laboratório Linux reproduzível.

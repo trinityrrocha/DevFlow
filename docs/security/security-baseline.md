@@ -100,6 +100,10 @@ Auditoria é append-only para a aplicação. Alteração ou purga exige job admi
 - certificados montados somente leitura.
 - instalador falha diante de recursos sem propriedade comprovada e nunca executa prune global.
 - a detecção de `fullpassword_nginx` bloqueia integração automática; nenhum arquivo, rede, volume ou certificado vizinho é alterado.
+- updater aceita somente `trinityrrocha/DevFlow`, `main`, fast-forward, checkout root limpo e hooks desabilitados;
+- backup autenticado e release candidata íntegra são gates anteriores à mutação do código instalado;
+- migrations ocorrem com tráfego em manutenção e serviços de aplicação parados;
+- falhas acionam restauração coordenada de dados, release, containers e proxy, com log sanitizado.
 
 ## 10. Publicação segura
 

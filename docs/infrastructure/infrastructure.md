@@ -25,6 +25,7 @@ No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado, o Nginx d
 | `backend` | API, autenticação e regras | uploads externos | `/health` com versão e migration |
 | `frontend` | SPA estática | nenhuma | `/healthz` |
 | `edge` | TLS e roteamento isolado | certificados somente leitura | `/healthz` HTTPS |
+| `maintenance` | resposta temporária HTTPS 503 durante update isolado | nenhuma | `nginx -t` |
 
 Worker e fila não existem nesta baseline; não são descritos como concluídos.
 
@@ -38,9 +39,13 @@ No modo compartilhado, frontend e backend ficam em `127.0.0.1` nas portas config
 
 O contrato versionado é `.env.example`. Na VPS, `/opt/devflow/config/devflow.env` possui modo `0600`; backup e bootstrap usam arquivos separados com a mesma proteção. Segredos vêm de `openssl rand`, não são colocados no Compose ou nos logs e nunca são commitados.
 
-## Releases
+## Releases e checkout operacional
 
-Cada instalação arquiva o commit Git em `/opt/devflow/releases/<sha>`. O link `app.candidate` é usado durante build, migration e healthchecks; `app` só muda depois do sucesso. A configuração e os dados não residem na release.
+Cada instalação arquiva o commit Git em `/opt/devflow/releases/<sha>`. O link `app.candidate` identifica a candidata durante build, migration e healthchecks; `app` só muda depois do sucesso interno. Se um gate posterior falhar, o backup e a release anterior são restaurados automaticamente.
+
+O instalador cria `/opt/devflow/source`, checkout operacional de `main` pertencente a `root`, sem hooks e sem permissão de escrita para grupo/terceiros. Ele existe somente para fetch e fast-forward de commits publicados pelo desenvolvimento Windows. Credenciais de leitura do repositório privado permanecem fora do Git e do ambiente da aplicação.
+
+Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443; no compartilhado, somente o virtual host DevFlow é substituído depois de `nginx -t`.
 
 ## HTTPS
 
@@ -65,5 +70,6 @@ Certbot emite certificado exclusivo para o domínio. No modo isolado, usa desafi
 | `/opt/devflow/storage` | sim | não | sim, após backup |
 | `/opt/devflow/backups` | sim | não | sim; copiar antes |
 | `/opt/devflow/releases` | operacional | não | sim |
+| `/opt/devflow/source` | operacional | não | sim |
 
 Docker global, certificados e qualquer recurso Full Password são preservados em todos os modos.

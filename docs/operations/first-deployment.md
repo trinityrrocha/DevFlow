@@ -45,7 +45,7 @@ sudo /opt/devflow/app/scripts/backup.sh
 Verifique:
 
 - todos os serviços necessários estão `healthy`;
-- `/api/health` informa `0.1.0-alpha` e migration `001_initial_schema.sql`;
+- `/api/health` informa `0.2.0-alpha` e migration `001_initial_schema.sql`;
 - o certificado corresponde ao domínio;
 - o Super Admin troca a senha e configura MFA;
 - o backup existe, tem tamanho maior que zero e está fora do repositório;

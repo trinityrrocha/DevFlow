@@ -21,6 +21,10 @@ MAX_RESTORE_MB="${BACKUP_MAX_RESTORE_MB:-4096}"
 UPLOAD_SOURCE="${DEVFLOW_UPLOADS_PATH:-devflow_devflow_uploads}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -p devflow --project-directory "$PROJECT_DIR" -f "$PROJECT_DIR/docker-compose.yml")
 [[ "${DEVFLOW_PROXY_MODE:-}" != shared ]] || COMPOSE+=(-f "$PROJECT_DIR/docker-compose.shared.yml")
+SKIP_PREBACKUP="${DEVFLOW_RESTORE_SKIP_PREBACKUP:-false}"
+NO_START="${DEVFLOW_RESTORE_NO_START:-false}"
+[[ "$SKIP_PREBACKUP" == true || "$SKIP_PREBACKUP" == false ]] || { echo 'DEVFLOW_RESTORE_SKIP_PREBACKUP inválido.' >&2; exit 1; }
+[[ "$NO_START" == true || "$NO_START" == false ]] || { echo 'DEVFLOW_RESTORE_NO_START inválido.' >&2; exit 1; }
 
 [[ -f "$BACKUP_FILE" && "$BACKUP_FILE" == *.dfbackup ]] || { echo "Backup inválido." >&2; exit 1; }
 [[ -r "$PASSPHRASE_FILE" ]] || { echo "Passphrase de backup ausente." >&2; exit 1; }
@@ -38,16 +42,18 @@ fi
   exit 1
 }
 
-BACKUP_ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}" \
-BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" \
-DEVFLOW_ENV_FILE="$ENV_FILE" \
-DEVFLOW_PROJECT_DIR="$PROJECT_DIR" \
-"$PROJECT_DIR/scripts/backup.sh"
+if [[ "$SKIP_PREBACKUP" == false ]]; then
+  BACKUP_ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}" \
+  BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" \
+  DEVFLOW_ENV_FILE="$ENV_FILE" \
+  DEVFLOW_PROJECT_DIR="$PROJECT_DIR" \
+  "$PROJECT_DIR/scripts/backup.sh"
+fi
 
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devflow-restore.XXXXXX")"
 BACKEND_STOPPED=0
 cleanup() {
-  if [[ "$BACKEND_STOPPED" -eq 1 ]]; then
+  if [[ "$BACKEND_STOPPED" -eq 1 && "$NO_START" == false ]]; then
     "${COMPOSE[@]}" start backend >/dev/null 2>&1 || true
   fi
   rm -rf -- "$TEMP_DIR"
@@ -120,7 +126,11 @@ docker run --rm \
 
 "${COMPOSE[@]}" exec -T db sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason='\''backup_restored'\'' WHERE revoked_at IS NULL"'
-"${COMPOSE[@]}" start backend
-BACKEND_STOPPED=0
-"${COMPOSE[@]}" up -d --wait
-printf 'Restauração concluída e sessões anteriores revogadas.\n'
+if [[ "$NO_START" == false ]]; then
+  "${COMPOSE[@]}" start backend
+  BACKEND_STOPPED=0
+  "${COMPOSE[@]}" up -d --wait
+  printf 'Restauração concluída e sessões anteriores revogadas.\n'
+else
+  printf 'Restauração concluída; backend mantido parado para coordenação externa.\n'
+fi

@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.1.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.2.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 
@@ -26,6 +26,8 @@ git rev-parse HEAD
 ```
 
 Alternativamente, autentique o GitHub CLI no servidor com o fluxo interativo e execute `gh repo clone trinityrrocha/DevFlow`. Não coloque token em URL, shell history, arquivo `.env` ou documentação.
+
+Essa cópia serve apenas para a instalação inicial. O instalador exige `main` limpa e exatamente igual a `origin/main`; depois cria uma cópia operacional root-only em `/opt/devflow/source`. A VPS nunca deve receber commits.
 
 ## 3. Diagnóstico e plano
 
@@ -65,14 +67,15 @@ Após a confirmação literal, o instalador:
 2. instala Certbot se necessário;
 3. cria `/opt/devflow` com permissões restritivas;
 4. arquiva o commit Git em `/opt/devflow/releases/<sha>`;
-5. gera a configuração privada e segredos com OpenSSL;
-6. inicia PostgreSQL e espera `healthy`;
-7. executa `001_initial_schema.sql` pelo migrador com advisory lock;
-8. consulta `schema_migrations` no PostgreSQL;
-9. emite o certificado do domínio;
-10. inicia backend, frontend e edge e espera os healthchecks;
-11. valida frontend e `/api/health` por HTTPS;
-12. habilita o timer de backup e grava relatório sanitizado.
+5. cria `/opt/devflow/source`, checkout operacional root-only com hooks desabilitados;
+6. gera a configuração privada e segredos com OpenSSL;
+7. inicia PostgreSQL e espera `healthy`;
+8. executa `001_initial_schema.sql` pelo migrador com advisory lock;
+9. consulta `schema_migrations` no PostgreSQL;
+10. emite o certificado do domínio;
+11. inicia backend, frontend e edge e espera os healthchecks;
+12. valida frontend e `/api/health` por HTTPS;
+13. habilita o timer de backup e grava relatório sanitizado.
 
 O instalador não aceita checkout sujo nem origem sem commit Git. Isso impede uma release local não reproduzível.
 
@@ -130,6 +133,7 @@ Depois disso, a integração deve ser feita manualmente ou por um adaptador apro
 ├── data/postgres/           # persistente
 ├── backups/                 # persistente
 ├── logs/                    # sanitizado
+├── source/                  # checkout operacional root-only
 ├── storage/uploads/         # persistente
 └── releases/                # releases imutáveis
 ```
@@ -175,21 +179,32 @@ O relatório da instalação fica em `/opt/devflow/data/install-report.txt`. A c
 
 ## 11. Atualização, remoção e recuperação
 
+Antes do primeiro update, forneça a `root` uma credencial GitHub somente leitura. A opção preferida é uma deploy key exclusiva de `trinityrrocha/DevFlow`, cadastrada sem permissão de escrita. Guarde a chave privada como `/root/.ssh/devflow_deploy`, modo `0600`, verifique o host `github.com` por fingerprint oficial e vincule-a somente ao checkout:
+
 ```bash
-cd /caminho/do/checkout/DevFlow
-sudo ./scripts/update.sh
+sudo git -C /opt/devflow/source config --local core.sshCommand \
+  'ssh -i /root/.ssh/devflow_deploy -o IdentitiesOnly=yes'
+sudo GIT_TERMINAL_PROMPT=0 git -C /opt/devflow/source fetch origin main
+```
+
+Não cole a chave privada ou token em comandos, logs, `.env` ou URLs. A publicação continua ocorrendo exclusivamente no Windows pela conta `trinityrrocha`; a credencial da VPS é somente leitura.
+
+```bash
+sudo /opt/devflow/app/scripts/version.sh --all --refresh
+sudo /opt/devflow/app/scripts/update.sh --check
+sudo /opt/devflow/app/scripts/update.sh
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 sudo /opt/devflow/app/scripts/uninstall.sh --purge
 ```
 
-`--update` aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout limpo e fast-forward. Ele cria e verifica backup antes de migrations. O rollback transacional completo ainda não existe; consulte o [runbook operacional](update-backup-rollback.md).
+O updater aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout limpo e fast-forward. Ele exibe a versão e o changelog antes da confirmação, cria e verifica backup, mantém HTTP 503 durante a troca e restaura automaticamente a versão anterior em falha. Consulte o [runbook operacional](update-backup-rollback.md).
 
-`--keep-data` preserva configuração, banco, storage, backups e releases. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. Docker, certificados e Full Password são sempre preservados.
+`--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. A deploy key em `/root/.ssh` não é removida automaticamente. Docker, certificados e Full Password são sempre preservados.
 
 ## 12. Limitações da alpha
 
-- sem WebUpdater definitivo;
-- sem rollback automático completo após migration;
+- sem interface web administrativa para o updater;
+- rollback automático implementado, mas ainda sem fault-injection e restore drill na VPS;
 - sem laboratório publicado de coexistência com `fullpassword_nginx`;
 - sem prova de renovação automática do certificado;
 - sem matriz completa de distribuição/arquitetura em CI;

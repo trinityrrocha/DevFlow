@@ -15,27 +15,23 @@ SUPER_ADMIN_EMAIL=
 PROXY_MODE=
 HTTP_PORT=18080
 API_PORT=13000
-ASSUME_YES=false
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
 usage() {
+  printf 'DevFlow %s — instalador inicial para homologação\n\n' "$DEVFLOW_RELEASE_VERSION"
   cat <<'EOF'
-DevFlow 0.1.0-alpha — instalador para homologação
-
 Uso:
   ./install.sh --check
   ./install.sh --dry-run --proxy-mode isolated|shared --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
   sudo ./install.sh --install --proxy-mode isolated|shared --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
-  sudo ./install.sh --update [--yes]
 
 Modos:
   --check       diagnóstico somente leitura (padrão)
   --dry-run     valida e apresenta o plano; não altera o host
   --install     primeira instalação, com confirmação explícita
-  --update      atualização preliminar de uma instalação existente
 
 Opções:
   --proxy-mode MODE         obrigatório na primeira instalação: isolated ou shared
@@ -44,7 +40,6 @@ Opções:
   --super-admin-email EMAIL identidade permitida no bootstrap
   --http-port PORT          frontend em loopback no modo shared (padrão 18080)
   --api-port PORT           backend em loopback no modo shared (padrão 13000)
-  --yes                     não solicita confirmação interativa (automação consciente)
   --help                    mostra esta ajuda
 
 O modo shared integra somente com Nginx do host. A presença de fullpassword_nginx
@@ -63,14 +58,12 @@ while [[ $# -gt 0 ]]; do
     --check) set_mode check; shift ;;
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
-    --update) set_mode update; shift ;;
     --proxy-mode) PROXY_MODE="${2:-}"; shift 2 ;;
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --letsencrypt-email|--email) LETSENCRYPT_EMAIL="${2:-}"; shift 2 ;;
     --super-admin-email|--super-admin) SUPER_ADMIN_EMAIL="${2:-}"; shift 2 ;;
     --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
     --api-port) API_PORT="${2:-}"; shift 2 ;;
-    --yes) ASSUME_YES=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) die "Opção desconhecida: $1" ;;
   esac
@@ -80,6 +73,7 @@ require_linux
 detect_platform
 validate_safe_absolute_path "$DEVFLOW_INSTALL_ROOT" 'Diretório de instalação'
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Esta versão suporta somente o diretório /opt/devflow.'
+validate_safe_absolute_path "$SOURCE_DIR" 'Checkout operacional'
 check_capacity /
 validate_port "$HTTP_PORT"
 validate_port "$API_PORT"
@@ -124,28 +118,8 @@ if [[ "$MODE" == check && -e "$DEVFLOW_ENV_FILE" ]]; then
     validate_port "${DEVFLOW_API_PORT:-13000}"
     config_state=valid
   else
-    if [[ "$proxy_detected" != host-nginx ]] && { port_is_listening 80 || port_is_listening 443; }; then
-      die 'As portas de ingress estão ocupadas, mas nenhum Nginx do host foi comprovado.'
-    fi
     config_state=protected-unreadable
   fi
-fi
-
-if [[ "$MODE" == update ]]; then
-  [[ -r "$DEVFLOW_ENV_FILE" ]] || die 'Instalação existente não encontrada; use --install.'
-  load_devflow_env
-  validate_runtime_paths
-  config_state=valid
-  DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
-  DOMAIN="${DEVFLOW_DOMAIN:-}"
-  PROXY_MODE="${DEVFLOW_PROXY_MODE:-}"
-  LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
-  SUPER_ADMIN_EMAIL="${SUPER_ADMIN_EMAIL:-}"
-  HTTP_PORT="${DEVFLOW_HTTP_PORT:-18080}"
-  API_PORT="${DEVFLOW_API_PORT:-13000}"
-  validate_port "$HTTP_PORT"
-  validate_port "$API_PORT"
-  [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'As portas do frontend e da API devem ser diferentes.'
 fi
 
 if [[ "$MODE" != check ]]; then
@@ -162,12 +136,7 @@ if [[ "$MODE" != check ]]; then
 fi
 
 if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_ROOT/app" ]]; then
-  die 'Uma instalação já existe. Use --update; nenhum arquivo foi alterado.'
-fi
-
-if [[ "$MODE" == update ]]; then
-  [[ -e "$DEVFLOW_INSTALL_ROOT/app" ]] || die 'Link da aplicação instalada ausente.'
-  [[ "$docker_state" == present && "$compose_state" == present ]] || die 'Docker/Compose da instalação existente está indisponível.'
+  die 'Uma instalação já existe. O instalador não atualiza sistemas; use scripts/update.sh.'
 fi
 
 if [[ "$MODE" != check && "$docker_state" == present && "$docker_version" == daemon-unavailable ]]; then
@@ -267,11 +236,8 @@ EOF
 [[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
 
 require_root
-DEVFLOW_ASSUME_YES="$ASSUME_YES"
-[[ "$MODE" != install ]] || DEVFLOW_ASSUME_YES=false
-confirmation='ATUALIZAR DEVFLOW'
-[[ "$MODE" != install ]] || confirmation='INSTALAR DEVFLOW'
-confirm_exact "$confirmation" "Autoriza executar $MODE no host de homologação?"
+DEVFLOW_ASSUME_YES=false
+confirm_exact 'INSTALAR DEVFLOW' 'Autoriza a instalação inicial no host de homologação?'
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
   "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
@@ -367,29 +333,17 @@ if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
     || die 'O certificado existente não corresponde ao domínio DevFlow.'
 fi
 
-if [[ "$MODE" == update ]]; then
-  remote_url="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
-  [[ "$remote_url" =~ github\.com[:/]trinityrrocha/DevFlow(\.git)?$ ]] || die 'Remote de atualização não é trinityrrocha/DevFlow.'
-  [[ "$(git -C "$SOURCE_DIR" branch --show-current)" == main ]] || die 'Atualização permitida somente na branch main.'
-  [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || die 'O checkout de atualização possui alterações locais.'
-  DEVFLOW_PROJECT_DIR="$DEVFLOW_INSTALL_ROOT/app" \
-    BACKUP_ARCHIVE_DIR="$DEVFLOW_INSTALL_ROOT/backups" \
-    BACKUP_PASSPHRASE_FILE="$DEVFLOW_CONFIG_ROOT/backup.passphrase" \
-    "$DEVFLOW_INSTALL_ROOT/app/scripts/backup.sh"
-  newest_backup="$(find "$DEVFLOW_INSTALL_ROOT/backups" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
-  [[ -n "$newest_backup" && -s "$newest_backup" ]] || die 'Backup pré-update não foi confirmado.'
-  DEVFLOW_PROJECT_DIR="$DEVFLOW_INSTALL_ROOT/app" \
-    DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-    "$DEVFLOW_INSTALL_ROOT/app/scripts/verify-backup.sh" "$newest_backup"
-  git -C "$SOURCE_DIR" fetch origin main
-  git -C "$SOURCE_DIR" merge-base --is-ancestor HEAD origin/main || die 'A atualização não é fast-forward.'
-  git -C "$SOURCE_DIR" pull --ff-only origin main
-fi
-
 [[ -z "$(git -C "$SOURCE_DIR" status --porcelain 2>/dev/null || true)" ]] \
   || die 'O checkout de origem possui alterações locais; a release não seria reproduzível.'
+[[ "$(git -C "$SOURCE_DIR" branch --show-current 2>/dev/null || true)" == main ]] \
+  || die 'A instalação inicial aceita somente a branch main.'
+source_remote="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
+[[ "$source_remote" =~ ^(https://github\.com/|git@github\.com:)trinityrrocha/DevFlow(\.git)?$ ]] \
+  || die 'O remote origin deve pertencer exatamente a trinityrrocha/DevFlow.'
 release_sha="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'A origem deve ser um checkout Git publicado.'
+[[ "$(git -C "$SOURCE_DIR" rev-parse refs/remotes/origin/main 2>/dev/null || true)" == "$release_sha" ]] \
+  || die 'O commit local deve corresponder exatamente a origin/main antes da instalação.'
 release_dir="$DEVFLOW_INSTALL_ROOT/releases/$release_sha"
 if [[ ! -d "$release_dir" ]]; then
   install -d -m 0750 "$release_dir"
@@ -401,6 +355,24 @@ else
     || die 'Diretório de release existente sem identidade DevFlow comprovada.'
 fi
 
+operational_source_dir="$DEVFLOW_INSTALL_ROOT/source"
+if [[ ! -e "$operational_source_dir" ]]; then
+  GIT_TERMINAL_PROMPT=0 git clone --no-local --branch main --single-branch \
+    "$SOURCE_DIR" "$operational_source_dir"
+  git -C "$operational_source_dir" remote set-url origin "$source_remote"
+  git -C "$operational_source_dir" config --local core.hooksPath /dev/null
+else
+  [[ -d "$operational_source_dir/.git" ]] || die 'Checkout operacional existente não é um repositório Git.'
+  [[ "$(git -C "$operational_source_dir" rev-parse HEAD 2>/dev/null || true)" == "$release_sha" ]] \
+    || die 'Checkout operacional existente diverge da release inicial.'
+  [[ "$(git -C "$operational_source_dir" remote get-url origin 2>/dev/null || true)" == "$source_remote" ]] \
+    || die 'Checkout operacional existente possui remote divergente.'
+  [[ "$(git -C "$operational_source_dir" config --local --get core.hooksPath 2>/dev/null || true)" == /dev/null ]] \
+    || die 'Checkout operacional existente não possui hooks desabilitados.'
+fi
+chown -R root:root "$operational_source_dir"
+chmod -R go-w "$operational_source_dir"
+
 if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   db_password="$(openssl rand -base64 48 | tr -d '\n')"
   jwt_secret="$(openssl rand -hex 48)"
@@ -410,6 +382,7 @@ if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   cat > "$DEVFLOW_ENV_FILE" <<EOF
 # DevFlow runtime configuration — generated locally, never commit
 DEVFLOW_VERSION=$DEVFLOW_VERSION
+DEVFLOW_SOURCE_DIR=$operational_source_dir
 NODE_ENV=production
 PORT=3000
 TZ=America/Sao_Paulo

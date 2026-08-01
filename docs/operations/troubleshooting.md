@@ -9,6 +9,13 @@ sudo /opt/devflow/app/scripts/diagnose.sh --output /tmp/devflow-diagnostic.txt
 
 O relatório omite valores de ambiente, credenciais, anexos e dados pessoais. Revise-o antes de compartilhar mesmo assim.
 
+Para uma resposta operacional objetiva e a identidade das releases:
+
+```bash
+sudo /opt/devflow/app/scripts/health.sh
+sudo /opt/devflow/app/scripts/version.sh --all --refresh
+```
+
 ## Docker ou Compose indisponível
 
 ```bash
@@ -66,7 +73,33 @@ Não execute migration manual com schema inconsistente. Preserve o banco e inves
 
 ## Migration falhou
 
-O instalador não promove a release. Não marque a migration manualmente. Confirme a tabela no PostgreSQL e use o backup pré-update. Downgrade de schema não é automático.
+Na instalação inicial, a release não é promovida. Durante update, a falha aciona automaticamente o backup pré-update e os containers anteriores. Não marque a migration, não altere `schema_migrations` e não repita o comando manualmente.
+
+## Update não encontra o GitHub
+
+O checkout `/opt/devflow/source` é protegido e o fetch não abre prompt interativo. Confirme:
+
+```bash
+sudo git -C /opt/devflow/source status --short
+sudo git -C /opt/devflow/source remote -v
+sudo ssh -T git@github.com
+```
+
+Use uma deploy key somente leitura exclusiva do repositório ou outra credencial de leitura protegida para `root`. Não coloque token na URL, no `.env` ou no repositório. Não altere o remote para contornar a validação.
+
+## Update falhou e executou rollback
+
+Consulte primeiro os resultados sanitizados:
+
+```bash
+sudo cat /opt/devflow/data/update-report.txt
+sudo ls -lt /opt/devflow/logs/update-*.log
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+`rollback=success` significa que dados, release, containers e proxy anteriores passaram pelos checks. Preserve o backup e o log para investigar a fase registrada. `rollback=failed` exige congelar novas operações, preservar a VPS e revisar cada falha antes de qualquer restore manual.
+
+Se uma página `503` permanecer, não derrube containers por tentativa. Verifique o modo do proxy, `devflow-maintenance`, o virtual host gerenciado e o relatório. O updater tenta retirar a manutenção mesmo quando o rollback encontra outra falha.
 
 ## Backend ou frontend `running`, mas não `healthy`
 
@@ -75,7 +108,7 @@ sudo /opt/devflow/app/scripts/diagnose.sh
 curl --fail --verbose https://devflow.exemplo.com/api/health
 ```
 
-`running` não encerra o gate. Verifique migration, origem da aplicação, DNS, proxy e healthcheck antes de repetir a atualização.
+`running` não encerra o gate. Verifique migration, versão esperada, DNS, proxy e healthcheck antes de considerar uma nova tentativa.
 
 ## Recuperação
 

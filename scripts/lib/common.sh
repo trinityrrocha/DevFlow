@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
-DEVFLOW_RELEASE_VERSION="0.1.0-alpha"
+DEVFLOW_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVFLOW_SOURCE_ROOT="$(cd "$DEVFLOW_COMMON_DIR/../.." && pwd)"
+DEVFLOW_RELEASE_VERSION="$(tr -d '\r\n' < "$DEVFLOW_SOURCE_ROOT/VERSION")"
+[[ "$DEVFLOW_RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+  || { echo 'VERSION inválido no código DevFlow.' >&2; exit 1; }
 DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 DEVFLOW_PROJECT="devflow"
 DEVFLOW_INSTALL_ROOT="${DEVFLOW_INSTALL_ROOT:-/opt/devflow}"
@@ -60,6 +64,58 @@ version_at_least() {
   [[ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -n1)" == "$required" ]]
 }
 
+version_is_greater() {
+  local candidate="$1" installed="$2"
+  local candidate_major candidate_minor candidate_patch candidate_pre
+  local installed_major installed_minor installed_patch installed_pre
+  local index candidate_part installed_part
+  local -a candidate_parts installed_parts
+
+  [[ "$candidate" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$ ]] || return 2
+  candidate_major="${BASH_REMATCH[1]}"
+  candidate_minor="${BASH_REMATCH[2]}"
+  candidate_patch="${BASH_REMATCH[3]}"
+  candidate_pre="${BASH_REMATCH[5]:-}"
+  [[ "$installed" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$ ]] || return 2
+  installed_major="${BASH_REMATCH[1]}"
+  installed_minor="${BASH_REMATCH[2]}"
+  installed_patch="${BASH_REMATCH[3]}"
+  installed_pre="${BASH_REMATCH[5]:-}"
+
+  for index in major minor patch; do
+    candidate_part="candidate_$index"
+    installed_part="installed_$index"
+    if (( 10#${!candidate_part} > 10#${!installed_part} )); then
+      return 0
+    elif (( 10#${!candidate_part} < 10#${!installed_part} )); then
+      return 1
+    fi
+  done
+
+  [[ "$candidate_pre" != "$installed_pre" ]] || return 1
+  [[ -z "$installed_pre" ]] && return 1
+  [[ -z "$candidate_pre" ]] && return 0
+  IFS='.' read -r -a candidate_parts <<< "$candidate_pre"
+  IFS='.' read -r -a installed_parts <<< "$installed_pre"
+  for ((index = 0; index < ${#candidate_parts[@]} || index < ${#installed_parts[@]}; index++)); do
+    [[ -n "${candidate_parts[index]+set}" ]] || return 1
+    [[ -n "${installed_parts[index]+set}" ]] || return 0
+    candidate_part="${candidate_parts[index]}"
+    installed_part="${installed_parts[index]}"
+    [[ "$candidate_part" != "$installed_part" ]] || continue
+    if [[ "$candidate_part" =~ ^[0-9]+$ && "$installed_part" =~ ^[0-9]+$ ]]; then
+      (( 10#$candidate_part > 10#$installed_part )) && return 0 || return 1
+    elif [[ "$candidate_part" =~ ^[0-9]+$ ]]; then
+      return 1
+    elif [[ "$installed_part" =~ ^[0-9]+$ ]]; then
+      return 0
+    fi
+    [[ "$candidate_part" > "$installed_part" ]]
+    return
+  done
+  return 1
+}
+
 validate_safe_absolute_path() {
   local value="$1" label="$2"
   [[ "$value" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "$label contém caracteres não permitidos."
@@ -94,7 +150,7 @@ load_devflow_env() {
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-      DEVFLOW_VERSION|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|DEVFLOW_PROXY_MODE|LETSENCRYPT_EMAIL|DEVFLOW_ENV_FILE|DEVFLOW_BIND_ADDRESS|DEVFLOW_HTTP_PORT|DEVFLOW_API_PORT|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL)
+      DEVFLOW_VERSION|DEVFLOW_SOURCE_DIR|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|DEVFLOW_PROXY_MODE|LETSENCRYPT_EMAIL|DEVFLOW_ENV_FILE|DEVFLOW_BIND_ADDRESS|DEVFLOW_HTTP_PORT|DEVFLOW_API_PORT|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL)
         export "$key=$value"
         ;;
       *) die "$DEVFLOW_ENV_FILE contém variável não permitida: $key" ;;

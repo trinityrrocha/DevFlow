@@ -4,13 +4,13 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.1.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O Documento 004 ainda não foi executado.
+Versão atual: **0.2.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização ainda depende de homologação em VPS e não representa aprovação para produção.
 
 ## Estado atual
 
-A baseline inclui backend Node.js/Express, frontend React/Vite, PostgreSQL, migration inicial, autenticação com sessão protegida, MFA TOTP, RBAC multi-tenant, domínio de tarefas, auditoria, Docker Compose, backup criptografado e scripts operacionais preliminares.
+A baseline inclui backend Node.js/Express, frontend React/Vite, PostgreSQL, migration inicial, autenticação com sessão protegida, MFA TOTP, RBAC multi-tenant, domínio de tarefas, auditoria, Docker Compose, backup criptografado e atualização transacional para homologação.
 
-Ainda dependem de homologação em Linux: instalação completa, emissão e renovação real de certificados, integração com PostgreSQL e containers, ensaio de backup/restauração, atualização, rollback, E2E, acessibilidade, carga e pentest. Consulte o [estado de implementação](docs/implementation-status.md).
+Ainda dependem de homologação em Linux: instalação completa, emissão e renovação real de certificados, integração com PostgreSQL e containers, ensaios de backup/restauração e rollback induzido, E2E, acessibilidade, carga e pentest. Consulte o [estado de implementação](docs/implementation-status.md).
 
 Nenhum código do Full Password foi reutilizado. A referência técnica permaneceu limpa no commit `804008b5df5d0931ec5d95227fed44086f430d76`; os padrões observados estão na [análise arquitetural](docs/architecture/fullpassword-analysis.md).
 
@@ -47,6 +47,8 @@ sudo ./install.sh --install \
 
 Sem argumento, `install.sh` executa apenas `--check`. `--dry-run` nunca altera o servidor. A instalação só começa com `--install`, privilégios elevados e confirmação literal.
 
+O instalador cria um checkout operacional root-only em `/opt/devflow/source`. Para atualizações futuras do repositório privado, configure na VPS uma credencial somente leitura, preferencialmente uma deploy key exclusiva deste repositório; nunca coloque token no código, `.env` ou URL remota.
+
 O guia completo está em [instalação na VPS](docs/infrastructure/vps-installation.md).
 
 ## Modos de infraestrutura
@@ -79,14 +81,18 @@ O token não deve ser copiado para ticket, chat ou log. Remova-o do disco após 
 ```bash
 # diagnóstico sanitizado
 sudo /opt/devflow/app/scripts/diagnose.sh --output /tmp/devflow-diagnostic.txt
+sudo /opt/devflow/app/scripts/health.sh
+
+# versão instalada e versão disponível
+sudo /opt/devflow/app/scripts/version.sh --all --refresh
 
 # backup manual criptografado
 sudo /opt/devflow/app/scripts/backup.sh
 sudo /opt/devflow/app/scripts/verify-backup.sh /opt/devflow/backups/devflow-ARQUIVO.dfbackup
 
-# atualização preliminar (gera e verifica backup antes)
-cd /caminho/do/checkout/DevFlow
-sudo ./scripts/update.sh
+# consultar sem alterar e depois atualizar com confirmação
+sudo /opt/devflow/app/scripts/update.sh --check
+sudo /opt/devflow/app/scripts/update.sh
 
 # remover serviços e preservar todos os dados
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
@@ -95,7 +101,7 @@ sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 sudo /opt/devflow/app/scripts/uninstall.sh --purge
 ```
 
-O atualizador desta versão não implementa rollback transacional completo. Em falha, ele preserva dados e a release anterior, mas migrations podem exigir restauração manual validada. Veja [atualização, backup e rollback](docs/infrastructure/update-backup-rollback.md).
+O updater consulta exclusivamente `origin/main`, exibe changelog, exige backup validado, ativa manutenção, aplica migrations e promove a release somente após health checks. Falhas posteriores ao backup acionam restauração e retorno automático dos containers anteriores. O comportamento precisa ser comprovado por testes de falha na VPS antes de produção. Veja [atualização, backup e rollback](docs/infrastructure/update-backup-rollback.md).
 
 ## Desenvolvimento local
 
@@ -124,6 +130,7 @@ docker compose config --quiet
 - [Padrões de desenvolvimento](docs/development/standards.md)
 - [Roadmap](docs/roadmap.md)
 - [Rastreabilidade](docs/traceability.md)
+- [Changelog](CHANGELOG.md)
 
 ## Licenciamento
 

@@ -1,0 +1,23 @@
+name: devflow-maintenance
+
+services:
+  maintenance:
+    image: nginx:1.27-alpine
+    restart: "no"
+    environment:
+      DEVFLOW_DOMAIN: ${DEVFLOW_DOMAIN:?DEVFLOW_DOMAIN obrigatório}
+      NGINX_ENVSUBST_FILTER: DEVFLOW_DOMAIN
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/maintenance.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    labels:
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.2.0-alpha}
+      devflow.role: maintenance

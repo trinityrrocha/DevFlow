@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 DEVFLOW_ENV_FILE="$ENV_FILE"
 load_devflow_env
+command -v flock >/dev/null 2>&1 || { echo 'flock é obrigatório para serializar backups.' >&2; exit 1; }
+exec 8>/run/lock/devflow-backup.lock
+flock -n 8 || { echo 'Outro backup DevFlow está em andamento.' >&2; exit 1; }
 ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}"
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
@@ -34,7 +37,8 @@ cleanup() { rm -rf -- "$TEMP_DIR"; }
 trap cleanup EXIT
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-archive_name="devflow-${timestamp}.dfbackup"
+archive_suffix="$(openssl rand -hex 4)"
+archive_name="devflow-${timestamp}-${archive_suffix}.dfbackup"
 
 "${COMPOSE[@]}" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TEMP_DIR/database.dump"
 docker run --rm \

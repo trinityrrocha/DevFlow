@@ -1,112 +1,108 @@
 # Atualização, backup, restauração e rollback
 
-> Esta operação é preliminar e exclusiva para homologação. O WebUpdater transacional definitivo ainda não foi implementado.
+> O mecanismo abaixo é destinado exclusivamente à VPS de homologação. Ele ainda precisa de ensaios de falha em Linux antes de qualquer avaliação para produção.
 
-## Backup
+## Separção de responsabilidades
+
+`install.sh` executa somente a primeira instalação. Ele não aceita modo de atualização nem modifica uma instalação existente. Toda consulta e aplicação de novas versões pertence a `scripts/update.sh`.
+
+O desenvolvimento, os commits e o push da `main` acontecem apenas no Windows. A VPS mantém um checkout operacional protegido em `/opt/devflow/source`, usado exclusivamente para leitura de `origin/main` e materialização de releases. Não edite, desenvolva ou crie commits nesse checkout.
+
+## Identidade de versão
+
+`VERSION` é a fonte canônica. Backend, frontend, Compose e documentação devem usar o mesmo SemVer. Consulte o ambiente sem alterções:
+
+```bash
+sudo /opt/devflow/app/scripts/version.sh --installed
+sudo /opt/devflow/app/scripts/version.sh --all --refresh
+```
+
+O segundo comando exige acesso somente leitura ao repositório privado. O updater aceita apenas `trinityrrocha/DevFlow`, branch `main`, checkout limpo, fast-forward e uma versão SemVer estritamente superior.
+
+## Atualização transacional
+
+Primeiro consulte a versão e o changelog sem alterar o host:
+
+```bash
+sudo /opt/devflow/app/scripts/update.sh --check
+```
+
+Esse modo busca `main` em um repositório temporário sob `/tmp`, removido ao sair. Ele não altera refs do checkout operacional, não cria backup, release ou log persistente e não toca containers.
+
+Depois, execute a atualização interativa:
+
+```bash
+sudo /opt/devflow/app/scripts/update.sh
+```
+
+O operador precisa digitar `ATUALIZAR DEVFLOW`. O fluxo mantém um lock exclusivo e:
+
+1. valida SO, recursos, Docker, Compose, configuração, proxy e propriedade do checkout;
+2. consulta `origin/main`, mostra versões, commits e a seção correspondente do `CHANGELOG.md`;
+3. cria um backup criptografado e valida envelope, estrutura, tamanho e checksums;
+4. materializa o commit remoto em `/opt/devflow/releases/<sha>` e valida os componentes transacionais;
+5. avança o checkout operacional somente por fast-forward;
+6. constrói as imagens candidatas;
+7. ativa uma resposta HTTPS de manutenção `503` com `Retry-After`;
+8. para backend e frontend antes de alterar o schema;
+9. inicia e valida PostgreSQL, executa migrations sob advisory lock e confirma a versão no banco;
+10. recria somente backend e frontend DevFlow e executa health checks internos;
+11. promove o link `/opt/devflow/app`, restaura o proxy e executa health checks públicos;
+12. atualiza o timer de backup e grava o relatório final.
+
+Nenhuma etapa executa force pull, prune global, remoção de volumes ou restart de aplicação vizinha.
+
+## Modo de manutenção
+
+No modo `isolated`, o edge DevFlow é parado e um Compose independente, `docker-compose.maintenance.yml`, assume temporariamente 80/443. No modo `shared`, somente o virtual host DevFlow é trocado após `nginx -t`; o arquivo anterior pode ser restaurado de forma atômica.
+
+O updater confirma HTTP `503` antes de migrations. A remoção da manutenção ocorre somente depois dos checks internos, e os checks públicos ainda fazem parte do gate transacional.
+
+## Rollback automático
+
+Antes da primeira mutação, uma falha apenas remove os temporários gerados e deixa a instalação intacta. Depois que o backup e a release candidata foram validados e a transação foi armada, qualquer saída diferente de zero aciona automaticamente:
+
+1. retorno ou permanência no modo de manutenção;
+2. restauração do PostgreSQL e dos uploads a partir do backup pré-update autenticado;
+3. revogação das sessões existentes;
+4. retorno do ambiente, symlink e checkout ao commit anterior;
+5. rebuild e inicialização dos containers anteriores;
+6. health checks internos da versão anterior;
+7. restauração do proxy e retirada da manutenção;
+8. health checks públicos e restauração do timer de backup.
+
+O resultado fica em `/opt/devflow/data/update-report.txt`; o log sanitizado fica em `/opt/devflow/logs/update-<timestamp>.log`. Se o rollback também falhar, o script registra cada falha, tenta retirar a manutenção e encerra com erro. Nesse caso, preserve o ambiente e siga o runbook de troubleshooting; nunca marque migration ou versão manualmente.
+
+## Backup manual
 
 ```bash
 sudo /opt/devflow/app/scripts/backup.sh
-```
-
-O script executa `pg_dump -Fc`, compacta uploads, cria manifesto e checksums, empacota o conteúdo e aplica um envelope autenticado AES-256-GCM. A chave é derivada por scrypt da passphrase protegida em `/opt/devflow/config/backup.passphrase`.
-
-```text
-devflow-AAAAMMDDTHHMMSSZ.dfbackup
-└── envelope AES-256-GCM
-    └── payload.tar.gz
-        ├── manifest.json
-        ├── checksums.sha256
-        ├── database.dump
-        └── uploads.tar.gz
-```
-
-Arquivos recebem modo `0600` em `/opt/devflow/backups`. A retenção padrão é 30 dias. O timer systemd executa diariamente às 02:30 com atraso aleatório de até 15 minutos.
-
-Verifique autenticação, estrutura e checksums sem restaurar:
-
-```bash
 sudo /opt/devflow/app/scripts/verify-backup.sh \
-  /opt/devflow/backups/devflow-AAAAMMDDTHHMMSSZ.dfbackup
+  /opt/devflow/backups/devflow-AAAAMMDDTHHMMSSZ-ID.dfbackup
 ```
 
-Limitações: a cópia remota e a política 3-2-1 não são automatizadas; o operador deve copiar e verificar backups fora da VPS. A existência de um arquivo não substitui um restore drill.
+O backup usa `pg_dump -Fc`, compacta uploads, registra manifesto e checksums e aplica envelope autenticado AES-256-GCM. A chave deriva por scrypt da passphrase protegida em `/opt/devflow/config/backup.passphrase`. Arquivos recebem modo `0600`; a retenção padrão é 30 dias.
 
-## Restauração
+O pacote contém `manifest.json`, `checksums.sha256`, `database.dump` e `uploads.tar.gz`. A existência do arquivo não substitui verificação nem restore drill. Cópia remota e política 3-2-1 continuam sob responsabilidade operacional.
 
-Antes de restaurar, copie o pacote para o host, confirme origem e checksum e mantenha snapshot da VPS.
+## Restauração manual
 
 ```bash
 sudo CONFIRM_RESTORE='RESTAURAR BACKUP' \
   /opt/devflow/app/scripts/restore.sh \
-  /opt/devflow/backups/devflow-AAAAMMDDTHHMMSSZ.dfbackup
+  /opt/devflow/backups/devflow-AAAAMMDDTHHMMSSZ-ID.dfbackup
 ```
 
-O restore:
+O restore manual cria outro backup antes de agir, autentica o envelope, rejeita travessia e tipos especiais, limita o tamanho expandido, restaura banco e uploads, revoga sessões e espera health checks. A restauração substitui toda a instância; não existe restore seletivo por empresa.
 
-1. exige confirmação literal e limita tamanho;
-2. cria backup pré-restore;
-3. autentica e descriptografa o envelope;
-4. rejeita caminhos absolutos, travessia, links e tipos especiais;
-5. verifica checksums e tamanho expandido;
-6. para somente o backend DevFlow;
-7. restaura PostgreSQL e uploads;
-8. revoga todas as sessões anteriores;
-9. reinicia e espera os healthchecks.
+As variáveis internas que evitam o backup adicional e mantêm o backend parado são reservadas à coordenação do updater. Não as use em operações manuais.
 
-O processo substitui banco e storage da instância inteira. Não existe restore seletivo por empresa nesta baseline.
+## Gates pendentes para produção
 
-## Atualização preliminar
-
-No checkout privado usado para operação:
-
-```bash
-cd /caminho/do/checkout/DevFlow
-git status --short
-git remote -v
-git branch --show-current
-sudo ./scripts/update.sh
-```
-
-O wrapper encaminha para `scripts/install.sh --update`. O fluxo:
-
-1. exige instalação existente e configuração modo `0600`;
-2. valida Docker/Compose, capacidade, proxy, domínio e recursos;
-3. aceita apenas remote `trinityrrocha/DevFlow`, branch `main` e checkout limpo;
-4. gera e confirma backup não vazio;
-5. faz `fetch` e aceita somente fast-forward;
-6. arquiva o novo SHA em uma release imutável;
-7. valida Compose e constrói frontend/backend;
-8. espera PostgreSQL saudável e aplica migrations sob advisory lock;
-9. confirma a migration consultando o banco;
-10. recria somente serviços DevFlow;
-11. espera healthchecks e probes HTTPS;
-12. promove o link `/opt/devflow/app`.
-
-Não há force pull, reset, prune, remoção de volumes ou restart de aplicação vizinha.
-
-## Falha e recuperação
-
-Uma falha remove o link candidato, grava `result=failure` e preserva configuração, dados, backup e release anterior. Isso não é rollback automático completo: se uma migration já tiver alterado o schema, apontar o código anterior pode ser incompatível.
-
-Recuperação controlada:
-
-1. não repita migrations nem marque versões manualmente;
-2. colete diagnóstico sanitizado;
-3. confirme o último backup fora do host quando possível;
-4. avalie compatibilidade da release anterior com o schema;
-5. restaure o backup pré-update quando necessário;
-6. valide banco, backend, frontend, proxy e aplicações vizinhas;
-7. registre o incidente e preserve os logs sanitizados.
-
-O rollback automático, canário, assinatura de release e coordenação transacional entre schema e código permanecem gates do Documento 004 ou fase posterior.
-
-## Critérios pendentes para produção
-
-- restore drill automatizado e periódico;
-- armazenamento remoto e alerta de backup;
-- atualização interrompida em cada etapa;
-- migrations compatíveis por expand/contract;
-- rollback automático testado;
-- renovação TLS testada;
-- observabilidade e retenção aprovadas;
+- matriz automatizada de falhas injetadas em todas as fases;
+- restore drill periódico e backup remoto 3-2-1;
+- migrations aprovadas pelo padrão expand/contract;
+- assinatura ou atestação de releases e imagens fixadas por digest;
+- renovação TLS, reboot e concorrência testados;
+- observabilidade, retenção e alertas aprovados;
 - ensaio de coexistência sem regressão do Full Password.

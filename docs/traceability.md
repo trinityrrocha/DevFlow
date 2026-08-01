@@ -31,7 +31,7 @@
 |---|---|
 | Instalador fail-closed | `../scripts/install.sh` e launcher `../install.sh` |
 | Diagnóstico sanitizado | `../scripts/diagnose.sh` |
-| Atualização preliminar | `../scripts/update.sh` e `infrastructure/update-backup-rollback.md` |
+| Atualização transacional | `../scripts/update.sh`, `../scripts/version.sh`, `../scripts/health.sh` e `infrastructure/update-backup-rollback.md` |
 | Desinstalação segura | `../scripts/uninstall.sh` |
 | Configuração sem segredos | `../.env.example`, `.gitignore` e `.dockerignore` |
 | Healthchecks | `../docker-compose.yml`, backend `/api/health` e frontend `/healthz` |
@@ -42,6 +42,22 @@
 | Verificação pré-publicação | `../scripts/repository-audit.mjs` |
 | Estado alpha | `implementation-status.md` e README |
 | Documento 004 não iniciado | `implementation-status.md` e roadmap |
+
+## Mecanismo de atualização 0.2.0-alpha
+
+| Requisito | Evidência |
+|---|---|
+| Desenvolvimento somente no Windows | checkout da VPS documentado como operacional, sem commits, em `infrastructure/update-backup-rollback.md` |
+| Origem GitHub e branch | remote exato `trinityrrocha/DevFlow`, `main`, fast-forward e checkout limpo em `../scripts/update.sh` |
+| Versão instalada/disponível | `../VERSION`, `../CHANGELOG.md` e `../scripts/version.sh` |
+| Confirmação e changelog | gate literal e extração da versão em `../scripts/update.sh` |
+| Backup validado antes da mutação | `../scripts/backup.sh`, `../scripts/verify-backup.sh` e gate no updater |
+| Manutenção isolada/compartilhada | `../docker-compose.maintenance.yml` e templates em `../docker/nginx/` |
+| Migrations coordenadas | backend/frontend parados, advisory lock e confirmação no PostgreSQL |
+| Health checks | `../scripts/health.sh`, probes internos e públicos |
+| Rollback automático | restauração de dados, código, containers, proxy e timers em `../scripts/update.sh` |
+| Log e relatório | `/opt/devflow/logs/update-*.log` e `/opt/devflow/data/update-report.txt` |
+| Instalador sem update | validação estrutural em `../scripts/validate-operations.mjs` |
 
 ## Documento 002
 

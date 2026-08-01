@@ -5,6 +5,7 @@ import YAML from 'yaml';
 const load = (file) => YAML.parse(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
 const base = load('docker-compose.yml');
 const shared = load('docker-compose.shared.yml');
+const maintenance = load('docker-compose.maintenance.yml');
 
 const requiredServices = ['db', 'backend', 'frontend', 'edge'];
 for (const service of requiredServices) {
@@ -26,5 +27,13 @@ for (const service of ['backend', 'frontend']) {
 for (const volume of ['devflow_db_data', 'devflow_uploads']) {
   if (!Object.hasOwn(base.volumes || {}, volume)) throw new Error(`Volume isolado ausente: ${volume}`);
 }
+if (!maintenance.services?.maintenance) throw new Error('Serviço de manutenção ausente.');
+const maintenancePorts = maintenance.services.maintenance.ports || [];
+if (!maintenancePorts.includes('80:80') || !maintenancePorts.includes('443:443')) {
+  throw new Error('O modo de manutenção isolado deve assumir explicitamente 80/443.');
+}
+if (maintenance.services.maintenance.restart !== 'no') {
+  throw new Error('O container de manutenção não pode reiniciar indefinidamente.');
+}
 
-process.stdout.write('Compose base e override compartilhado validados.\n');
+process.stdout.write('Compose base, compartilhado e manutenção validados.\n');

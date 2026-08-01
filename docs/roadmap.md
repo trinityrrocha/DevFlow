@@ -62,10 +62,11 @@ Saída: instalação segura nos cenários suportados.
 
 ## Fase 3.5 — Publicação inicial e homologação
 
-Estado: preparação local implementada; publicação e ensaio na VPS dependem dos gates registrados.
+Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.1.0-alpha` consistente;
-- instalador seguro com check, dry-run, install e update;
+- versão `0.2.0-alpha` consistente;
+- instalador inicial seguro com check, dry-run e install;
+- updater separado com consulta de versão/changelog, manutenção e rollback automático;
 - diagnóstico sanitizado;
 - backup, restore e desinstalação preservando dados por padrão;
 - documentação operacional e de VPS;
@@ -78,14 +79,14 @@ Saída: baseline clonável e instalável para homologação, ainda não aprovada
 
 ## Fase 4 — Backup e operador
 
-Estado: backup/restore executável concluído; WebUpdater pendente.
+Estado: backup/restore e updater transacional executáveis; laboratório de falhas e hardening pendentes.
 
 - formato DevFlow;
-- backup local e remoto;
-- dry-run e restore;
-- updater por release;
+- backup local; backup remoto pendente;
+- verificação e restore;
+- updater por release imutável;
 - backup pré-update;
-- canary e rollback;
+- manutenção e rollback automático; canário pendente;
 - runbooks de desastre.
 
 Saída: operação recuperável.
