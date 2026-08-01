@@ -27,6 +27,20 @@ for (const service of ['backend', 'frontend']) {
 for (const volume of ['devflow_db_data', 'devflow_uploads']) {
   if (!Object.hasOwn(base.volumes || {}, volume)) throw new Error(`Volume isolado ausente: ${volume}`);
 }
+if (!base.networks?.devflow_internal?.internal) {
+  throw new Error('A rede interna do banco deve bloquear exposição externa direta.');
+}
+if (!base.networks?.devflow_edge || base.services.db.networks?.includes('devflow_edge')) {
+  throw new Error('A rede de borda deve existir e permanecer inacessível ao PostgreSQL.');
+}
+for (const service of ['backend', 'frontend', 'edge']) {
+  if (!base.services[service].networks?.includes('devflow_edge')) {
+    throw new Error(`${service} precisa usar a rede de borda DevFlow.`);
+  }
+}
+if (!base.services.backend.networks?.includes('devflow_internal')) {
+  throw new Error('Somente o backend deve intermediar acesso ao PostgreSQL.');
+}
 if (!maintenance.services?.maintenance) throw new Error('Serviço de manutenção ausente.');
 const maintenancePorts = maintenance.services.maintenance.ports || [];
 if (!maintenancePorts.includes('80:80') || !maintenancePorts.includes('443:443')) {

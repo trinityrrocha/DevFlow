@@ -5,6 +5,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/proxy-config.sh
+. "$SCRIPT_DIR/lib/proxy-config.sh"
 
 MODE=
 ASSUME_YES=false
@@ -65,19 +67,9 @@ else
   "${DEVFLOW_COMPOSE[@]}" down --volumes --remove-orphans
 fi
 
-if [[ -f /etc/nginx/conf.d/devflow.conf ]]; then
-  nginx_backup="$(mktemp /tmp/devflow-nginx-remove.XXXXXX)"
-  cp -a -- /etc/nginx/conf.d/devflow.conf "$nginx_backup"
-  rm -f -- /etc/nginx/conf.d/devflow.conf
-  if nginx -t; then
-    rm -f -- "$nginx_backup"
-    systemctl reload nginx
-  else
-    mv -f -- "$nginx_backup" /etc/nginx/conf.d/devflow.conf
-    nginx -t || true
-    die 'A remoção invalidaria o Nginx; a configuração DevFlow foi restaurada.'
-  fi
-fi
+remove_host_nginx_config /etc/nginx/conf.d/devflow.conf \
+  '# Managed by DevFlow installer. Do not merge with another application.' \
+  "$DEVFLOW_INSTALL_ROOT/backups/proxy"
 
 systemctl disable --now devflow-backup.timer >/dev/null 2>&1 || true
 rm -f -- /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer

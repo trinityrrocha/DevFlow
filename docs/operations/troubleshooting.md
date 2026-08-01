@@ -50,7 +50,26 @@ Não pare o proprietário da porta. Escolha `shared` com portas loopback livres 
 
 ## `fullpassword_nginx` detectado
 
-Esse resultado é um gate, não um erro a contornar. O instalador não modifica o container. Prepare um ponto de extensão persistente e reversível conforme o [guia de VPS](../infrastructure/vps-installation.md#6-coexistência-com-full-password).
+Esse resultado é um gate, não um erro a contornar. Autorize apenas o diagnóstico read-only e consulte:
+
+```bash
+sudo less /var/log/devflow/shared-proxy-diagnostic.log
+```
+
+O relatório contém somente inventário sanitizado. O instalador não modifica o container. Preserve o arquivo para análise conforme o [guia de VPS](../infrastructure/vps-installation.md#6-coexistência-com-full-password).
+
+O commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` foi ensaiado em VPS e parou corretamente nesse ponto. Não classifique o evento como instalação compartilhada aprovada.
+
+## Caddy detectado
+
+O suporte automático ainda não existe. A mensagem esperada é:
+
+```text
+Proxy Caddy detectado, mas a integração automática ainda não está disponível.
+A instalação foi interrompida sem alterações no proxy.
+```
+
+Não converta Caddyfile, certificados ou redes por tentativa. Use o relatório e aguarde um adaptador implementado e testado.
 
 ## Falha no Nginx
 
@@ -60,7 +79,9 @@ sudo systemctl status nginx
 sudo head -n 3 /etc/nginx/conf.d/devflow.conf
 ```
 
-O arquivo precisa começar com o marcador DevFlow. O instalador restaura a versão anterior quando uma candidata falha. Não edite configurações de outra aplicação.
+O arquivo deve começar com o marcador DevFlow. Promoção e remoção usam arquivo temporário no mesmo diretório, `nginx -t`, backup persistente em `/opt/devflow/backups/proxy` e rollback automático inclusive quando `systemctl reload nginx` falha.
+
+Não edite configurações de outra aplicação para contornar o diagnóstico.
 
 ## Certificado não emitido
 

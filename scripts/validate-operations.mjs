@@ -11,6 +11,8 @@ const install = read('scripts/install.sh');
 const bootstrap = read('scripts/bootstrap.sh');
 const update = read('scripts/update.sh');
 const restore = read('scripts/restore.sh');
+const diagnostic = read('scripts/detect-shared-proxy.sh');
+const proxyConfig = read('scripts/lib/proxy-config.sh');
 const changelog = read('CHANGELOG.md');
 
 if (!/^\d+\.\d+\.\d+-alpha$/.test(version)) throw new Error(`Versão alpha inválida: ${version}`);
@@ -45,6 +47,15 @@ if (bootstrap.includes('lib/common.sh') || bootstrap.includes('DEVFLOW_ENV_FILE'
 }
 if (!install.includes("public_remote='https://github.com/trinityrrocha/DevFlow.git'")) {
   throw new Error('Instalador não fixa o checkout operacional no HTTPS público.');
+}
+if (!install.includes('run_shared_proxy_diagnostic') || !install.includes('detect-shared-proxy.sh')) {
+  throw new Error('Instalador não exige diagnóstico antes do modo compartilhado.');
+}
+if (!diagnostic.includes('fullpassword-nginx') || !diagnostic.includes('caddy-container')) {
+  throw new Error('Política fail-closed de proxies containerizados está incompleta.');
+}
+if (!proxyConfig.includes('proxy_restore_transaction') || !proxyConfig.includes('remove_host_nginx_config')) {
+  throw new Error('Transação reversível do arquivo de proxy está incompleta.');
 }
 if (/git@github\.com|deploy[_ -]?key|GIT_SSH_COMMAND/i.test(update)) {
   throw new Error('Updater ainda possui dependência de autenticação privada.');

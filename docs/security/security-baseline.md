@@ -99,7 +99,9 @@ Auditoria é append-only para a aplicação. Alteração ou purga exige job admi
 - operador recebe proxy restrito ou operações allowlisted.
 - certificados montados somente leitura.
 - instalador falha diante de recursos sem propriedade comprovada e nunca executa prune global.
-- a detecção de `fullpassword_nginx` bloqueia integração automática; nenhum arquivo, rede, volume ou certificado vizinho é alterado.
+- a detecção de `fullpassword_nginx`, Nginx containerizado ou Caddy bloqueia integração automática; somente relatório sanitizado e confirmado pode ser criado, sem alterar arquivo, rede, volume, certificado ou serviço vizinho;
+- o PostgreSQL permanece exclusivamente em `devflow_internal`; proxy, frontend e edge não recebem acesso à rede do banco;
+- a rota exclusiva do Nginx do host é promovida atomicamente e restaurada em falha de sintaxe ou reload;
 - bootstrap público valida HTTPS canônico, `main`, commit remoto, `VERSION`, integridade Git e equivalência do próprio bootstrap antes de chamar o instalador;
 - updater aceita somente o HTTPS público de `trinityrrocha/DevFlow`, `main`, fast-forward, checkout root limpo e hooks desabilitados;
 - instalação e atualização na VPS não dependem de token, deploy key, chave SSH ou autenticação GitHub;

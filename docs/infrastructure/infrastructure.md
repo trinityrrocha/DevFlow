@@ -15,7 +15,7 @@ flowchart LR
     B --> S[(storage)]
 ```
 
-No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado, o Nginx do host mantém 80/443 e os serviços DevFlow publicam somente em loopback. Um Nginx containerizado de terceiros não é integrado automaticamente.
+No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado homologável nesta versão, o Nginx do host mantém 80/443 e os serviços DevFlow publicam somente em loopback. Um Nginx containerizado ou Caddy é inventariado, mas não integrado automaticamente.
 
 ## Serviços
 
@@ -31,9 +31,9 @@ Worker e fila não existem nesta baseline; não são descritos como concluídos.
 
 ## Redes, volumes e portas
 
-O Compose usa a rede privada `devflow_internal`, sem publicar PostgreSQL. Os binds de banco e storage apontam para diretórios persistentes fora das releases. No desenvolvimento local, os valores padrão usam volumes nomeados.
+O Compose usa `devflow_edge` para tráfego de aplicação e `devflow_internal` para banco/backend. A rede interna não oferece acesso direto externo e o PostgreSQL não publica portas. Os binds de banco e storage apontam para diretórios persistentes fora das releases; no desenvolvimento local, os valores padrão usam volumes nomeados.
 
-No modo compartilhado, frontend e backend ficam em `127.0.0.1` nas portas configuradas. No isolado, somente o edge publica 80/443.
+No modo compartilhado, frontend e backend ficam em `127.0.0.1` nas portas configuradas. No isolado, somente o edge publica 80/443. `devflow_edge` conecta frontend, backend e edge; `devflow_internal` é marcada como interna e conecta somente backend e PostgreSQL. O banco não participa da rede de borda.
 
 ## Configuração e segredos
 
@@ -45,7 +45,7 @@ Cada instalação arquiva o commit Git em `/opt/devflow/releases/<sha>`. O link 
 
 O instalador cria `/opt/devflow/source`, checkout operacional de `main` pertencente a `root`, sem hooks e sem permissão de escrita para grupo/terceiros. Ele existe somente para fetch e fast-forward de commits publicados pelo desenvolvimento Windows. O remote é o HTTPS público canônico e não utiliza credenciais.
 
-Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443; no compartilhado, somente o virtual host DevFlow é substituído depois de `nginx -t`.
+Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443; no compartilhado suportado, somente o arquivo DevFlow é substituído atomicamente depois de `nginx -t`. Falha de reload restaura e recarrega a configuração anterior.
 
 ## HTTPS
 

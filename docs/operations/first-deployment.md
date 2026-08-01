@@ -31,9 +31,15 @@ sudo ./install.sh --install \
 
 Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.2.0-alpha`.
 
-Para Nginx do host, substitua por `--proxy-mode shared` e confirme as portas loopback planejadas.
+Para Nginx do host, substitua por `--proxy-mode shared` e confirme as portas loopback planejadas. O instalador pedirá autorização separada para o diagnóstico read-only. Só prossiga se o resultado for `Integração automática compatível.`
+
+Se o diagnóstico identificar `fullpassword_nginx`, outro Nginx containerizado ou Caddy, preserve `/var/log/devflow/shared-proxy-diagnostic.log` e encerre o ensaio. Não conecte redes, copie arquivos ou recarregue o proxy manualmente.
+
+O ensaio do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` terminou nesse gate após detectar `fullpassword_nginx`. Nenhuma integração foi realizada e o modo compartilhado não foi aprovado.
 
 ## Aceite mínimo
+
+O aceite só se aplica quando a instalação chega aos health checks. Uma interrupção fail-closed é evidência de proteção, não instalação aprovada.
 
 ```bash
 curl --fail --silent https://devflow.exemplo.com/

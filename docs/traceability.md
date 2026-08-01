@@ -44,6 +44,23 @@
 | Bootstrap público | `../scripts/bootstrap.sh` |
 | Estado alpha | `implementation-status.md` e README |
 | Documento 004 não iniciado | `implementation-status.md` e roadmap |
+| Diagnóstico de proxy compartilhado | `../scripts/detect-shared-proxy.sh` e `/var/log/devflow/shared-proxy-diagnostic.log` |
+| Redes separadas | `../docker-compose.yml`: `devflow_edge` e `devflow_internal` |
+| Configuração Nginx transacional | `../scripts/lib/proxy-config.sh` |
+| Testes do modo compartilhado | `../tests/integration/shared-proxy.test.sh` e `../scripts/validate-shared-proxy.mjs` |
+
+## Correção do instalador compartilhado
+
+| Requisito | Evidência |
+|---|---|
+| Ensaio real registrado | commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` em `implementation-status.md` |
+| Detecção read-only | inspect, `nginx -T`, `nginx -t` e network inspect em `../scripts/detect-shared-proxy.sh` |
+| Full Password preservado | política `fullpassword-nginx` retorna bloqueio antes do plano de instalação |
+| Caddy não anunciado | política explícita `caddy-host`/`caddy-container` bloqueada |
+| Relatório sanitizado | `/var/log/devflow/shared-proxy-diagnostic.log`, modo `0600` |
+| Aplicação atômica | arquivo exclusivo, backup, validação, reload e rollback em `../scripts/lib/proxy-config.sh` |
+| Remoção reversível | `remove_host_nginx_config` remove somente a rota com marcador DevFlow |
+| Dados isolados | banco somente em `devflow_internal`; borda separada em `devflow_edge` |
 
 ## Mecanismo de atualização 0.2.0-alpha
 

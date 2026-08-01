@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/proxy-config.sh
+. "$SCRIPT_DIR/lib/proxy-config.sh"
 
 MODE=check
 MODE_EXPLICIT=false
@@ -42,8 +44,17 @@ Opções:
   --api-port PORT           backend em loopback no modo shared (padrão 13000)
   --help                    mostra esta ajuda
 
-O modo shared integra somente com Nginx do host. A presença de fullpassword_nginx
-causa parada segura, pois a persistência do drop-in deve ser preparada manualmente.
+Modo de proxy:
+
+  isolated
+    Instalação independente com proxy, containers, redes, volumes, banco e
+    certificados próprios. Recomendada para servidor limpo.
+
+  shared
+    Mantém containers, volumes, banco e storage próprios. Somente o proxy e,
+    quando comprovadamente segura, uma rede de borda podem ser compartilhados.
+    Nenhuma configuração existente é sobrescrita. A integração automática atual
+    é limitada ao Nginx do host; Nginx containerizado e Caddy permanecem bloqueados.
 EOF
 }
 
@@ -94,13 +105,36 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 fullpassword_container=
+shared_proxy_container=
 devflow_containers=0
 config_state=absent
 proxy_detected=none
-command -v nginx >/dev/null 2>&1 && proxy_detected=host-nginx
+if command -v caddy >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+  proxy_detected=caddy-host
+elif command -v nginx >/dev/null 2>&1; then
+  proxy_detected=host-nginx
+fi
 if [[ "$docker_version" != daemon-unavailable && "$docker_state" == present ]]; then
   fullpassword_container="$(docker ps -a --filter name='^/fullpassword_nginx$' --format '{{.Names}}' | head -n1)"
-  [[ -z "$fullpassword_container" ]] || proxy_detected=fullpassword_nginx
+  if [[ -n "$fullpassword_container" ]]; then
+    shared_proxy_container="$fullpassword_container"
+    proxy_detected=fullpassword_nginx
+  else
+    while IFS='|' read -r container_name container_image; do
+      [[ "$container_name $container_image" =~ [Cc]addy|[Nn]ginx ]] || continue
+      if [[ -n "$shared_proxy_container" ]]; then
+        proxy_detected=multiple-container-proxies
+        shared_proxy_container=
+        break
+      fi
+      shared_proxy_container="$container_name"
+      if [[ "$container_name $container_image" =~ [Cc]addy ]]; then
+        proxy_detected=caddy-container
+      else
+        proxy_detected=nginx-container
+      fi
+    done < <(docker ps -a --format '{{.Names}}|{{.Image}}')
+  fi
   devflow_containers="$(docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" --format '{{.ID}}' | wc -l | tr -d ' ')"
 fi
 
@@ -150,8 +184,40 @@ if [[ "$compose_state" == present ]]; then
   version_at_least "$compose_version" 2.20 || die "Docker Compose $compose_version é incompatível; mínimo 2.20."
 fi
 
-if [[ -n "$fullpassword_container" && "$MODE" != check ]]; then
-  die 'fullpassword_nginx detectado. A integração containerizada persistente não pode ser comprovada automaticamente; consulte docs/infrastructure/vps-installation.md.'
+run_shared_proxy_diagnostic() {
+  local -a diagnostic_args=(--domain "$DOMAIN" --http-port "$HTTP_PORT" --api-port "$API_PORT")
+  local diagnostic_status=0 report=/var/log/devflow/shared-proxy-diagnostic.log answer
+  [[ -z "$shared_proxy_container" ]] || diagnostic_args+=(--container "$shared_proxy_container")
+
+  cat <<'EOF'
+O DevFlow irá analisar o proxy existente em modo somente leitura.
+
+Nenhum container, arquivo, certificado ou serviço será alterado
+até que uma integração persistente e reversível seja comprovada.
+EOF
+  if [[ "$MODE" == install ]]; then
+    [[ -t 0 ]] || die 'O diagnóstico compartilhado exige confirmação em terminal interativo.'
+    read -r -p 'Deseja executar o diagnóstico? [s/N] ' answer
+    [[ "$answer" == s || "$answer" == S ]] || die 'Diagnóstico cancelado. Nenhuma alteração foi realizada.'
+    require_root
+    diagnostic_args+=(--output "$report")
+  fi
+
+  if "$SCRIPT_DIR/detect-shared-proxy.sh" "${diagnostic_args[@]}"; then
+    echo 'Integração automática compatível.'
+    return 0
+  else
+    diagnostic_status=$?
+    echo 'Integração automática não comprovada.'
+    echo 'Nenhuma alteração foi realizada no proxy.'
+    [[ "$MODE" != install ]] || echo "Consulte o relatório gerado: $report"
+    return "$diagnostic_status"
+  fi
+}
+
+if [[ "$MODE" != check && "$PROXY_MODE" == shared ]]; then
+  run_shared_proxy_diagnostic \
+    || die 'O modo compartilhado permaneceu bloqueado por segurança; consulte o diagnóstico.'
 fi
 
 if [[ "$MODE" != check ]]; then
@@ -197,6 +263,10 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
     owner="$(docker network inspect devflow_devflow_internal --format '{{index .Labels "com.docker.compose.project"}}')"
     [[ "$owner" == "$DEVFLOW_PROJECT" ]] || die 'Rede devflow_devflow_internal pertence a outro projeto.'
   fi
+  if docker network inspect devflow_devflow_edge >/dev/null 2>&1; then
+    owner="$(docker network inspect devflow_devflow_edge --format '{{index .Labels "com.docker.compose.project"}}')"
+    [[ "$owner" == "$DEVFLOW_PROJECT" ]] || die 'Rede devflow_devflow_edge pertence a outro projeto.'
+  fi
 fi
 
 cat <<EOF
@@ -218,7 +288,7 @@ EOF
 if [[ "$MODE" == check ]]; then
   [[ "$docker_version" != daemon-unavailable ]] || log WARN 'Docker ausente ou daemon indisponível.'
   [[ "$compose_state" == present ]] || log WARN 'Docker Compose v2 ausente.'
-  [[ -z "$fullpassword_container" ]] || log WARN 'O modo compartilhado containerizado exigirá preparação manual e persistente.'
+  [[ -z "$fullpassword_container" ]] || log WARN 'fullpassword_nginx exige o diagnóstico compartilhado e permanece bloqueado para integração automática.'
   log INFO 'Diagnóstico concluído sem alterações.'
   exit 0
 fi
@@ -226,7 +296,7 @@ fi
 cat <<EOF
 Ações planejadas:
   - instalar Docker Engine pelo repositório oficial apenas se estiver ausente;
-  - instalar Certbot e, no modo shared, Nginx do host apenas se estiverem ausentes;
+  - instalar Certbot; o modo shared exige Nginx do host já comprovado pelo diagnóstico;
   - criar somente diretórios e recursos do projeto Compose devflow;
   - manter segredos em $DEVFLOW_ENV_FILE com permissão 600;
   - iniciar o banco, executar migrations reais e então subir a aplicação;
@@ -261,28 +331,6 @@ installation_failed() {
   exit "$exit_code"
 }
 trap installation_failed ERR
-
-promote_nginx_config() {
-  local candidate="$1" backup=
-  if [[ -e "$NGINX_CONFIG" ]]; then
-    managed_file "$NGINX_CONFIG" "$MANAGED_MARKER" || die "$NGINX_CONFIG pertence a outro sistema."
-    backup="$(mktemp /etc/nginx/conf.d/.devflow-backup.XXXXXX)"
-    cp -a -- "$NGINX_CONFIG" "$backup"
-  fi
-  install -m 0644 "$candidate" "$NGINX_CONFIG"
-  if ! nginx -t; then
-    if [[ -n "$backup" ]]; then
-      mv -f -- "$backup" "$NGINX_CONFIG"
-    else
-      rm -f -- "$NGINX_CONFIG"
-    fi
-    rm -f -- "$candidate"
-    nginx -t || true
-    die 'A configuração Nginx candidata foi rejeitada; a configuração anterior foi restaurada.'
-  fi
-  rm -f -- "$candidate" "$backup"
-  systemctl reload nginx
-}
 
 install_docker_official() {
   log INFO 'Instalando Docker Engine pelo repositório oficial.' | tee -a "$INSTALL_LOG"
@@ -320,7 +368,6 @@ version_at_least "$installed_compose_version" 2.20 || die "Compose instalado inc
 
 export DEBIAN_FRONTEND=noninteractive
 packages=(certbot openssl)
-[[ "$PROXY_MODE" == shared ]] && packages+=(nginx)
 missing_packages=()
 for package in "${packages[@]}"; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing_packages+=("$package")
@@ -329,7 +376,8 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
   apt-get update
   apt-get install -y "${missing_packages[@]}"
 fi
-[[ "$PROXY_MODE" != shared ]] || systemctl enable --now nginx
+[[ "$PROXY_MODE" != shared ]] || { command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; } \
+  || die 'O Nginx do host deixou de estar disponível após o diagnóstico.'
 
 if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
   [[ -r "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die 'Certificado existente sem chave privada correspondente.'
@@ -480,7 +528,7 @@ if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
       -e "s/__DEVFLOW_HTTP_PORT__/$HTTP_PORT/g" \
       -e "s/__DEVFLOW_API_PORT__/$API_PORT/g" \
       "$release_dir/docker/nginx/host-acme.conf.template" > "$temp_config"
-    promote_nginx_config "$temp_config"
+    promote_host_nginx_config "$temp_config" "$NGINX_CONFIG" "$MANAGED_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
     certbot certonly --webroot -w /var/www/letsencrypt -d "$DOMAIN" \
       --email "$LETSENCRYPT_EMAIL" --agree-tos --non-interactive
   fi
@@ -495,7 +543,7 @@ else
     -e "s/__DEVFLOW_HTTP_PORT__/$HTTP_PORT/g" \
     -e "s/__DEVFLOW_API_PORT__/$API_PORT/g" \
     "$release_dir/docker/nginx/host-shared.conf.template" > "$temp_config"
-  promote_nginx_config "$temp_config"
+  promote_host_nginx_config "$temp_config" "$NGINX_CONFIG" "$MANAGED_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
 fi
 
 curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/api/health" >/dev/null

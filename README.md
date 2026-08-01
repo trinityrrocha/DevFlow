@@ -71,10 +71,14 @@ O guia completo está em [instalação na VPS](docs/infrastructure/vps-installat
 
 ## Modos de infraestrutura
 
-- `DEVFLOW_PROXY_MODE=isolated`: o container `edge` do DevFlow é o único dono das portas 80/443.
-- `DEVFLOW_PROXY_MODE=shared`: o Nginx do host recebe somente `/etc/nginx/conf.d/devflow.conf`; frontend e API ficam vinculados a `127.0.0.1`.
+- `DEVFLOW_PROXY_MODE=isolated`: instalação independente, recomendada para servidor limpo. Proxy, containers, redes, volumes, banco e certificados pertencem somente ao DevFlow.
+- `DEVFLOW_PROXY_MODE=shared`: containers, volumes, banco e storage continuam exclusivos do DevFlow. A integração automática atual compartilha apenas um Nginx do host comprovadamente persistente; frontend e API ficam vinculados a `127.0.0.1`.
 
-A escolha é sempre explícita. Se `fullpassword_nginx` for detectado, o instalador para sem modificá-lo: a baseline não consegue provar um ponto de extensão persistente dentro desse container. A coexistência requer preparação manual reversível, descrita no guia de VPS.
+A rede `devflow_edge` contém somente frontend, backend e edge; `devflow_internal` é interna e contém somente PostgreSQL e backend. O proxy nunca recebe acesso à rede do banco.
+
+A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e reload sem alterá-los. `fullpassword_nginx`, Nginx containerizado e Caddy continuam fail-closed até existir adaptador persistente, reversível e testado. O relatório sanitizado fica em `/var/log/devflow/shared-proxy-diagnostic.log`.
+
+O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, detectou `fullpassword_nginx` e foi interrompido antes de qualquer integração insegura. Esse resultado valida o bloqueio, não a instalação compartilhada.
 
 ## Configuração
 

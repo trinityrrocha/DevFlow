@@ -45,7 +45,7 @@ Escolha explicitamente o proxy e valide o plano:
   --super-admin-email admin@exemplo.com
 ```
 
-Troque `isolated` por `shared` apenas se o Nginx do host for o ingress escolhido. O modo compartilhado não é inferido automaticamente.
+Troque `isolated` por `shared` somente quando já existir um proxy. O modo compartilhado não é inferido automaticamente e não compartilha containers, volumes, banco ou storage. A integração automática desta versão é limitada ao Nginx do host; Caddy e proxies containerizados são somente diagnosticados e bloqueados.
 
 Também é possível executar `sudo ./install.sh` sem argumentos. Nesse caso, o bootstrap pergunta domínio, e-mails, modo de proxy e confirmação antes de qualquer mudança permanente.
 
@@ -103,13 +103,28 @@ sudo ./install.sh --install \
   --api-port 13000
 ```
 
-O instalador cria somente `/etc/nginx/conf.d/devflow.conf`. Se esse caminho existir sem o marcador DevFlow, ele para. Toda candidata passa por `nginx -t`; em falha, o arquivo anterior é restaurado. O reload ocorre somente depois da validação.
+Antes do plano, o instalador pede autorização específica para executar um diagnóstico somente leitura. O relatório sanitizado é salvo em `/var/log/devflow/shared-proxy-diagnostic.log` e registra tipo, container, imagem, status, health, portas, redes, mounts, includes, certificados, reload, compatibilidade e bloqueios. Nenhuma chave, senha, token ou conteúdo do ambiente é coletado.
+
+Somente um Nginx do host é aceito automaticamente, e apenas quando `nginx -t`, include persistente de `/etc/nginx/conf.d/*.conf`, mecanismo de certificado, reload, domínio e portas forem comprovados. O instalador cria exclusivamente `/etc/nginx/conf.d/devflow.conf`. Durante ACME, apenas o challenge é servido e todo o restante responde `503`; o proxy da aplicação só é publicado depois dos health checks internos. A aplicação é atômica, guarda backup em `/opt/devflow/backups/proxy`, valida antes e depois, e restaura o arquivo anterior inclusive quando o reload falha.
 
 Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include persistente e documentado antes de executar o instalador. Não modifique arquivos de outra aplicação.
 
 ## 6. Coexistência com Full Password
 
-Se existir um container chamado `fullpassword_nginx`, a instalação para antes de qualquer integração. A baseline não usa `docker cp`, não conecta redes no container vizinho, não altera certificado e não executa reload nele.
+Se existir um container chamado `fullpassword_nginx`, o instalador oferece o diagnóstico read-only e depois mantém a instalação bloqueada. A baseline não usa `docker cp`, não conecta redes no container vizinho, não altera certificado e não executa reload nele.
+
+O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção de `fullpassword_nginx` interrompeu o fluxo antes de qualquer integração insegura. Isso não representa instalação aprovada nem homologação do modo compartilhado.
+
+Para repetir somente o inventário a partir de um checkout confiável:
+
+```bash
+sudo ./scripts/detect-shared-proxy.sh \
+  --container fullpassword_nginx \
+  --domain devflow.exemplo.com \
+  --output /var/log/devflow/shared-proxy-diagnostic.log
+```
+
+O código de saída `2` significa que a compatibilidade não foi comprovada; não desabilite esse gate.
 
 Para coexistir com segurança, o administrador da VPS deve preparar fora do container um ponto persistente que satisfaça todos estes gates:
 
@@ -121,7 +136,7 @@ Para coexistir com segurança, o administrador da VPS deve preparar fora do cont
 - probes do Full Password antes e depois;
 - rollback do arquivo DevFlow sem reiniciar o Full Password.
 
-Depois disso, a integração deve ser feita manualmente ou por um adaptador aprovado em fase posterior. Nunca improvise alteração dentro do container.
+Depois disso, o relatório deve ser analisado e um adaptador específico implementado e testado em fase posterior. Não improvise alteração manual dentro do container.
 
 ## 7. Diretórios e persistência
 
@@ -200,6 +215,7 @@ O updater aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout 
 - sem interface web administrativa para o updater;
 - rollback automático implementado, mas ainda sem fault-injection e restore drill na VPS;
 - sem laboratório publicado de coexistência com `fullpassword_nginx`;
+- integração automática com Caddy e Nginx containerizado ainda indisponível;
 - sem prova de renovação automática do certificado;
 - sem matriz completa de distribuição/arquitetura em CI;
 - sem teste E2E, restore drill, pentest ou aprovação para produção.

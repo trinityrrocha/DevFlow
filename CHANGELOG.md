@@ -6,6 +6,9 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ### Adicionado
 
+- diagnóstico sanitizado e somente leitura de proxy compartilhado, com inventário de containers, mounts, redes, configuração efetiva, certificados e mecanismo de reload;
+- rede de borda `devflow_edge` separada da rede interna do PostgreSQL;
+- testes automatizados da política compartilhada e das transações de configuração Nginx;
 - bootstrap público standalone com download seguro, checkout temporário, validação de origem, commit e `VERSION`;
 - auditoria automatizada de todos os commits, objetos e blobs alcançáveis do histórico Git;
 - atualização segura por release imutável, com consulta da versão disponível na `main` do GitHub;
@@ -20,6 +23,8 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ### Alterado
 
+- modos isolado e compartilhado passam a explicar explicitamente que containers, volumes, banco e storage do DevFlow permanecem próprios;
+- promoção e remoção do arquivo exclusivo `devflow.conf` passam a ser atômicas, com backup e rollback também em falha de reload;
 - instalação e atualização passam a utilizar HTTPS público sem credenciais na VPS;
 - relatório inicial registra versão, commit, branch, data, URL do repositório e canal de atualização;
 - `install.sh` passa a tratar exclusivamente instalação inicial;
@@ -28,6 +33,8 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ### Segurança
 
+- `fullpassword_nginx`, Nginx containerizado e Caddy permanecem bloqueados após diagnóstico enquanto a integração persistente não for comprovada;
+- o ensaio real do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` foi interrompido antes de qualquer alteração no Full Password;
 - abertura pública condicionada à auditoria do checkout e do histórico, sem licença escolhida automaticamente;
 - atualização restrita ao repositório `trinityrrocha/DevFlow`, branch `main`, fast-forward e checkout limpo;
 - lock exclusivo impede atualizações concorrentes;

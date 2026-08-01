@@ -13,9 +13,10 @@
     "lint": "pnpm --filter ./backend lint && pnpm --filter ./frontend lint",
     "validate:compose": "node scripts/validate-compose.mjs",
     "validate:operations": "node scripts/validate-operations.mjs",
+    "validate:shared-proxy": "node scripts/validate-shared-proxy.mjs",
     "audit:repository": "node scripts/repository-audit.mjs",
     "audit:history": "node scripts/history-audit.mjs",
-    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm audit:repository && pnpm audit:history"
+    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm validate:shared-proxy && pnpm audit:repository && pnpm audit:history"
   },
   "packageManager": "pnpm@10.15.0",
   "engines": {

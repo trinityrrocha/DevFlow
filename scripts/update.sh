@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/proxy-config.sh
+. "$SCRIPT_DIR/lib/proxy-config.sh"
 
 CHECK_ONLY=false
 while [[ $# -gt 0 ]]; do
@@ -207,22 +209,6 @@ render_host_proxy() {
     "$root/docker/nginx/$template" > "$output"
 }
 
-promote_nginx_config() {
-  local candidate="$1" backup
-  [[ -f "$NGINX_CONFIG" && "$(head -n1 "$NGINX_CONFIG")" == "$NGINX_MARKER" ]] || return 1
-  backup="$(mktemp /tmp/devflow-nginx-update-backup.XXXXXX)"
-  cp -a -- "$NGINX_CONFIG" "$backup"
-  install -m 0644 "$candidate" "$NGINX_CONFIG"
-  if ! nginx -t; then
-    mv -f -- "$backup" "$NGINX_CONFIG"
-    nginx -t || true
-    rm -f -- "$candidate"
-    return 1
-  fi
-  rm -f -- "$candidate" "$backup"
-  systemctl reload nginx
-}
-
 maintenance_http_ok() {
   local status
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
@@ -236,7 +222,7 @@ enter_maintenance() {
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
     candidate="$(mktemp /tmp/devflow-host-maintenance.XXXXXX)"
     render_host_proxy "$root" host-maintenance.conf.template "$candidate"
-    promote_nginx_config "$candidate"
+    promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
   else
     set_compose_for "$OLD_RELEASE_DIR"
     "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
@@ -257,7 +243,7 @@ restore_proxy_for() {
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
     candidate="$(mktemp /tmp/devflow-host-proxy.XXXXXX)"
     render_host_proxy "$root" host-shared.conf.template "$candidate"
-    promote_nginx_config "$candidate"
+    promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
   else
     maintenance_compose_for "$CANDIDATE_DIR"
     "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" down --remove-orphans

@@ -106,7 +106,36 @@ prompt_value() {
 prompt_proxy_mode() {
   [[ -n "$PROXY_MODE" ]] && return 0
   [[ -t 0 ]] || die 'Informe --proxy-mode em execução não interativa.'
-  printf 'Modo de proxy:\n  1 - Isolado\n  2 - Compartilhado\n'
+  cat <<'EOF'
+Modo de proxy:
+
+  1 - Isolado
+      Instalação independente, recomendada para servidor limpo
+      ou quando o DevFlow não deve compartilhar proxy.
+
+      Serão utilizados:
+      - proxy próprio;
+      - containers próprios;
+      - rede Docker própria;
+      - volumes próprios;
+      - banco próprio;
+      - certificados HTTPS próprios.
+
+  2 - Compartilhado
+      Instalação em servidor que já possui proxy Nginx ou Caddy.
+
+      O DevFlow continuará utilizando:
+      - containers próprios;
+      - volumes próprios;
+      - banco próprio;
+      - storage próprio.
+
+      Somente o proxy e, quando necessário, uma rede Docker
+      compatível poderão ser compartilhados.
+
+      Nenhuma configuração existente será sobrescrita.
+      A integração automática atual é limitada ao Nginx do host.
+EOF
   read -r -p 'Escolha [1/2]: ' proxy_choice
   case "$proxy_choice" in
     1) PROXY_MODE=isolated ;;
