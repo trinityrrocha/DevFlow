@@ -1,0 +1,10 @@
+process.env.NODE_ENV = 'test';
+process.env.APP_ORIGIN = 'http://localhost:5173';
+process.env.DB_HOST = 'localhost';
+process.env.DB_USER = 'devflow_test';
+process.env.DB_PASSWORD = 'devflow_test_password';
+process.env.DB_NAME = 'devflow_test';
+process.env.JWT_SECRET = 'a'.repeat(64);
+process.env.ADMIN_BOOTSTRAP_TOKEN = 'b'.repeat(48);
+process.env.CONFIG_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
+process.env.SUPER_ADMIN_EMAIL = 'admin@example.com';

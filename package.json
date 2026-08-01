@@ -1,0 +1,25 @@
+{
+  "name": "devflow",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./backend --filter ./frontend dev",
+    "build": "pnpm --filter ./frontend build",
+    "test": "pnpm --filter ./backend test && pnpm --filter ./frontend test",
+    "lint": "pnpm --filter ./backend lint && pnpm --filter ./frontend lint",
+    "validate:compose": "node scripts/validate-compose.mjs",
+    "audit:repository": "node scripts/repository-audit.mjs",
+    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm audit:repository"
+  },
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.1"
+  }
+}

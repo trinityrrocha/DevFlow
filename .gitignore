@@ -1,0 +1,44 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+devflow.env
+*.secrets
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# Runtime data
+*.log
+logs/
+tmp/
+temp/
+backups/
+releases/
+data/
+storage/
+*.dfbackup
+*.dump
+*.sql.gz
+*.backup
+certificates/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Generated infrastructure files
+docker/nginx/runtime/
+install-plan.json
+install-state.json

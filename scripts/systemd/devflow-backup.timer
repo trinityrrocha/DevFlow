@@ -1,0 +1,12 @@
+# Managed by DevFlow installer.
+[Unit]
+Description=Agendamento do backup diário do DevFlow
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=devflow-backup.service
+
+[Install]
+WantedBy=timers.target

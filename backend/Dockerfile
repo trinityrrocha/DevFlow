@@ -1,0 +1,24 @@
+FROM node:22-alpine AS dependencies
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY backend/package.json ./backend/package.json
+RUN pnpm install --filter @devflow/backend --prod --frozen-lockfile
+
+FROM node:22-alpine
+RUN apk add --no-cache tini
+WORKDIR /app/backend
+ENV NODE_ENV=production
+COPY --from=dependencies /app/node_modules /app/node_modules
+COPY --from=dependencies /app/backend/node_modules /app/backend/node_modules
+COPY backend/package.json ./package.json
+COPY backend/src ./src
+COPY backend/scripts ./scripts
+COPY database /database
+RUN addgroup -S devflow && adduser -S -G devflow devflow \
+    && mkdir -p /var/lib/devflow/uploads \
+    && chown -R devflow:devflow /app /var/lib/devflow
+USER devflow
+EXPOSE 3000
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["sh", "-c", "MIGRATIONS_DIR=/database/migrations node scripts/migrate.js && node src/server.js"]

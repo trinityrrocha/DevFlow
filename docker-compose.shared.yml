@@ -1,0 +1,16 @@
+services:
+  backend:
+    ports:
+      - "${DEVFLOW_BIND_ADDRESS:-127.0.0.1}:${DEVFLOW_API_PORT:-13000}:3000"
+    networks:
+      devflow_internal:
+        aliases:
+          - devflow-backend
+
+  frontend:
+    ports:
+      - "${DEVFLOW_BIND_ADDRESS:-127.0.0.1}:${DEVFLOW_HTTP_PORT:-18080}:80"
+    networks:
+      devflow_internal:
+        aliases:
+          - devflow-frontend
