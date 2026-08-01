@@ -43,7 +43,7 @@ O contrato versionado é `.env.example`. Na VPS, `/opt/devflow/config/devflow.en
 
 Cada instalação arquiva o commit Git em `/opt/devflow/releases/<sha>`. O link `app.candidate` identifica a candidata durante build, migration e healthchecks; `app` só muda depois do sucesso interno. Se um gate posterior falhar, o backup e a release anterior são restaurados automaticamente.
 
-O instalador cria `/opt/devflow/source`, checkout operacional de `main` pertencente a `root`, sem hooks e sem permissão de escrita para grupo/terceiros. Ele existe somente para fetch e fast-forward de commits publicados pelo desenvolvimento Windows. Credenciais de leitura do repositório privado permanecem fora do Git e do ambiente da aplicação.
+O instalador cria `/opt/devflow/source`, checkout operacional de `main` pertencente a `root`, sem hooks e sem permissão de escrita para grupo/terceiros. Ele existe somente para fetch e fast-forward de commits publicados pelo desenvolvimento Windows. O remote é o HTTPS público canônico e não utiliza credenciais.
 
 Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443; no compartilhado, somente o virtual host DevFlow é substituído depois de `nginx -t`.
 

@@ -66,12 +66,13 @@ Estado: baseline publicada e mecanismo de update implementado localmente; ensaio
 
 - versão `0.2.0-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
+- bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;
 - diagnóstico sanitizado;
 - backup, restore e desinstalação preservando dados por padrão;
 - documentação operacional e de VPS;
 - auditoria de arquivos, links, caminhos e segredos;
-- primeiro repositório privado em `trinityrrocha/DevFlow`;
+- repositório inicialmente privado e posteriormente aberto em `trinityrrocha/DevFlow` após auditoria histórica;
 - primeiro commit direto na `main`, sem tag, release, PR ou force push;
 - ensaio em VPS de homologação.
 

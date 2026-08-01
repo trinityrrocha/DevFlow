@@ -244,6 +244,10 @@ write_install_report() {
     printf 'DevFlow installation report\n'
     printf 'timestamp=%s\n' "$(timestamp)"
     printf 'version=%s\n' "$DEVFLOW_VERSION"
+    printf 'commit=%s\n' "${DEVFLOW_RELEASE_COMMIT:-unknown}"
+    printf 'ref=%s\n' "${DEVFLOW_RELEASE_REF:-unknown}"
+    printf 'repository=%s\n' "${DEVFLOW_REPOSITORY_URL:-unknown}"
+    printf 'update_channel=%s\n' "${DEVFLOW_UPDATE_CHANNEL:-${UPDATE_CHANNEL:-unknown}}"
     printf 'result=%s\n' "$result"
     printf 'proxy_mode=%s\n' "${DEVFLOW_PROXY_MODE:-unknown}"
     printf 'domain=%s\n' "${DEVFLOW_DOMAIN:-unknown}"

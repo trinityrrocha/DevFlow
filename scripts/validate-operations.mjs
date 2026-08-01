@@ -8,6 +8,7 @@ const rootPackage = JSON.parse(read('package.json'));
 const backendPackage = JSON.parse(read('backend/package.json'));
 const frontendPackage = JSON.parse(read('frontend/package.json'));
 const install = read('scripts/install.sh');
+const bootstrap = read('scripts/bootstrap.sh');
 const update = read('scripts/update.sh');
 const restore = read('scripts/restore.sh');
 const changelog = read('CHANGELOG.md');
@@ -23,6 +24,30 @@ for (const [name, value] of [
 if (!changelog.includes(`## [${version}]`)) throw new Error('Changelog da versão atual ausente.');
 if (/--update|MODE.*update|install\.sh --update/.test(install)) {
   throw new Error('install.sh ainda contém responsabilidade de atualização.');
+}
+for (const [label, fragment] of [
+  ['repositório público', "REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'"],
+  ['diretório temporário', 'mktemp -d'],
+  ['clone público', 'git clone'],
+  ['validação de commit remoto', 'REMOTE_COMMIT'],
+  ['validação VERSION', 'EXPECTED_VERSION'],
+  ['limpeza', 'trap cleanup EXIT'],
+  ['instalador interno', 'scripts/install.sh'],
+  ['confirmação', 'Deseja iniciar a instalação? [s/N]'],
+]) {
+  if (!bootstrap.includes(fragment)) throw new Error(`Gate ausente no bootstrap: ${label}.`);
+}
+if (!bootstrap.includes(`EXPECTED_VERSION='${version}'`)) {
+  throw new Error('Bootstrap público diverge de VERSION.');
+}
+if (bootstrap.includes('lib/common.sh') || bootstrap.includes('DEVFLOW_ENV_FILE')) {
+  throw new Error('Bootstrap público depende indevidamente do checkout ou da configuração instalada.');
+}
+if (!install.includes("public_remote='https://github.com/trinityrrocha/DevFlow.git'")) {
+  throw new Error('Instalador não fixa o checkout operacional no HTTPS público.');
+}
+if (/git@github\.com|deploy[_ -]?key|GIT_SSH_COMMAND/i.test(update)) {
+  throw new Error('Updater ainda possui dependência de autenticação privada.');
 }
 
 const updaterGates = [

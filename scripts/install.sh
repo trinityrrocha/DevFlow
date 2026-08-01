@@ -236,8 +236,12 @@ EOF
 [[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
 
 require_root
-DEVFLOW_ASSUME_YES=false
-confirm_exact 'INSTALAR DEVFLOW' 'Autoriza a instalação inicial no host de homologação?'
+if [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
+  log INFO 'Confirmação explícita recebida pelo bootstrap público.'
+else
+  DEVFLOW_ASSUME_YES=false
+  confirm_exact 'INSTALAR DEVFLOW' 'Autoriza a instalação inicial no host de homologação?'
+fi
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
   "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
@@ -340,6 +344,9 @@ fi
 source_remote="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
 [[ "$source_remote" =~ ^(https://github\.com/|git@github\.com:)trinityrrocha/DevFlow(\.git)?$ ]] \
   || die 'O remote origin deve pertencer exatamente a trinityrrocha/DevFlow.'
+public_remote='https://github.com/trinityrrocha/DevFlow.git'
+[[ "$(tr -d '\r\n' < "$SOURCE_DIR/VERSION")" == "$DEVFLOW_RELEASE_VERSION" ]] \
+  || die 'VERSION diverge da versão carregada pelo instalador.'
 release_sha="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'A origem deve ser um checkout Git publicado.'
 [[ "$(git -C "$SOURCE_DIR" rev-parse refs/remotes/origin/main 2>/dev/null || true)" == "$release_sha" ]] \
@@ -359,19 +366,24 @@ operational_source_dir="$DEVFLOW_INSTALL_ROOT/source"
 if [[ ! -e "$operational_source_dir" ]]; then
   GIT_TERMINAL_PROMPT=0 git clone --no-local --branch main --single-branch \
     "$SOURCE_DIR" "$operational_source_dir"
-  git -C "$operational_source_dir" remote set-url origin "$source_remote"
+  git -C "$operational_source_dir" remote set-url origin "$public_remote"
   git -C "$operational_source_dir" config --local core.hooksPath /dev/null
 else
   [[ -d "$operational_source_dir/.git" ]] || die 'Checkout operacional existente não é um repositório Git.'
   [[ "$(git -C "$operational_source_dir" rev-parse HEAD 2>/dev/null || true)" == "$release_sha" ]] \
     || die 'Checkout operacional existente diverge da release inicial.'
-  [[ "$(git -C "$operational_source_dir" remote get-url origin 2>/dev/null || true)" == "$source_remote" ]] \
+  [[ "$(git -C "$operational_source_dir" remote get-url origin 2>/dev/null || true)" == "$public_remote" ]] \
     || die 'Checkout operacional existente possui remote divergente.'
   [[ "$(git -C "$operational_source_dir" config --local --get core.hooksPath 2>/dev/null || true)" == /dev/null ]] \
     || die 'Checkout operacional existente não possui hooks desabilitados.'
 fi
 chown -R root:root "$operational_source_dir"
 chmod -R go-w "$operational_source_dir"
+DEVFLOW_RELEASE_COMMIT="$release_sha"
+DEVFLOW_RELEASE_REF=main
+DEVFLOW_REPOSITORY_URL="$public_remote"
+DEVFLOW_UPDATE_CHANNEL=main
+export DEVFLOW_RELEASE_COMMIT DEVFLOW_RELEASE_REF DEVFLOW_REPOSITORY_URL DEVFLOW_UPDATE_CHANNEL
 
 if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   db_password="$(openssl rand -base64 48 | tr -d '\n')"

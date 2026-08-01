@@ -23,7 +23,7 @@
 | Roadmap | `roadmap.md` |
 | Estrutura base | diretórios backend, frontend, database, docker, scripts e tests |
 | Gate documental inicial | documentação concluída antes da baseline funcional, conforme histórico de implementação |
-| Publicação GitHub | destino exclusivo `trinityrrocha/DevFlow`, privado e branch `main` |
+| Publicação GitHub | destino exclusivo `trinityrrocha/DevFlow`, público e branch `main`, após auditoria histórica |
 
 ## Fase 3.5
 
@@ -40,6 +40,8 @@
 | Primeiro deployment | `operations/first-deployment.md` |
 | Troubleshooting | `operations/troubleshooting.md` |
 | Verificação pré-publicação | `../scripts/repository-audit.mjs` |
+| Auditoria de todo o histórico | `../scripts/history-audit.mjs` |
+| Bootstrap público | `../scripts/bootstrap.sh` |
 | Estado alpha | `implementation-status.md` e README |
 | Documento 004 não iniciado | `implementation-status.md` e roadmap |
 
@@ -58,6 +60,19 @@
 | Rollback automático | restauração de dados, código, containers, proxy e timers em `../scripts/update.sh` |
 | Log e relatório | `/opt/devflow/logs/update-*.log` e `/opt/devflow/data/update-report.txt` |
 | Instalador sem update | validação estrutural em `../scripts/validate-operations.mjs` |
+
+## Publicação pública
+
+| Requisito | Evidência |
+|---|---|
+| Download sem pipe remoto | comando `wget`, revisão local e execução separada no README |
+| Independência de clone prévio | `../scripts/bootstrap.sh` é standalone e cria checkout temporário |
+| Origem e commit comprovados | remote HTTPS exato, `main`, `ls-remote`, `fsck` e `VERSION` no bootstrap |
+| Atualização anônima | remote operacional HTTPS público validado em `../scripts/update.sh` |
+| Sem segredos atuais | `../scripts/repository-audit.mjs` |
+| Sem segredos históricos | `../scripts/history-audit.mjs` |
+| Metadados instalados | `/opt/devflow/data/install-report.txt` registra versão, commit, ref, URL, data e canal |
+| Licença | ausência declarada no README; direitos autorais padrão, sem licença escolhida automaticamente |
 
 ## Documento 002
 

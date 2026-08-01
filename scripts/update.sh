@@ -58,8 +58,8 @@ source_mode="$(stat -c '%a' "$SOURCE_DIR")"
 [[ "$(git -C "$SOURCE_DIR" branch --show-current)" == main ]] || die 'O checkout operacional deve estar na branch main.'
 [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || die 'O checkout operacional possui alterações locais.'
 remote_url="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
-[[ "$remote_url" =~ ^(https://github\.com/|git@github\.com:)trinityrrocha/DevFlow(\.git)?$ ]] \
-  || die 'O remote origin deve pertencer exatamente a trinityrrocha/DevFlow.'
+[[ "$remote_url" == 'https://github.com/trinityrrocha/DevFlow.git' ]] \
+  || die 'O remote origin deve ser o HTTPS público de trinityrrocha/DevFlow.'
 
 OLD_RELEASE_DIR="$(readlink -f "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
 validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release instalada'
@@ -94,13 +94,7 @@ if [[ "$CHECK_ONLY" == true ]]; then
   trap cleanup_remote_check EXIT INT TERM
   git -C "$TEMP_REMOTE_REPO" init --bare --quiet
   git -C "$TEMP_REMOTE_REPO" remote add origin "$remote_url"
-  source_ssh_command="$(git -C "$SOURCE_DIR" config --local --get core.sshCommand 2>/dev/null || true)"
-  if [[ -n "$source_ssh_command" ]]; then
-    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$source_ssh_command" \
-      git -C "$TEMP_REMOTE_REPO" fetch --quiet origin main
-  else
-    GIT_TERMINAL_PROMPT=0 git -C "$TEMP_REMOTE_REPO" fetch --quiet origin main
-  fi
+  GIT_TERMINAL_PROMPT=0 git -C "$TEMP_REMOTE_REPO" fetch --quiet origin main
   REMOTE_REPO="$TEMP_REMOTE_REPO"
   REMOTE_REF=FETCH_HEAD
   UPDATE_LOG=not-created-check-only

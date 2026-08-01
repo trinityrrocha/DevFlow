@@ -57,8 +57,8 @@ if [[ "$MODE" != installed ]]; then
   fi
   if [[ -n "$source_dir" && -d "$source_dir/.git" ]]; then
     remote_url="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
-    [[ "$remote_url" =~ ^(https://github\.com/|git@github\.com:)trinityrrocha/DevFlow(\.git)?$ ]] \
-      || die 'O remote origin não corresponde a trinityrrocha/DevFlow.'
+    [[ "$remote_url" == 'https://github.com/trinityrrocha/DevFlow.git' ]] \
+      || die 'O remote origin não corresponde ao HTTPS público de trinityrrocha/DevFlow.'
     if [[ "$REFRESH" == true ]]; then
       GIT_TERMINAL_PROMPT=0 git -C "$source_dir" fetch --quiet origin main
     fi

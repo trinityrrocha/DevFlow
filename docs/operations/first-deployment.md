@@ -2,7 +2,7 @@
 
 ## Gate antes da VPS
 
-- repositório privado `trinityrrocha/DevFlow`;
+- repositório público `trinityrrocha/DevFlow` e bootstrap baixado por HTTPS;
 - branch `main` e checkout limpo;
 - commit e autoria conferidos;
 - DNS exclusivo já propagado;
@@ -14,10 +14,8 @@
 ## Execução
 
 ```bash
-git clone git@github.com:trinityrrocha/DevFlow.git
-cd DevFlow
-git status --short
-git log -1 --format=fuller
+wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
+chmod +x install.sh
 ./install.sh --check
 ./install.sh --dry-run \
   --proxy-mode isolated \
@@ -30,6 +28,8 @@ sudo ./install.sh --install \
   --letsencrypt-email tls@exemplo.com \
   --super-admin-email admin@exemplo.com
 ```
+
+Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.2.0-alpha`.
 
 Para Nginx do host, substitua por `--proxy-mode shared` e confirme as portas loopback planejadas.
 
@@ -58,6 +58,7 @@ Guarde fora do Git:
 
 - hash do commit instalado;
 - relatório `/opt/devflow/data/install-report.txt`;
+- versão, branch, URL pública e canal registrados nesse relatório;
 - horário, operador e resultado dos probes;
 - caminho e checksum do primeiro backup;
 - riscos aceitos e falhas observadas.

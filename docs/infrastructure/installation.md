@@ -4,6 +4,8 @@
 
 O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrito (`set -Eeuo pipefail`) e são somente leitura por padrão.
 
+Para instalação pública sem clone prévio, `scripts/bootstrap.sh` é o entrypoint standalone. Ele baixa a `main` em diretório temporário, valida origem, commit e `VERSION`, e então chama o mesmo instalador interno; não duplica a lógica de instalação.
+
 | Modo | Efeito |
 |---|---|
 | sem argumento / `--check` | diagnóstico sem mutação |
@@ -11,6 +13,8 @@ O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrit
 | `--install` | primeira instalação, após confirmação |
 
 O instalador rejeita uma instalação existente. Toda atualização pertence exclusivamente a `scripts/update.sh`.
+
+No bootstrap baixado, a ausência de modo abre o fluxo interativo de instalação. No instalador interno e no launcher do repositório, a ausência de modo permanece equivalente a `--check`.
 
 O fluxo é `detectar → validar → resumir → confirmar → aplicar → verificar → promover`. Qualquer incompatibilidade antes da confirmação interrompe a execução. Depois que a aplicação começa, falhas removem apenas o link candidato e registram relatório; dados existentes são preservados.
 
@@ -56,6 +60,6 @@ Não são definidos `container_name` globais: os nomes derivados do projeto Comp
 
 ## Idempotência e reversibilidade
 
-Uma instalação existente exige o updater dedicado; o instalador nunca sobrescreve `app`. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA. O checkout operacional pertence a root, tem hooks desabilitados e não é ambiente de desenvolvimento.
+Uma instalação existente exige o updater dedicado; o instalador nunca sobrescreve `app`. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA. O checkout operacional pertence a root, tem hooks desabilitados, usa HTTPS público sem credenciais e não é ambiente de desenvolvimento.
 
 O rollback automático pertence ao updater, não ao instalador. A aplicação continua classificada como alpha porque instalação e recuperação ainda precisam de laboratório Linux reproduzível.

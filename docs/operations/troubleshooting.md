@@ -26,6 +26,19 @@ docker compose version
 
 O instalador exige Docker 24+ e Compose v2 2.20+. Não reinstale Docker manualmente sobre uma instalação existente sem entender a origem dos pacotes.
 
+## Bootstrap público não baixa o projeto
+
+Confirme DNS e HTTPS sem adicionar credenciais:
+
+```bash
+getent ahosts github.com
+getent ahosts raw.githubusercontent.com
+wget --spider https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/VERSION
+git ls-remote https://github.com/trinityrrocha/DevFlow.git refs/heads/main
+```
+
+O bootstrap falha se o arquivo baixado não corresponder mais à `main`, se `VERSION` divergir ou se o commit clonado não for o commit remoto. Baixe novamente o bootstrap em vez de desabilitar a validação.
+
 ## Porta ocupada
 
 ```bash
@@ -77,15 +90,15 @@ Na instalação inicial, a release não é promovida. Durante update, a falha ac
 
 ## Update não encontra o GitHub
 
-O checkout `/opt/devflow/source` é protegido e o fetch não abre prompt interativo. Confirme:
+O checkout `/opt/devflow/source` é protegido, público e não abre prompt de autenticação. Confirme:
 
 ```bash
 sudo git -C /opt/devflow/source status --short
 sudo git -C /opt/devflow/source remote -v
-sudo ssh -T git@github.com
+sudo GIT_TERMINAL_PROMPT=0 git -C /opt/devflow/source ls-remote origin refs/heads/main
 ```
 
-Use uma deploy key somente leitura exclusiva do repositório ou outra credencial de leitura protegida para `root`. Não coloque token na URL, no `.env` ou no repositório. Não altere o remote para contornar a validação.
+O remote deve ser exatamente `https://github.com/trinityrrocha/DevFlow.git`. Não adicione token, deploy key, chave SSH ou credencial à VPS e não altere o remote para contornar a validação.
 
 ## Update falhou e executou rollback
 

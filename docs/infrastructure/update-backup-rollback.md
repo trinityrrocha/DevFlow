@@ -17,7 +17,7 @@ sudo /opt/devflow/app/scripts/version.sh --installed
 sudo /opt/devflow/app/scripts/version.sh --all --refresh
 ```
 
-O segundo comando exige acesso somente leitura ao repositório privado. O updater aceita apenas `trinityrrocha/DevFlow`, branch `main`, checkout limpo, fast-forward e uma versão SemVer estritamente superior.
+O segundo comando consulta anonimamente o repositório público por HTTPS. O updater aceita apenas a URL canônica de `trinityrrocha/DevFlow`, branch `main`, checkout limpo, fast-forward e uma versão SemVer estritamente superior.
 
 ## Atualização transacional
 

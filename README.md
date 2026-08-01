@@ -21,17 +21,25 @@ Nenhum código do Full Password foi reutilizado. A referência técnica permanec
 - pelo menos 2 GiB de RAM e 5 GiB livres;
 - acesso `root` por `sudo`;
 - portas 80/443 livres para o modo isolado, ou Nginx do host e portas loopback livres para o modo compartilhado;
-- acesso autenticado ao repositório privado `trinityrrocha/DevFlow`.
+- acesso HTTPS ao repositório público `trinityrrocha/DevFlow`.
 
 Docker Engine 24+ e Docker Compose v2 2.20+ são instalados pelo repositório oficial somente quando ausentes.
 
-## Instalação rápida para homologação
+## Instalação pública rápida para homologação
 
-Não execute scripts remotos por pipe. Clone o repositório privado por SSH, deploy key somente leitura ou GitHub CLI autenticado, sem guardar tokens no repositório:
+Não execute scripts remotos por pipe. Baixe o bootstrap, revise-o localmente e então execute:
 
 ```bash
-git clone git@github.com:trinityrrocha/DevFlow.git
-cd DevFlow
+wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mails e proxy, exige confirmação, cria um diretório temporário seguro, clona e valida a `main`, confere `VERSION` e commit remoto, chama `scripts/install.sh` e remove os temporários.
+
+O fluxo explícito em três etapas também está disponível:
+
+```bash
 ./install.sh --check
 ./install.sh --dry-run \
   --proxy-mode isolated \
@@ -45,9 +53,19 @@ sudo ./install.sh --install \
   --super-admin-email admin@exemplo.com
 ```
 
-Sem argumento, `install.sh` executa apenas `--check`. `--dry-run` nunca altera o servidor. A instalação só começa com `--install`, privilégios elevados e confirmação literal.
+Parâmetros de configuração podem ser fornecidos ao bootstrap sem clone prévio:
 
-O instalador cria um checkout operacional root-only em `/opt/devflow/source`. Para atualizações futuras do repositório privado, configure na VPS uma credencial somente leitura, preferencialmente uma deploy key exclusiva deste repositório; nunca coloque token no código, `.env` ou URL remota.
+```bash
+sudo ./install.sh \
+  --proxy-mode isolated \
+  --domain devflow.exemplo.com \
+  --letsencrypt-email tls@exemplo.com \
+  --super-admin-email admin@exemplo.com
+```
+
+`--check` e `--dry-run` não fazem instalação. No bootstrap baixado, a ausência de modo inicia o fluxo interativo; no launcher existente dentro do repositório, a ausência de modo continua equivalendo a `--check`.
+
+O instalador cria `/opt/devflow/source` como checkout operacional root-only, sem hooks e com remote HTTPS público. Instalação e atualizações não utilizam token, deploy key, chave SSH ou autenticação GitHub.
 
 O guia completo está em [instalação na VPS](docs/infrastructure/vps-installation.md).
 
@@ -134,4 +152,4 @@ docker compose config --quiet
 
 ## Licenciamento
 
-Nenhuma licença de software foi definida nesta fase. A ausência de um arquivo `LICENSE` não concede permissão de uso, cópia, modificação ou redistribuição. A decisão de licenciamento permanece com o proprietário.
+O repositório é público, mas nenhuma licença de software foi definida. A ausência de um arquivo `LICENSE` não concede permissão de uso, cópia, modificação ou redistribuição; aplicam-se os direitos autorais padrão. A decisão de licenciamento permanece pendente com o proprietário.

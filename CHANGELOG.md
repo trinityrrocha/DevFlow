@@ -6,6 +6,8 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ### Adicionado
 
+- bootstrap público standalone com download seguro, checkout temporário, validação de origem, commit e `VERSION`;
+- auditoria automatizada de todos os commits, objetos e blobs alcançáveis do histórico Git;
 - atualização segura por release imutável, com consulta da versão disponível na `main` do GitHub;
 - exibição de versão instalada, versão disponível e changelog antes da confirmação;
 - backup autenticado e validado como gate obrigatório da atualização;
@@ -18,12 +20,15 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ### Alterado
 
+- instalação e atualização passam a utilizar HTTPS público sem credenciais na VPS;
+- relatório inicial registra versão, commit, branch, data, URL do repositório e canal de atualização;
 - `install.sh` passa a tratar exclusivamente instalação inicial;
 - a configuração instalada registra o checkout operacional usado para buscar atualizações;
 - o restore oferece um modo interno controlado para rollback, sem iniciar serviços prematuramente.
 
 ### Segurança
 
+- abertura pública condicionada à auditoria do checkout e do histórico, sem licença escolhida automaticamente;
 - atualização restrita ao repositório `trinityrrocha/DevFlow`, branch `main`, fast-forward e checkout limpo;
 - lock exclusivo impede atualizações concorrentes;
 - falhas anteriores à primeira mutação preservam o estado intacto; falhas posteriores acionam manutenção e recuperação automática.

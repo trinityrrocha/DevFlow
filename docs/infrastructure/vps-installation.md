@@ -8,26 +8,24 @@
 - 2 GiB de RAM e 5 GiB livres, no mínimo;
 - usuário com `sudo`;
 - domínio exclusivo resolvendo para a VPS;
-- acesso autenticado ao repositório privado;
+- conectividade HTTPS com `github.com` e `raw.githubusercontent.com`;
 - snapshot da VPS recomendado antes do primeiro ensaio.
 
 O instalador suporta Docker Engine 24+ e Compose v2 2.20+. Ele não altera firewall, não executa `docker system prune`, não reinicia containers de terceiros e não remove Docker globalmente.
 
-## 2. Clonagem privada
+## 2. Bootstrap público
 
-Prefira uma chave SSH pessoal ou deploy key somente leitura:
+Não use `curl | bash` ou `wget | bash`. Baixe o bootstrap, revise o arquivo e execute separadamente:
 
 ```bash
-git clone git@github.com:trinityrrocha/DevFlow.git
-cd DevFlow
-git remote -v
-git branch --show-current
-git rev-parse HEAD
+wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
+chmod +x install.sh
+less install.sh
 ```
 
-Alternativamente, autentique o GitHub CLI no servidor com o fluxo interativo e execute `gh repo clone trinityrrocha/DevFlow`. Não coloque token em URL, shell history, arquivo `.env` ou documentação.
+O bootstrap é independente de checkout anterior. Ele valida Linux, conectividade e dependências; somente após a confirmação de instalação pode instalar Git ausente pelos pacotes da distribuição. O checkout temporário usa HTTPS público e é removido ao sair.
 
-Essa cópia serve apenas para a instalação inicial. O instalador exige `main` limpa e exatamente igual a `origin/main`; depois cria uma cópia operacional root-only em `/opt/devflow/source`. A VPS nunca deve receber commits.
+Não são necessários token, GitHub CLI, deploy key ou chave SSH. A VPS nunca deve receber commits.
 
 ## 3. Diagnóstico e plano
 
@@ -35,7 +33,7 @@ Essa cópia serve apenas para a instalação inicial. O instalador exige `main` 
 ./install.sh --check
 ```
 
-Sem argumentos, o resultado é o mesmo. Esse modo lê SO, arquitetura, capacidade, Docker, Compose, portas, containers e colisões conhecidas; não requer `root` e não altera o host.
+Esse modo cria somente um checkout temporário, comprova remote, branch, commit e `VERSION`, chama o diagnóstico interno e remove os temporários. Não requer `root` nem altera a instalação.
 
 Escolha explicitamente o proxy e valide o plano:
 
@@ -48,6 +46,8 @@ Escolha explicitamente o proxy e valide o plano:
 ```
 
 Troque `isolated` por `shared` apenas se o Nginx do host for o ingress escolhido. O modo compartilhado não é inferido automaticamente.
+
+Também é possível executar `sudo ./install.sh` sem argumentos. Nesse caso, o bootstrap pergunta domínio, e-mails, modo de proxy e confirmação antes de qualquer mudança permanente.
 
 ## 4. Cenário A — VPS limpa
 
@@ -76,6 +76,8 @@ Após a confirmação literal, o instalador:
 11. inicia backend, frontend e edge e espera os healthchecks;
 12. valida frontend e `/api/health` por HTTPS;
 13. habilita o timer de backup e grava relatório sanitizado.
+
+O relatório registra data, versão, commit, branch, URL pública do repositório e canal de atualização.
 
 O instalador não aceita checkout sujo nem origem sem commit Git. Isso impede uma release local não reproduzível.
 
@@ -179,15 +181,7 @@ O relatório da instalação fica em `/opt/devflow/data/install-report.txt`. A c
 
 ## 11. Atualização, remoção e recuperação
 
-Antes do primeiro update, forneça a `root` uma credencial GitHub somente leitura. A opção preferida é uma deploy key exclusiva de `trinityrrocha/DevFlow`, cadastrada sem permissão de escrita. Guarde a chave privada como `/root/.ssh/devflow_deploy`, modo `0600`, verifique o host `github.com` por fingerprint oficial e vincule-a somente ao checkout:
-
-```bash
-sudo git -C /opt/devflow/source config --local core.sshCommand \
-  'ssh -i /root/.ssh/devflow_deploy -o IdentitiesOnly=yes'
-sudo GIT_TERMINAL_PROMPT=0 git -C /opt/devflow/source fetch origin main
-```
-
-Não cole a chave privada ou token em comandos, logs, `.env` ou URLs. A publicação continua ocorrendo exclusivamente no Windows pela conta `trinityrrocha`; a credencial da VPS é somente leitura.
+O checkout `/opt/devflow/source` usa exclusivamente `https://github.com/trinityrrocha/DevFlow.git`. Como o repositório é público, consultas e atualizações não dependem de credenciais. Não configure token, chave SSH, deploy key ou credential helper para o DevFlow na VPS.
 
 ```bash
 sudo /opt/devflow/app/scripts/version.sh --all --refresh
@@ -199,7 +193,7 @@ sudo /opt/devflow/app/scripts/uninstall.sh --purge
 
 O updater aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout limpo e fast-forward. Ele exibe a versão e o changelog antes da confirmação, cria e verifica backup, mantém HTTP 503 durante a troca e restaura automaticamente a versão anterior em falha. Consulte o [runbook operacional](update-backup-rollback.md).
 
-`--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. A deploy key em `/root/.ssh` não é removida automaticamente. Docker, certificados e Full Password são sempre preservados.
+`--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. Docker, certificados e Full Password são sempre preservados.
 
 ## 12. Limitações da alpha
 
