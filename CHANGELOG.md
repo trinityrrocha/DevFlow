@@ -2,6 +2,33 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.3.0-alpha] - 2026-07-31
+
+### Adicionado
+
+- adaptador persistente e independente para o contrato comprovado do `fullpassword_nginx`;
+- Compose override gerenciado em `/opt/fullpassword/docker-compose.devflow.yml`, sem modificar o Compose original;
+- virtual host exclusivo em `/opt/devflow/config/nginx/devflow.conf` e templates separados para ACME, operação e manutenção;
+- rede externa persistente `devflow_edge`, com aliases exclusivos para frontend e backend e PostgreSQL restrito à rede interna;
+- validação fail-closed do merge do Compose, preservando portas, mounts, redes e definições originais;
+- prova HTTP da rota ACME antes da emissão do certificado de `dev.sti1.com.br`;
+- validação de Nginx em container descartável conectado às redes originais e DevFlow;
+- testes transacionais de instalação, repetição, reinstalação, atualização, falhas, rollback e desinstalação.
+
+### Alterado
+
+- o diagnóstico read-only pode retornar `compatible-with-compose-override` somente para o inventário exato aprovado;
+- instalação, health check, atualização e desinstalação reconhecem explicitamente `DEVFLOW_SHARED_PROXY_ADAPTER=fullpassword-nginx`;
+- o atualizador preserva ou cria transacionalmente a rede externa ao migrar instalações anteriores;
+- a desinstalação remove apenas o override, o virtual host e a conexão de borda gerenciados; o certificado DevFlow exige opção e confirmação próprias.
+
+### Segurança
+
+- `/opt/fullpassword/docker-compose.yml`, `docker/nginx.runtime.conf`, volumes, certificados e repositório do Full Password permanecem fora de escrita;
+- somente o serviço `nginx` é recriado com os dois arquivos Compose; dependências e containers de terceiros não são recriados;
+- qualquer falha de ACME, certificado, merge, `nginx -t`, recriação ou health de qualquer domínio restaura o snapshot anterior;
+- o suporte permanece alpha e não homologado até os ensaios reais de Docker, Nginx, certificado, rede e rollback na VPS.
+
 ## [0.2.0-alpha] - 2026-07-31
 
 ### Adicionado

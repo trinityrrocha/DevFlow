@@ -21,6 +21,23 @@ RELOAD_PROVEN=false
 CERTIFICATE_METHOD=unknown
 COMPATIBILITY=blocked
 PROXY_CONFIG_RAW=
+FULLPASSWORD_PROJECT=
+FULLPASSWORD_SERVICE=
+FULLPASSWORD_IMAGE=
+FULLPASSWORD_WORKING_DIR=
+FULLPASSWORD_CONFIG_FILES=
+FULLPASSWORD_RUNTIME_MOUNT=false
+FULLPASSWORD_CERTIFICATE_MOUNT=false
+FULLPASSWORD_ORIGINAL_NETWORK=false
+FULLPASSWORD_PORTS=false
+FULLPASSWORD_UPSTREAM_SAFE=false
+FULLPASSWORD_CERTIFICATE_SAFE=false
+FULLPASSWORD_COMPOSE_VALID=false
+FULLPASSWORD_OVERRIDE_WRITABLE=false
+FULLPASSWORD_EDGE_NETWORK_SAFE=false
+FULLPASSWORD_ROLLBACK_READY=false
+FULLPASSWORD_PUBLIC_HEALTH=false
+NGINX_CONF_D_INCLUDED=false
 declare -a BLOCKERS=()
 
 usage() {
@@ -54,8 +71,31 @@ assess_shared_proxy_compatibility() {
       return 2
       ;;
     fullpassword-nginx)
-      add_blocker 'fullpassword_nginx é um proxy containerizado pertencente a outra aplicação.'
-      add_blocker 'Persistência, certificados, rede e reload precisam ser analisados antes de qualquer integração.'
+      [[ "$FULLPASSWORD_PROJECT" == fullpassword ]] || add_blocker 'Projeto Compose esperado fullpassword não foi comprovado.'
+      [[ "$FULLPASSWORD_SERVICE" == nginx ]] || add_blocker 'Serviço Compose esperado nginx não foi comprovado.'
+      [[ "$FULLPASSWORD_IMAGE" == nginx:alpine ]] || add_blocker 'Imagem esperada nginx:alpine não foi comprovada.'
+      [[ "$FULLPASSWORD_WORKING_DIR" == /opt/fullpassword ]] || add_blocker 'Working directory /opt/fullpassword não foi comprovado.'
+      [[ "$FULLPASSWORD_CONFIG_FILES" == /opt/fullpassword/docker-compose.yml \
+        || "$FULLPASSWORD_CONFIG_FILES" == /opt/fullpassword/docker-compose.yml,/opt/fullpassword/docker-compose.devflow.yml ]] \
+        || add_blocker 'Lista de arquivos Compose diverge do contrato aprovado.'
+      [[ "$FULLPASSWORD_RUNTIME_MOUNT" == true ]] || add_blocker 'Mount original nginx.runtime.conf read-only diverge do diagnóstico aprovado.'
+      [[ "$FULLPASSWORD_CERTIFICATE_MOUNT" == true ]] || add_blocker 'Mount read-only de /etc/letsencrypt não foi comprovado.'
+      [[ "$FULLPASSWORD_ORIGINAL_NETWORK" == true ]] || add_blocker 'Rede original fullpassword_fullpassword_network não foi comprovada.'
+      [[ "$FULLPASSWORD_PORTS" == true ]] || add_blocker 'Publicação original das portas 80/443 não foi comprovada.'
+      [[ "$FULLPASSWORD_UPSTREAM_SAFE" == true ]] || add_blocker 'A configuração original usa aliases reservados aos upstreams DevFlow.'
+      [[ "$FULLPASSWORD_CERTIFICATE_SAFE" == true ]] || add_blocker 'Certificado preexistente do domínio DevFlow não é específico ou é wildcard.'
+      [[ "$NGINX_CONF_D_INCLUDED" == true ]] || add_blocker 'Include /etc/nginx/conf.d/*.conf não foi comprovado.'
+      [[ "$CONFIG_VALID" == true ]] || add_blocker 'Configuração atual do fullpassword_nginx é inválida.'
+      [[ "$DOMAIN_CONFLICT" == false ]] || add_blocker 'O domínio DevFlow conflita com uma rota existente.'
+      [[ "$FULLPASSWORD_OVERRIDE_WRITABLE" == true ]] || add_blocker 'Diretório /opt/fullpassword não permite o override independente.'
+      [[ "$FULLPASSWORD_EDGE_NETWORK_SAFE" == true ]] || add_blocker 'devflow_edge existente não possui propriedade segura ou não pode ser criada.'
+      [[ "$FULLPASSWORD_COMPOSE_VALID" == true ]] || add_blocker 'Merge do Compose original com o override não foi validado.'
+      [[ "$FULLPASSWORD_ROLLBACK_READY" == true ]] || add_blocker 'Reversibilidade dos arquivos gerenciados não foi comprovada.'
+      [[ "$FULLPASSWORD_PUBLIC_HEALTH" == true ]] || add_blocker 'Health público de pw.sti1.com.br falhou antes da integração.'
+      if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
+        COMPATIBILITY=compatible-with-compose-override
+        return 0
+      fi
       return 2
       ;;
     nginx-container)
@@ -148,6 +188,7 @@ detect_proxy() {
 }
 
 collect_host_nginx() {
+  local domain_pattern="${DOMAIN//./\\.}"
   if nginx -t >/dev/null 2>&1; then CONFIG_VALID=true; fi
   PROXY_CONFIG_RAW="$(nginx -T 2>&1 || true)"
   if [[ -d /etc/nginx/conf.d ]] \
@@ -155,7 +196,7 @@ collect_host_nginx() {
     PERSISTENT_CONFIG=true
   fi
   if [[ -n "$DOMAIN" ]] \
-    && grep -Eq "server_name[[:space:]]+([^;[:space:]]+[[:space:]]+)*$DOMAIN([[:space:];]|$)" <<< "$PROXY_CONFIG_RAW"; then
+    && grep -Eq "server_name[[:space:]]+([^;[:space:]]+[[:space:]]+)*$domain_pattern([[:space:];]|$)" <<< "$PROXY_CONFIG_RAW"; then
     DOMAIN_CONFLICT=true
   fi
   if port_is_listening "$HTTP_PORT" || port_is_listening "$API_PORT"; then PORT_CONFLICT=true; fi
@@ -170,16 +211,19 @@ collect_host_nginx() {
 }
 
 collect_container_nginx() {
-  local mounts
+  local mounts networks temporary base_json merged_json http_code certificate_sans domain_pattern
+  domain_pattern="${DOMAIN//./\\.}"
   mounts="$(docker inspect --format '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}|{{.RW}}{{println}}{{end}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
   if docker exec "$PROXY_CONTAINER" nginx -t >/dev/null 2>&1; then CONFIG_VALID=true; fi
   PROXY_CONFIG_RAW="$(docker exec "$PROXY_CONTAINER" nginx -T 2>&1 || true)"
+  grep -Eq 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf[[:space:]]*;' <<< "$PROXY_CONFIG_RAW" \
+    && NGINX_CONF_D_INCLUDED=true
   if grep -Eq '\|/etc/nginx(/conf\.d)?\|(true|false)$' <<< "$mounts" \
     && docker exec "$PROXY_CONTAINER" sh -c 'test -d /etc/nginx/conf.d' >/dev/null 2>&1; then
     PERSISTENT_CONFIG=true
   fi
   if [[ -n "$DOMAIN" ]] \
-    && grep -Eq "server_name[[:space:]]+([^;[:space:]]+[[:space:]]+)*$DOMAIN([[:space:];]|$)" <<< "$PROXY_CONFIG_RAW"; then
+    && grep -Eq "server_name[[:space:]]+([^;[:space:]]+[[:space:]]+)*$domain_pattern([[:space:];]|$)" <<< "$PROXY_CONFIG_RAW"; then
     DOMAIN_CONFLICT=true
   fi
   if grep -Eq '\|/etc/letsencrypt(/|\|)|\|/etc/ssl(/|\|)' <<< "$mounts"; then
@@ -188,6 +232,73 @@ collect_container_nginx() {
     CERTIFICATE_METHOD=container-managed-certificates
   fi
   RELOAD_PROVEN=false
+
+  if [[ "$PROXY_TYPE" == fullpassword-nginx ]]; then
+    FULLPASSWORD_PROJECT="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    FULLPASSWORD_SERVICE="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    FULLPASSWORD_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    FULLPASSWORD_WORKING_DIR="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    FULLPASSWORD_CONFIG_FILES="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    grep -Fxq 'bind|/opt/fullpassword/docker/nginx.runtime.conf|/etc/nginx/conf.d/default.conf|false' <<< "$mounts" \
+      && FULLPASSWORD_RUNTIME_MOUNT=true
+    [[ "$FULLPASSWORD_RUNTIME_MOUNT" == true ]] && PERSISTENT_CONFIG=true
+    grep -Fxq 'bind|/etc/letsencrypt|/etc/letsencrypt|false' <<< "$mounts" && FULLPASSWORD_CERTIFICATE_MOUNT=true
+    networks="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{println}}{{end}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    grep -Fxq fullpassword_fullpassword_network <<< "$networks" && FULLPASSWORD_ORIGINAL_NETWORK=true
+    if [[ -n "$(docker port "$PROXY_CONTAINER" 80/tcp 2>/dev/null || true)" \
+      && -n "$(docker port "$PROXY_CONTAINER" 443/tcp 2>/dev/null || true)" ]]; then
+      FULLPASSWORD_PORTS=true
+    fi
+    if ! grep -Eq 'devflow-(backend|frontend)' /opt/fullpassword/docker/nginx.runtime.conf 2>/dev/null; then
+      FULLPASSWORD_UPSTREAM_SAFE=true
+    fi
+    if [[ -n "$DOMAIN" && -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+      certificate_sans="$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -ext subjectAltName 2>/dev/null || true)"
+      if ! grep -Fq 'DNS:*' <<< "$certificate_sans" \
+        && grep -Eq "DNS:${DOMAIN//./\\.}([,[:space:]]|$)" <<< "$certificate_sans"; then
+        FULLPASSWORD_CERTIFICATE_SAFE=true
+      fi
+    else
+      FULLPASSWORD_CERTIFICATE_SAFE=true
+    fi
+    if [[ "$DOMAIN_CONFLICT" == true \
+      && -f /opt/devflow/config/nginx/devflow.conf \
+      && "$(head -n1 /opt/devflow/config/nginx/devflow.conf 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Independent virtual host.' ]] \
+      && grep -Eq "server_name[[:space:]]+$domain_pattern[[:space:]]*;" /opt/devflow/config/nginx/devflow.conf; then
+      DOMAIN_CONFLICT=false
+    fi
+    [[ -w /opt/fullpassword ]] && FULLPASSWORD_OVERRIDE_WRITABLE=true
+    if ! docker network inspect devflow_edge >/dev/null 2>&1 \
+      || [[ "$(docker network inspect devflow_edge --format '{{index .Labels "devflow.managed"}}' 2>/dev/null || true)" == true ]]; then
+      FULLPASSWORD_EDGE_NETWORK_SAFE=true
+    fi
+    if { [[ ! -e /opt/fullpassword/docker-compose.devflow.yml ]] \
+          || [[ -w /opt/fullpassword/docker-compose.devflow.yml \
+            && "$(head -n1 /opt/fullpassword/docker-compose.devflow.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Do not edit the original Compose.' ]]; } \
+      && { [[ ! -e /opt/devflow/config/nginx/devflow.conf ]] \
+          || [[ -w /opt/devflow/config/nginx/devflow.conf \
+            && "$(head -n1 /opt/devflow/config/nginx/devflow.conf 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Independent virtual host.' ]]; }; then
+      FULLPASSWORD_ROLLBACK_READY=true
+    fi
+    http_code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 'http://pw.sti1.com.br/' || true)"
+    if [[ "$http_code" =~ ^[23][0-9][0-9]$ ]] \
+      && curl --fail --silent --show-error --max-time 20 'https://pw.sti1.com.br/' >/dev/null; then
+      FULLPASSWORD_PUBLIC_HEALTH=true
+    fi
+    if [[ -r /opt/fullpassword/docker-compose.yml ]]; then
+      temporary="$(mktemp -d /tmp/devflow-fullpassword-diagnostic.XXXXXX)"
+      base_json="$temporary/base.json"
+      merged_json="$temporary/merged.json"
+      cp "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/docker-compose.devflow.yml.template" "$temporary/override.yml"
+      if command -v python3 >/dev/null 2>&1 \
+        && docker compose -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>/dev/null \
+        && docker compose -f /opt/fullpassword/docker-compose.yml -f "$temporary/override.yml" config --format json > "$merged_json" 2>/dev/null \
+        && python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" "$base_json" "$merged_json" >/dev/null 2>&1; then
+        FULLPASSWORD_COMPOSE_VALID=true
+      fi
+      rm -rf -- "$temporary"
+    fi
+  fi
 }
 
 render_container_details() {
@@ -231,6 +342,25 @@ render_report() {
   echo "domain_conflict=$DOMAIN_CONFLICT"
   echo "port_conflict=$PORT_CONFLICT"
   echo "compatibility=$COMPATIBILITY"
+  if [[ "$PROXY_TYPE" == fullpassword-nginx ]]; then
+    echo "fullpassword_project=${FULLPASSWORD_PROJECT:-unknown}"
+    echo "fullpassword_service=${FULLPASSWORD_SERVICE:-unknown}"
+    echo "fullpassword_image=${FULLPASSWORD_IMAGE:-unknown}"
+    echo "fullpassword_working_dir=${FULLPASSWORD_WORKING_DIR:-unknown}"
+    echo "fullpassword_config_files=${FULLPASSWORD_CONFIG_FILES:-unknown}"
+    echo "fullpassword_runtime_mount=$FULLPASSWORD_RUNTIME_MOUNT"
+    echo "fullpassword_certificate_mount=$FULLPASSWORD_CERTIFICATE_MOUNT"
+    echo "fullpassword_original_network=$FULLPASSWORD_ORIGINAL_NETWORK"
+    echo "fullpassword_ports=$FULLPASSWORD_PORTS"
+    echo "fullpassword_upstream_safe=$FULLPASSWORD_UPSTREAM_SAFE"
+    echo "fullpassword_certificate_safe=$FULLPASSWORD_CERTIFICATE_SAFE"
+    echo "nginx_conf_d_included=$NGINX_CONF_D_INCLUDED"
+    echo "fullpassword_override_writable=$FULLPASSWORD_OVERRIDE_WRITABLE"
+    echo "fullpassword_edge_network_safe=$FULLPASSWORD_EDGE_NETWORK_SAFE"
+    echo "fullpassword_compose_valid=$FULLPASSWORD_COMPOSE_VALID"
+    echo "fullpassword_rollback_ready=$FULLPASSWORD_ROLLBACK_READY"
+    echo "fullpassword_public_health=$FULLPASSWORD_PUBLIC_HEALTH"
+  fi
   echo 'blockers:'
   if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
     echo '- none'
@@ -264,7 +394,9 @@ render_report() {
     echo 'not-available'
   fi
   echo '[recommendation]'
-  if [[ "$COMPATIBILITY" == compatible ]]; then
+  if [[ "$COMPATIBILITY" == compatible-with-compose-override ]]; then
+    echo 'Integração automática compatível com Compose override; nenhuma alteração foi realizada pelo diagnóstico.'
+  elif [[ "$COMPATIBILITY" == compatible ]]; then
     echo 'Integração automática compatível para Nginx do host; nenhuma alteração foi realizada pelo diagnóstico.'
   else
     echo 'Integração automática não comprovada. Nenhuma alteração foi realizada no proxy. Consulte os bloqueios acima.'

@@ -6,16 +6,19 @@
 flowchart LR
     I[Internet] --> P{Proxy explícito}
     P -->|isolated| E[devflow edge :80/:443]
-    P -->|shared| H[Nginx do host]
+    P -->|shared host| H[Nginx do host]
+    P -->|shared adapter| FP[fullpassword_nginx]
     E --> F[frontend]
     H -->|127.0.0.1:18080| F
     E -->|/api| B[backend :3000]
     H -->|127.0.0.1:13000| B
+    FP -->|devflow_edge| F
+    FP -->|devflow_edge /api| B
     B --> D[(PostgreSQL)]
     B --> S[(storage)]
 ```
 
-No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado homologável nesta versão, o Nginx do host mantém 80/443 e os serviços DevFlow publicam somente em loopback. Um Nginx containerizado ou Caddy é inventariado, mas não integrado automaticamente.
+No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado por host, o Nginx mantém 80/443 e os serviços DevFlow publicam somente em loopback. No contrato aprovado do `fullpassword_nginx`, o proxy participa de `devflow_edge` por override persistente; outros Nginx containerizados e Caddy são inventariados, mas bloqueados.
 
 ## Serviços
 
@@ -33,7 +36,7 @@ Worker e fila não existem nesta baseline; não são descritos como concluídos.
 
 O Compose usa `devflow_edge` para tráfego de aplicação e `devflow_internal` para banco/backend. A rede interna não oferece acesso direto externo e o PostgreSQL não publica portas. Os binds de banco e storage apontam para diretórios persistentes fora das releases; no desenvolvimento local, os valores padrão usam volumes nomeados.
 
-No modo compartilhado, frontend e backend ficam em `127.0.0.1` nas portas configuradas. No isolado, somente o edge publica 80/443. `devflow_edge` conecta frontend, backend e edge; `devflow_internal` é marcada como interna e conecta somente backend e PostgreSQL. O banco não participa da rede de borda.
+No compartilhado por host, frontend e backend ficam em `127.0.0.1` nas portas configuradas. Com o adaptador Full Password, não publicam portas no host e expõem aliases somente em `devflow_edge`. No isolado, somente o edge publica 80/443. `devflow_internal` é marcada como interna e conecta somente backend e PostgreSQL. O banco não participa da rede de borda em nenhuma topologia.
 
 ## Configuração e segredos
 
@@ -45,7 +48,7 @@ Cada instalação arquiva o commit Git em `/opt/devflow/releases/<sha>`. O link 
 
 O instalador cria `/opt/devflow/source`, checkout operacional de `main` pertencente a `root`, sem hooks e sem permissão de escrita para grupo/terceiros. Ele existe somente para fetch e fast-forward de commits publicados pelo desenvolvimento Windows. O remote é o HTTPS público canônico e não utiliza credenciais.
 
-Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443; no compartilhado suportado, somente o arquivo DevFlow é substituído atomicamente depois de `nginx -t`. Falha de reload restaura e recarrega a configuração anterior.
+Durante update, backend e frontend ficam parados e o tráfego recebe `503`. No modo isolado, `docker-compose.maintenance.yml` assume 80/443. No Nginx do host, o arquivo DevFlow é substituído atomicamente depois de `nginx -t`. No adaptador, override e virtual host têm snapshot próprio, são validados em conjunto e somente `nginx` é recriado; qualquer falha restaura o snapshot.
 
 ## HTTPS
 
@@ -58,8 +61,9 @@ Certbot emite certificado exclusivo para o domínio. No modo isolado, usa desafi
 - capabilities reduzidas e `no-new-privileges` no Compose;
 - nenhum prune global;
 - nenhuma manipulação de firewall;
-- nenhuma remoção de Docker ou certificado na desinstalação;
-- nenhuma operação no repositório ou containers Full Password.
+- nenhuma remoção de Docker; o certificado DevFlow só é removido por opção e confirmação explícitas;
+- nenhuma escrita no repositório, Compose original, runtime config, volumes ou certificados do Full Password;
+- a única operação permitida no container vizinho é recriar e validar o serviço `nginx` pelo Compose original mais o override gerenciado.
 
 ## Persistência
 

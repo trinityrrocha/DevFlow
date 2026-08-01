@@ -99,7 +99,9 @@ Auditoria é append-only para a aplicação. Alteração ou purga exige job admi
 - operador recebe proxy restrito ou operações allowlisted.
 - certificados montados somente leitura.
 - instalador falha diante de recursos sem propriedade comprovada e nunca executa prune global.
-- a detecção de `fullpassword_nginx`, Nginx containerizado ou Caddy bloqueia integração automática; somente relatório sanitizado e confirmado pode ser criado, sem alterar arquivo, rede, volume, certificado ou serviço vizinho;
+- `fullpassword_nginx` só é aceito quando todos os fatos do contrato aprovado permitem um Compose override persistente; qualquer divergência, outro Nginx containerizado ou Caddy permanece bloqueado;
+- o adaptador não edita Compose/runtime config originais, exige mounts read-only exatos, valida o merge e usa snapshot/rollback; somente o serviço `nginx` pode ser recriado com `--no-deps`;
+- a rota ACME é provada por desafio aleatório antes da emissão e somente o certificado do domínio DevFlow pode ser removido por confirmação explícita;
 - o PostgreSQL permanece exclusivamente em `devflow_internal`; proxy, frontend e edge não recebem acesso à rede do banco;
 - a rota exclusiva do Nginx do host é promovida atomicamente e restaurada em falha de sintaxe ou reload;
 - bootstrap público valida HTTPS canônico, `main`, commit remoto, `VERSION`, integridade Git e equivalência do próprio bootstrap antes de chamar o instalador;

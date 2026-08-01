@@ -13,7 +13,7 @@ expect_policy() {
   local expected="$1" scenario="$2"
   if assess_shared_proxy_compatibility; then status=0; else status=$?; fi
   [[ "$COMPATIBILITY" == "$expected" ]] || { echo "Falha em $scenario: $COMPATIBILITY" >&2; exit 1; }
-  if [[ "$expected" == compatible ]]; then
+  if [[ "$expected" == compatible || "$expected" == compatible-with-compose-override ]]; then
     [[ "$status" -eq 0 ]] || exit 1
   else
     [[ "$status" -eq 2 ]] || exit 1
@@ -29,12 +29,30 @@ reset_facts() {
   PORT_CONFLICT=false
   RELOAD_PROVEN=true
   CERTIFICATE_METHOD=certbot-host
+  FULLPASSWORD_COMPOSE_VALID=true
+  FULLPASSWORD_PROJECT=fullpassword
+  FULLPASSWORD_SERVICE=nginx
+  FULLPASSWORD_IMAGE=nginx:alpine
+  FULLPASSWORD_WORKING_DIR=/opt/fullpassword
+  FULLPASSWORD_CONFIG_FILES=/opt/fullpassword/docker-compose.yml
+  FULLPASSWORD_RUNTIME_MOUNT=true
+  FULLPASSWORD_CERTIFICATE_MOUNT=true
+  FULLPASSWORD_ORIGINAL_NETWORK=true
+  FULLPASSWORD_PORTS=true
+  FULLPASSWORD_UPSTREAM_SAFE=true
+  FULLPASSWORD_CERTIFICATE_SAFE=true
+  FULLPASSWORD_OVERRIDE_WRITABLE=true
+  FULLPASSWORD_EDGE_NETWORK_SAFE=true
+  NGINX_CONF_D_INCLUDED=true
+  FULLPASSWORD_ROLLBACK_READY=true
+  FULLPASSWORD_PUBLIC_HEALTH=true
 }
 
 reset_facts; PROXY_TYPE=none; expect_policy blocked proxy-inexistente
 reset_facts; expect_policy compatible nginx-host
 reset_facts; PROXY_TYPE=nginx-container; expect_policy blocked nginx-containerizado
-reset_facts; PROXY_TYPE=fullpassword-nginx; expect_policy blocked fullpassword-nginx
+reset_facts; PROXY_TYPE=fullpassword-nginx; expect_policy compatible-with-compose-override fullpassword-nginx
+reset_facts; PROXY_TYPE=fullpassword-nginx; FULLPASSWORD_CERTIFICATE_MOUNT=false; expect_policy blocked fullpassword-sem-certificados-persistentes
 reset_facts; PROXY_TYPE=caddy-host; expect_policy blocked caddy-nao-suportado
 reset_facts; PERSISTENT_CONFIG=false; expect_policy blocked persistencia-ausente
 reset_facts; CONFIG_VALID=false; expect_policy blocked configuracao-invalida

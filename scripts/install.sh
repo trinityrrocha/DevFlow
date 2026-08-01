@@ -8,6 +8,8 @@ SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/proxy-config.sh
 . "$SCRIPT_DIR/lib/proxy-config.sh"
+# shellcheck source=lib/fullpassword-proxy.sh
+. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 
 MODE=check
 MODE_EXPLICIT=false
@@ -17,6 +19,7 @@ SUPER_ADMIN_EMAIL=
 PROXY_MODE=
 HTTP_PORT=18080
 API_PORT=13000
+SHARED_PROXY_ADAPTER=none
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
@@ -204,7 +207,12 @@ EOF
   fi
 
   if "$SCRIPT_DIR/detect-shared-proxy.sh" "${diagnostic_args[@]}"; then
-    echo 'Integração automática compatível.'
+    case "$proxy_detected" in
+      fullpassword_nginx) SHARED_PROXY_ADAPTER=fullpassword-nginx ;;
+      host-nginx) SHARED_PROXY_ADAPTER=host-nginx ;;
+      *) die "Diagnóstico aprovou um proxy inesperado: $proxy_detected" ;;
+    esac
+    echo "Integração automática compatível: $SHARED_PROXY_ADAPTER."
     return 0
   else
     diagnostic_status=$?
@@ -227,7 +235,7 @@ if [[ "$MODE" != check ]]; then
         die "Porta $port ocupada. O modo isolated não interrompe o proprietário atual."
       fi
     done
-  else
+  elif [[ "$SHARED_PROXY_ADAPTER" == host-nginx ]]; then
     for tuple in "frontend:$HTTP_PORT" "backend:$API_PORT"; do
       service="${tuple%%:*}"
       port="${tuple##*:}"
@@ -263,9 +271,9 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
     owner="$(docker network inspect devflow_devflow_internal --format '{{index .Labels "com.docker.compose.project"}}')"
     [[ "$owner" == "$DEVFLOW_PROJECT" ]] || die 'Rede devflow_devflow_internal pertence a outro projeto.'
   fi
-  if docker network inspect devflow_devflow_edge >/dev/null 2>&1; then
-    owner="$(docker network inspect devflow_devflow_edge --format '{{index .Labels "com.docker.compose.project"}}')"
-    [[ "$owner" == "$DEVFLOW_PROJECT" ]] || die 'Rede devflow_devflow_edge pertence a outro projeto.'
+  if docker network inspect devflow_edge >/dev/null 2>&1; then
+    owner="$(docker network inspect devflow_edge --format '{{index .Labels "devflow.managed"}}')"
+    [[ "$owner" == true ]] || die 'Rede externa devflow_edge não possui propriedade DevFlow comprovada.'
   fi
 fi
 
@@ -279,6 +287,7 @@ Resumo DevFlow $DEVFLOW_VERSION
   fullpassword_nginx: ${fullpassword_container:-não detectado}
   proxy existente: $proxy_detected
   proxy solicitado: ${PROXY_MODE:-não definido}
+  adaptador compartilhado: $SHARED_PROXY_ADAPTER
   domínio: ${DOMAIN:-não definido}
   diretório: $DEVFLOW_INSTALL_ROOT
   configuração privada: $DEVFLOW_ENV_FILE
@@ -288,7 +297,7 @@ EOF
 if [[ "$MODE" == check ]]; then
   [[ "$docker_version" != daemon-unavailable ]] || log WARN 'Docker ausente ou daemon indisponível.'
   [[ "$compose_state" == present ]] || log WARN 'Docker Compose v2 ausente.'
-  [[ -z "$fullpassword_container" ]] || log WARN 'fullpassword_nginx exige o diagnóstico compartilhado e permanece bloqueado para integração automática.'
+  [[ -z "$fullpassword_container" ]] || log WARN 'fullpassword_nginx exige diagnóstico estrito; somente o contrato aprovado permite o Compose override transacional.'
   log INFO 'Diagnóstico concluído sem alterações.'
   exit 0
 fi
@@ -296,12 +305,13 @@ fi
 cat <<EOF
 Ações planejadas:
   - instalar Docker Engine pelo repositório oficial apenas se estiver ausente;
-  - instalar Certbot; o modo shared exige Nginx do host já comprovado pelo diagnóstico;
+  - instalar Certbot e Python 3; o modo shared exige adaptador aprovado pelo diagnóstico;
   - criar somente diretórios e recursos do projeto Compose devflow;
   - manter segredos em $DEVFLOW_ENV_FILE com permissão 600;
   - iniciar o banco, executar migrations reais e então subir a aplicação;
   - validar healthchecks HTTP e HTTPS;
-  - não remover, reiniciar ou alterar recursos do Full Password.
+  - preservar Compose, configuração, rede, certificados e rotas originais do Full Password;
+  - no adaptador aprovado, recriar somente fullpassword_nginx com override transacional.
 EOF
 [[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
 
@@ -315,15 +325,30 @@ fi
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
   "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
+  "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx" \
   "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_STATE_ROOT/postgres"
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
 log INFO "Log sanitizado: $INSTALL_LOG" | tee -a "$INSTALL_LOG"
+ADAPTER_APPLIED=false
 
 installation_failed() {
   local exit_code=$?
   trap - ERR
+  if [[ "$SHARED_PROXY_ADAPTER" == fullpassword-nginx && -r "$DEVFLOW_ENV_FILE" ]]; then
+    DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
+    load_devflow_env || true
+    compose_files
+    "${DEVFLOW_COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
+    if [[ "$ADAPTER_APPLIED" == true ]]; then
+      uninstall_fullpassword_proxy_adapter >/dev/null 2>&1 || true
+      if [[ "${CERTIFICATE_EXISTED_BEFORE:-true}" == false ]]; then
+        certbot delete --cert-name "$DOMAIN" --non-interactive >/dev/null 2>&1 || true
+      fi
+    fi
+    remove_devflow_edge_network_if_unused || true
+  fi
   rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
   write_install_report failure || true
   log ERROR "A operação falhou (código $exit_code). Os dados existentes foram preservados; consulte $INSTALL_LOG." \
@@ -367,7 +392,7 @@ version_at_least "$installed_docker_version" 24.0 || die "Docker instalado incom
 version_at_least "$installed_compose_version" 2.20 || die "Compose instalado incompatível: $installed_compose_version."
 
 export DEBIAN_FRONTEND=noninteractive
-packages=(certbot openssl)
+packages=(certbot openssl python3)
 missing_packages=()
 for package in "${packages[@]}"; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing_packages+=("$package")
@@ -376,7 +401,7 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
   apt-get update
   apt-get install -y "${missing_packages[@]}"
 fi
-[[ "$PROXY_MODE" != shared ]] || { command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; } \
+[[ "$SHARED_PROXY_ADAPTER" != host-nginx ]] || { command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; } \
   || die 'O Nginx do host deixou de estar disponível após o diagnóstico.'
 
 if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
@@ -450,6 +475,7 @@ APP_ORIGIN=https://$DOMAIN
 VITE_API_URL=/api
 DEVFLOW_DOMAIN=$DOMAIN
 DEVFLOW_PROXY_MODE=$PROXY_MODE
+DEVFLOW_SHARED_PROXY_ADAPTER=$SHARED_PROXY_ADAPTER
 LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
 DEVFLOW_ENV_FILE=$DEVFLOW_ENV_FILE
 DEVFLOW_BIND_ADDRESS=127.0.0.1
@@ -496,8 +522,11 @@ ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
 load_devflow_env
 validate_runtime_paths
+[[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == "$SHARED_PROXY_ADAPTER" ]] \
+  || die 'Adaptador compartilhado diverge da configuração gerada.'
 DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 export DEVFLOW_VERSION
+ensure_devflow_edge_network
 compose_files
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 "${DEVFLOW_COMPOSE[@]}" build backend frontend
@@ -517,7 +546,10 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration aplicada.'
 
-if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+CERTIFICATE_EXISTED_BEFORE=false
+[[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && CERTIFICATE_EXISTED_BEFORE=true
+
+if [[ "$SHARED_PROXY_ADAPTER" != fullpassword-nginx && ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
   if [[ "$PROXY_MODE" == isolated ]]; then
     certbot certonly --standalone -d "$DOMAIN" --email "$LETSENCRYPT_EMAIL" \
       --agree-tos --non-interactive
@@ -537,6 +569,9 @@ fi
 "${DEVFLOW_COMPOSE[@]}" up -d backend frontend --wait
 if [[ "$PROXY_MODE" == isolated ]]; then
   "${DEVFLOW_COMPOSE[@]}" up -d edge --wait
+elif [[ "$SHARED_PROXY_ADAPTER" == fullpassword-nginx ]]; then
+  install_fullpassword_proxy_adapter "$release_dir" "$DOMAIN" "$LETSENCRYPT_EMAIL"
+  ADAPTER_APPLIED=true
 else
   temp_config="$(mktemp /tmp/devflow-nginx.XXXXXX)"
   sed -e "s/__DEVFLOW_DOMAIN__/$DOMAIN/g" \

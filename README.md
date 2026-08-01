@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.2.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização ainda depende de homologação em VPS e não representa aprovação para produção.
+Versão atual: **0.3.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -20,7 +20,8 @@ Nenhum código do Full Password foi reutilizado. A referência técnica permanec
 - domínio exclusivo apontado para a VPS;
 - pelo menos 2 GiB de RAM e 5 GiB livres;
 - acesso `root` por `sudo`;
-- portas 80/443 livres para o modo isolado, ou Nginx do host e portas loopback livres para o modo compartilhado;
+- portas 80/443 livres para o modo isolado; no compartilhado, Nginx do host com portas loopback livres ou o ambiente `fullpassword_nginx` estritamente compatível descrito abaixo;
+- `python3` e `openssl` previamente disponíveis quando o diagnóstico read-only do `fullpassword_nginx` for utilizado;
 - acesso HTTPS ao repositório público `trinityrrocha/DevFlow`.
 
 Docker Engine 24+ e Docker Compose v2 2.20+ são instalados pelo repositório oficial somente quando ausentes.
@@ -72,13 +73,15 @@ O guia completo está em [instalação na VPS](docs/infrastructure/vps-installat
 ## Modos de infraestrutura
 
 - `DEVFLOW_PROXY_MODE=isolated`: instalação independente, recomendada para servidor limpo. Proxy, containers, redes, volumes, banco e certificados pertencem somente ao DevFlow.
-- `DEVFLOW_PROXY_MODE=shared`: containers, volumes, banco e storage continuam exclusivos do DevFlow. A integração automática atual compartilha apenas um Nginx do host comprovadamente persistente; frontend e API ficam vinculados a `127.0.0.1`.
+- `DEVFLOW_PROXY_MODE=shared`: containers, volumes, banco e storage continuam exclusivos do DevFlow. Pode compartilhar um Nginx do host comprovadamente persistente ou, somente no contrato aprovado, o `fullpassword_nginx` por Compose override independente.
 
 A rede `devflow_edge` contém somente frontend, backend e edge; `devflow_internal` é interna e contém somente PostgreSQL e backend. O proxy nunca recebe acesso à rede do banco.
 
-A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e reload sem alterá-los. `fullpassword_nginx`, Nginx containerizado e Caddy continuam fail-closed até existir adaptador persistente, reversível e testado. O relatório sanitizado fica em `/var/log/devflow/shared-proxy-diagnostic.log`.
+A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e estratégia de aplicação sem alterá-los. Um `fullpassword_nginx` só recebe `compatibility=compatible-with-compose-override` quando coincide integralmente com o contrato aprovado de `/opt/fullpassword`; outros Nginx containerizados e Caddy continuam bloqueados. O relatório sanitizado fica em `/var/log/devflow/shared-proxy-diagnostic.log`.
 
-O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, detectou `fullpassword_nginx` e foi interrompido antes de qualquer integração insegura. Esse resultado valida o bloqueio, não a instalação compartilhada.
+Para o contrato aprovado, o instalador cria a rede externa `devflow_edge`, mantém o PostgreSQL apenas em `devflow_internal`, instala `/opt/fullpassword/docker-compose.devflow.yml` e monta somente `/opt/devflow/config/nginx/devflow.conf` no proxy. O Compose e a configuração originais do Full Password não são editados. Certificado, arquivos e recriação exclusiva do serviço `nginx` fazem parte de uma transação com backup e rollback. Consulte o [adaptador persistente](docs/infrastructure/fullpassword-nginx-adapter.md).
+
+O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, validou o bloqueio anterior e forneceu o inventário usado pelo adaptador. A implementação `0.3.0-alpha` ainda não foi ensaiada nessa VPS; portanto, o modo compartilhado não está homologado.
 
 ## Configuração
 
@@ -119,6 +122,9 @@ sudo /opt/devflow/app/scripts/update.sh
 # remover serviços e preservar todos os dados
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 
+# remoção opcional do certificado DevFlow exige confirmação adicional
+sudo /opt/devflow/app/scripts/uninstall.sh --keep-data --remove-devflow-certificate
+
 # purge exige backup e duas confirmações literais
 sudo /opt/devflow/app/scripts/uninstall.sh --purge
 ```
@@ -145,6 +151,7 @@ docker compose config --quiet
 - [Documento 003](docs/functional/document-003.md)
 - [Infraestrutura](docs/infrastructure/infrastructure.md)
 - [Instalação e coexistência](docs/infrastructure/installation.md)
+- [Adaptador persistente para fullpassword_nginx](docs/infrastructure/fullpassword-nginx-adapter.md)
 - [Instalação na VPS](docs/infrastructure/vps-installation.md)
 - [Primeiro deployment](docs/operations/first-deployment.md)
 - [Troubleshooting](docs/operations/troubleshooting.md)

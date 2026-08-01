@@ -64,11 +64,12 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.2.0-alpha` consistente;
+- versão `0.3.0-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;
 - diagnóstico sanitizado;
+- adaptador persistente e reversível para o contrato comprovado do `fullpassword_nginx`;
 - backup, restore e desinstalação preservando dados por padrão;
 - documentação operacional e de VPS;
 - auditoria de arquivos, links, caminhos e segredos;

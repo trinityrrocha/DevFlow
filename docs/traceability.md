@@ -48,6 +48,7 @@
 | Redes separadas | `../docker-compose.yml`: `devflow_edge` e `devflow_internal` |
 | Configuração Nginx transacional | `../scripts/lib/proxy-config.sh` |
 | Testes do modo compartilhado | `../tests/integration/shared-proxy.test.sh` e `../scripts/validate-shared-proxy.mjs` |
+| Adaptador Full Password | `../scripts/lib/fullpassword-proxy.sh`, `../docker/fullpassword/` e `infrastructure/fullpassword-nginx-adapter.md` |
 
 ## Correção do instalador compartilhado
 
@@ -55,14 +56,29 @@
 |---|---|
 | Ensaio real registrado | commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` em `implementation-status.md` |
 | Detecção read-only | inspect, `nginx -T`, `nginx -t` e network inspect em `../scripts/detect-shared-proxy.sh` |
-| Full Password preservado | política `fullpassword-nginx` retorna bloqueio antes do plano de instalação |
+| Full Password preservado | política só aceita o inventário exato e o validador compara Compose base/merge sem escrever no original |
 | Caddy não anunciado | política explícita `caddy-host`/`caddy-container` bloqueada |
 | Relatório sanitizado | `/var/log/devflow/shared-proxy-diagnostic.log`, modo `0600` |
 | Aplicação atômica | arquivo exclusivo, backup, validação, reload e rollback em `../scripts/lib/proxy-config.sh` |
 | Remoção reversível | `remove_host_nginx_config` remove somente a rota com marcador DevFlow |
 | Dados isolados | banco somente em `devflow_internal`; borda separada em `devflow_edge` |
 
-## Mecanismo de atualização 0.2.0-alpha
+## Adaptador persistente `0.3.0-alpha`
+
+| Requisito | Evidência |
+|---|---|
+| Override independente | `../docker/fullpassword/docker-compose.devflow.yml.template` promovido em `/opt/fullpassword/docker-compose.devflow.yml` |
+| Configuração exclusiva | templates `../docker/nginx/fullpassword-*.conf.template` em `/opt/devflow/config/nginx/devflow.conf` |
+| Preservação estrutural | `../scripts/validate-fullpassword-compose.py` compara serviço, portas, mounts e redes |
+| Rede persistente | `devflow_edge` externa com label `devflow.managed=true`; PostgreSQL ausente pelo Compose e por `health.sh` |
+| Certificado exclusivo | prova HTTP ACME e `certbot --webroot` somente para o domínio configurado |
+| Aplicação/rollback | snapshots e promoção atômica em `../scripts/lib/fullpassword-proxy.sh` |
+| Update e manutenção | templates e promoção transacional chamados por `../scripts/update.sh` |
+| Remoção segura | `../scripts/uninstall.sh`; certificado separado por opção e confirmação |
+| Testes | `../tests/integration/fullpassword-adapter.test.sh` e `../scripts/validate-fullpassword-adapter.mjs` |
+| Homologação real | pendente; `implementation-status.md` não declara aprovação operacional |
+
+## Mecanismo de atualização 0.3.0-alpha
 
 | Requisito | Evidência |
 |---|---|
@@ -130,4 +146,4 @@
 
 - O atualizador do Full Password não possui backup pré-update ou rollback automático. A documentação registra a diferença entre comportamento real e desejado.
 - O instalador do Full Password assume servidor exclusivo. O DevFlow proíbe replicar ações globais destrutivas.
-- A coexistência automática com o Nginx containerizado atual depende de um ponto de extensão persistente. Sem ele, a instalação falha de forma segura e não modifica o Full Password.
+- A coexistência automática aceita somente o ponto persistente comprovado e o override independente. Se qualquer gate divergir, a instalação falha de forma segura e não modifica o Full Password.

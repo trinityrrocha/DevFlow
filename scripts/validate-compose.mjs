@@ -5,6 +5,7 @@ import YAML from 'yaml';
 const load = (file) => YAML.parse(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
 const base = load('docker-compose.yml');
 const shared = load('docker-compose.shared.yml');
+const fullpassword = load('docker-compose.fullpassword.yml');
 const maintenance = load('docker-compose.maintenance.yml');
 
 const requiredServices = ['db', 'backend', 'frontend', 'edge'];
@@ -30,8 +31,20 @@ for (const volume of ['devflow_db_data', 'devflow_uploads']) {
 if (!base.networks?.devflow_internal?.internal) {
   throw new Error('A rede interna do banco deve bloquear exposição externa direta.');
 }
-if (!base.networks?.devflow_edge || base.services.db.networks?.includes('devflow_edge')) {
+if (!base.networks?.devflow_edge?.external || base.networks.devflow_edge.name !== 'devflow_edge'
+  || base.services.db.networks?.includes('devflow_edge')) {
   throw new Error('A rede de borda deve existir e permanecer inacessível ao PostgreSQL.');
+}
+for (const service of ['backend', 'frontend']) {
+  if (fullpassword.services?.[service]?.ports) {
+    throw new Error(`O adaptador Full Password não deve publicar portas de ${service} no host.`);
+  }
+  if (!Object.hasOwn(fullpassword.services?.[service]?.networks || {}, 'devflow_edge')) {
+    throw new Error(`Alias de borda ausente para ${service} no adaptador Full Password.`);
+  }
+}
+if (!Object.hasOwn(fullpassword.services.backend.networks, 'devflow_internal')) {
+  throw new Error('O overlay Full Password deve preservar explicitamente a rede interna do backend.');
 }
 for (const service of ['backend', 'frontend', 'edge']) {
   if (!base.services[service].networks?.includes('devflow_edge')) {

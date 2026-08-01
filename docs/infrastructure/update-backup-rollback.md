@@ -54,7 +54,7 @@ Nenhuma etapa executa force pull, prune global, remoção de volumes ou restart 
 
 ## Modo de manutenção
 
-No modo `isolated`, o edge DevFlow é parado e um Compose independente, `docker-compose.maintenance.yml`, assume temporariamente 80/443. No modo `shared`, somente o virtual host DevFlow é trocado após `nginx -t`; o arquivo anterior pode ser restaurado de forma atômica.
+No modo `isolated`, o edge DevFlow é parado e um Compose independente, `docker-compose.maintenance.yml`, assume temporariamente 80/443. No `shared` com Nginx do host, somente o virtual host DevFlow é trocado após `nginx -t`. Com `fullpassword_nginx`, override e virtual host recebem snapshot, o merge e a candidata Nginx são validados, somente o serviço `nginx` é recriado com os dois Compose e os dois domínios participam do gate.
 
 O updater confirma HTTP `503` antes de migrations. A remoção da manutenção ocorre somente depois dos checks internos, e os checks públicos ainda fazem parte do gate transacional.
 
@@ -70,6 +70,8 @@ Antes da primeira mutação, uma falha apenas remove os temporários gerados e d
 6. health checks internos da versão anterior;
 7. restauração do proxy e retirada da manutenção;
 8. health checks públicos e restauração do timer de backup.
+
+Se a atualização precisou criar a rede externa `devflow_edge`, um rollback a remove somente depois que os containers anteriores e o proxy deixarem de usá-la. Uma rede preexistente nunca é assumida como DevFlow sem a label de propriedade.
 
 O resultado fica em `/opt/devflow/data/update-report.txt`; o log sanitizado fica em `/opt/devflow/logs/update-<timestamp>.log`. Se o rollback também falhar, o script registra cada falha, tenta retirar a manutenção e encerra com erro. Nesse caso, preserve o ambiente e siga o runbook de troubleshooting; nunca marque migration ou versão manualmente.
 
@@ -105,4 +107,4 @@ As variáveis internas que evitam o backup adicional e mantêm o backend parado 
 - assinatura ou atestação de releases e imagens fixadas por digest;
 - renovação TLS, reboot e concorrência testados;
 - observabilidade, retenção e alertas aprovados;
-- ensaio de coexistência sem regressão do Full Password.
+- ensaio real do adaptador com falhas de Compose, ACME, `nginx -t`, recriação e health, sem regressão do Full Password.

@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.2.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.3.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 
@@ -10,6 +10,7 @@
 - domínio exclusivo resolvendo para a VPS;
 - conectividade HTTPS com `github.com` e `raw.githubusercontent.com`;
 - snapshot da VPS recomendado antes do primeiro ensaio.
+- no modo `fullpassword_nginx`, `python3` e `openssl` já disponíveis para as validações read-only de merge e certificado antes de qualquer instalação de pacotes;
 
 O instalador suporta Docker Engine 24+ e Compose v2 2.20+. Ele não altera firewall, não executa `docker system prune`, não reinicia containers de terceiros e não remove Docker globalmente.
 
@@ -45,7 +46,7 @@ Escolha explicitamente o proxy e valide o plano:
   --super-admin-email admin@exemplo.com
 ```
 
-Troque `isolated` por `shared` somente quando já existir um proxy. O modo compartilhado não é inferido automaticamente e não compartilha containers, volumes, banco ou storage. A integração automática desta versão é limitada ao Nginx do host; Caddy e proxies containerizados são somente diagnosticados e bloqueados.
+Troque `isolated` por `shared` somente quando já existir um proxy. O modo compartilhado não é inferido automaticamente e não compartilha containers, volumes, banco ou storage. Esta versão aceita Nginx do host ou o contrato exato do `fullpassword_nginx`; Caddy e outros proxies containerizados são diagnosticados e bloqueados.
 
 Também é possível executar `sudo ./install.sh` sem argumentos. Nesse caso, o bootstrap pergunta domínio, e-mails, modo de proxy e confirmação antes de qualquer mudança permanente.
 
@@ -105,15 +106,15 @@ sudo ./install.sh --install \
 
 Antes do plano, o instalador pede autorização específica para executar um diagnóstico somente leitura. O relatório sanitizado é salvo em `/var/log/devflow/shared-proxy-diagnostic.log` e registra tipo, container, imagem, status, health, portas, redes, mounts, includes, certificados, reload, compatibilidade e bloqueios. Nenhuma chave, senha, token ou conteúdo do ambiente é coletado.
 
-Somente um Nginx do host é aceito automaticamente, e apenas quando `nginx -t`, include persistente de `/etc/nginx/conf.d/*.conf`, mecanismo de certificado, reload, domínio e portas forem comprovados. O instalador cria exclusivamente `/etc/nginx/conf.d/devflow.conf`. Durante ACME, apenas o challenge é servido e todo o restante responde `503`; o proxy da aplicação só é publicado depois dos health checks internos. A aplicação é atômica, guarda backup em `/opt/devflow/backups/proxy`, valida antes e depois, e restaura o arquivo anterior inclusive quando o reload falha.
+Um Nginx do host é aceito apenas quando `nginx -t`, include persistente de `/etc/nginx/conf.d/*.conf`, mecanismo de certificado, reload, domínio e portas forem comprovados. O instalador cria exclusivamente `/etc/nginx/conf.d/devflow.conf`. Durante ACME, apenas o challenge é servido e todo o restante responde `503`; o proxy da aplicação só é publicado depois dos health checks internos. A aplicação é atômica, guarda backup em `/opt/devflow/backups/proxy`, valida antes e depois, e restaura o arquivo anterior inclusive quando o reload falha.
 
 Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include persistente e documentado antes de executar o instalador. Não modifique arquivos de outra aplicação.
 
 ## 6. Coexistência com Full Password
 
-Se existir um container chamado `fullpassword_nginx`, o instalador oferece o diagnóstico read-only e depois mantém a instalação bloqueada. A baseline não usa `docker cp`, não conecta redes no container vizinho, não altera certificado e não executa reload nele.
+Se existir `fullpassword_nginx`, o instalador oferece o diagnóstico read-only. Ele só prossegue quando o relatório retorna `compatibility=compatible-with-compose-override` e comprova o contrato exato de projeto, serviço, caminhos, mounts, rede, include, domínio e merge. Não use o adaptador com uma topologia apenas parecida.
 
-O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção de `fullpassword_nginx` interrompeu o fluxo antes de qualquer integração insegura. Isso não representa instalação aprovada nem homologação do modo compartilhado.
+O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção interrompeu o fluxo antes de qualquer integração insegura. Esse inventário originou o adaptador `0.3.0-alpha`, que ainda não foi executado na VPS; isso não representa instalação aprovada nem homologação do modo compartilhado.
 
 Para repetir somente o inventário a partir de um checkout confiável:
 
@@ -124,19 +125,37 @@ sudo ./scripts/detect-shared-proxy.sh \
   --output /var/log/devflow/shared-proxy-diagnostic.log
 ```
 
-O código de saída `2` significa que a compatibilidade não foi comprovada; não desabilite esse gate.
+O código de saída `2` significa que a compatibilidade não foi comprovada; não desabilite esse gate. Saída zero com `compatible-with-compose-override` comprova somente compatibilidade estrutural para iniciar a instalação transacional.
 
-Para coexistir com segurança, o administrador da VPS deve preparar fora do container um ponto persistente que satisfaça todos estes gates:
+O adaptador implementado usa:
 
-- arquivo de configuração versionado em volume do proprietário do proxy;
-- domínio, upstream e certificado exclusivos;
-- rede compartilhada criada e governada pelo proprietário do proxy;
-- teste de configuração no ingress real;
-- reload documentado e reversível;
-- probes do Full Password antes e depois;
-- rollback do arquivo DevFlow sem reiniciar o Full Password.
+- `/opt/fullpassword/docker-compose.devflow.yml` como override independente;
+- `/opt/devflow/config/nginx/devflow.conf` como virtual host exclusivo;
+- `devflow_edge` como rede externa gerenciada;
+- `devflow-frontend:80` e `devflow-backend:3000` como upstreams;
+- `/var/www/certbot` para a prova de rota e o desafio ACME;
+- `/etc/letsencrypt/live/dev.sti1.com.br` para o certificado exclusivo;
+- snapshots em `/opt/devflow/backups/proxy` para rollback.
 
-Depois disso, o relatório deve ser analisado e um adaptador específico implementado e testado em fase posterior. Não improvise alteração manual dentro do container.
+O instalador não edita o Compose original nem `nginx.runtime.conf`, não usa `docker cp` e não modifica arquivos internos do container. Ele recria somente o serviço `nginx` com os dois Compose após validar a candidata. Leia integralmente o [adaptador persistente](fullpassword-nginx-adapter.md) antes do ensaio.
+
+Para o ambiente comprovado, use explicitamente `shared`, `dev.sti1.com.br` e o e-mail ACME autorizado. Revise primeiro o relatório e o dry-run; não force a compatibilidade:
+
+```bash
+./install.sh --dry-run \
+  --proxy-mode shared \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br \
+  --super-admin-email ADMIN_AUTORIZADO
+
+sudo ./install.sh --install \
+  --proxy-mode shared \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br \
+  --super-admin-email ADMIN_AUTORIZADO
+```
+
+Não coloque senha ou token na linha de comando. `ADMIN_AUTORIZADO` deve ser substituído pelo e-mail real do primeiro administrador.
 
 ## 7. Diretórios e persistência
 
@@ -203,19 +222,20 @@ sudo /opt/devflow/app/scripts/version.sh --all --refresh
 sudo /opt/devflow/app/scripts/update.sh --check
 sudo /opt/devflow/app/scripts/update.sh
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
+sudo /opt/devflow/app/scripts/uninstall.sh --keep-data --remove-devflow-certificate
 sudo /opt/devflow/app/scripts/uninstall.sh --purge
 ```
 
 O updater aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout limpo e fast-forward. Ele exibe a versão e o changelog antes da confirmação, cria e verifica backup, mantém HTTP 503 durante a troca e restaura automaticamente a versão anterior em falha. Consulte o [runbook operacional](update-backup-rollback.md).
 
-`--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. Docker, certificados e Full Password são sempre preservados.
+`--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. O certificado DevFlow só é removido com `--remove-devflow-certificate` e uma confirmação adicional. Docker e todos os certificados/arquivos do Full Password são sempre preservados.
 
 ## 12. Limitações da alpha
 
 - sem interface web administrativa para o updater;
 - rollback automático implementado, mas ainda sem fault-injection e restore drill na VPS;
-- sem laboratório publicado de coexistência com `fullpassword_nginx`;
-- integração automática com Caddy e Nginx containerizado ainda indisponível;
+- adaptador `fullpassword_nginx` implementado, mas ainda sem ensaio real publicado de Docker, Nginx, certificado e rollback;
+- integração automática com Caddy e outros Nginx containerizados ainda indisponível;
 - sem prova de renovação automática do certificado;
 - sem matriz completa de distribuição/arquitetura em CI;
 - sem teste E2E, restore drill, pentest ou aprovação para produção.

@@ -5,6 +5,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/fullpassword-proxy.sh
+. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 
 INTERNAL_ONLY=false
 QUIET=false
@@ -60,6 +62,14 @@ for service in db backend frontend; do
   [[ "$health_state" == healthy ]] && report PASS "$service" healthy || report FAIL "$service" "$health_state"
 done
 
+db_networks="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{println}}{{end}}' \
+  "$("${DEVFLOW_COMPOSE[@]}" ps -q db 2>/dev/null || true)" 2>/dev/null || true)"
+if grep -Fxq "$DEVFLOW_EDGE_NETWORK" <<< "$db_networks"; then
+  report FAIL network_boundary 'PostgreSQL conectado indevidamente à devflow_edge'
+else
+  report PASS network_boundary 'PostgreSQL isolado da rede de borda'
+fi
+
 if "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
   report PASS database 'accepting connections'
 else
@@ -96,7 +106,18 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
     report FAIL public_frontend 'indisponível'
   fi
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    nginx -t >/dev/null 2>&1 && report PASS proxy 'nginx -t' || report FAIL proxy 'nginx -t falhou'
+    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+      docker exec "$FULLPASSWORD_CONTAINER" nginx -t >/dev/null 2>&1 \
+        && report PASS proxy 'fullpassword_nginx nginx -t' || report FAIL proxy 'fullpassword_nginx nginx -t falhou'
+      docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{println}}{{end}}' "$FULLPASSWORD_CONTAINER" \
+        | grep -Fxq "$DEVFLOW_EDGE_NETWORK" \
+        && report PASS proxy_network "$DEVFLOW_EDGE_NETWORK" || report FAIL proxy_network "$DEVFLOW_EDGE_NETWORK ausente"
+      fullpassword_public_health \
+        && report PASS fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN" \
+        || report FAIL fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN indisponível"
+    else
+      nginx -t >/dev/null 2>&1 && report PASS proxy 'nginx -t' || report FAIL proxy 'nginx -t falhou'
+    fi
   else
     edge_id="$("${DEVFLOW_COMPOSE[@]}" ps -q edge 2>/dev/null || true)"
     edge_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$edge_id" 2>/dev/null || true)"

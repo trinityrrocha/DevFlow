@@ -8,6 +8,8 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/proxy-config.sh
 . "$SCRIPT_DIR/lib/proxy-config.sh"
+# shellcheck source=lib/fullpassword-proxy.sh
+. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 
 CHECK_ONLY=false
 while [[ $# -gt 0 ]]; do
@@ -84,9 +86,17 @@ for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/
   managed_file "$unit_file" '# Managed by DevFlow installer.' || die "$unit_file pertence a outro sistema."
 done
 if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-  managed_file /etc/nginx/conf.d/devflow.conf '# Managed by DevFlow installer. Do not merge with another application.' \
-    || die '/etc/nginx/conf.d/devflow.conf pertence a outro sistema.'
-  nginx -t >/dev/null 2>&1 || die 'A configuração Nginx atual é inválida.'
+  if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+    [[ -f "$FULLPASSWORD_OVERRIDE_FILE" && "$(head -n1 "$FULLPASSWORD_OVERRIDE_FILE")" == "$FULLPASSWORD_OVERRIDE_MARKER" ]] \
+      || die 'Override persistente do Full Password ausente ou divergente.'
+    [[ -f "$DEVFLOW_PROXY_CONFIG" && "$(head -n1 "$DEVFLOW_PROXY_CONFIG")" == "$FULLPASSWORD_CONFIG_MARKER" ]] \
+      || die 'Configuração independente DevFlow ausente ou divergente.'
+    fullpassword_adapter_preflight || die 'Preflight do adaptador fullpassword_nginx falhou.'
+  else
+    managed_file /etc/nginx/conf.d/devflow.conf '# Managed by DevFlow installer. Do not merge with another application.' \
+      || die '/etc/nginx/conf.d/devflow.conf pertence a outro sistema.'
+    nginx -t >/dev/null 2>&1 || die 'A configuração Nginx atual é inválida.'
+  fi
 fi
 
 TEMP_REMOTE_REPO=
@@ -171,6 +181,7 @@ SOURCE_ADVANCED=false
 BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
 ROLLBACK_RESULT=not-required
+EDGE_NETWORK_PREEXISTED=true
 
 write_update_report() {
   local result="$1"
@@ -220,9 +231,13 @@ enter_maintenance() {
   local root="$1" candidate
   log INFO 'Ativando modo de manutenção.'
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    candidate="$(mktemp /tmp/devflow-host-maintenance.XXXXXX)"
-    render_host_proxy "$root" host-maintenance.conf.template "$candidate"
-    promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+      promote_fullpassword_proxy_config "$root" fullpassword-maintenance.conf.template "$DEVFLOW_DOMAIN" maintenance
+    else
+      candidate="$(mktemp /tmp/devflow-host-maintenance.XXXXXX)"
+      render_host_proxy "$root" host-maintenance.conf.template "$candidate"
+      promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+    fi
   else
     set_compose_for "$OLD_RELEASE_DIR"
     "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
@@ -241,9 +256,13 @@ enter_maintenance() {
 restore_proxy_for() {
   local root="$1" candidate
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    candidate="$(mktemp /tmp/devflow-host-proxy.XXXXXX)"
-    render_host_proxy "$root" host-shared.conf.template "$candidate"
-    promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+      promote_fullpassword_proxy_config "$root" fullpassword-shared.conf.template "$DEVFLOW_DOMAIN" healthy
+    else
+      candidate="$(mktemp /tmp/devflow-host-proxy.XXXXXX)"
+      render_host_proxy "$root" host-shared.conf.template "$candidate"
+      promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+    fi
   else
     maintenance_compose_for "$CANDIDATE_DIR"
     "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" down --remove-orphans
@@ -322,6 +341,11 @@ rollback_update() {
     [[ $? -eq 0 ]] || { log ERROR 'Não foi possível remover a release candidata rejeitada.'; rollback_failures=$((rollback_failures + 1)); }
   fi
 
+  if [[ "$EDGE_NETWORK_PREEXISTED" == false ]]; then
+    remove_devflow_edge_network_if_unused
+    [[ $? -eq 0 ]] || { log ERROR 'Não foi possível remover a rede de borda criada pela atualização rejeitada.'; rollback_failures=$((rollback_failures + 1)); }
+  fi
+
   if [[ "$rollback_failures" -eq 0 ]]; then
     ROLLBACK_RESULT=success
     log WARN "Rollback concluído. DevFlow retornou a $OLD_VERSION ($OLD_SHA)."
@@ -395,6 +419,11 @@ if systemctl is-active --quiet devflow-backup.service; then
 fi
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 ROLLBACK_ARMED=true
+
+if ! docker network inspect "$DEVFLOW_EDGE_NETWORK" >/dev/null 2>&1; then
+  EDGE_NETWORK_PREEXISTED=false
+fi
+ensure_devflow_edge_network || die 'A rede externa devflow_edge não pôde ser preparada com propriedade segura.'
 
 UPDATE_PHASE=source
 SOURCE_ADVANCED=true

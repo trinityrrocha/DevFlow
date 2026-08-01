@@ -7,16 +7,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/proxy-config.sh
 . "$SCRIPT_DIR/lib/proxy-config.sh"
+# shellcheck source=lib/fullpassword-proxy.sh
+. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 
 MODE=
 ASSUME_YES=false
+REMOVE_DEVFLOW_CERTIFICATE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --keep-data) MODE=keep-data; shift ;;
     --purge) MODE=purge; shift ;;
     --yes) ASSUME_YES=true; shift ;;
+    --remove-devflow-certificate) REMOVE_DEVFLOW_CERTIFICATE=true; shift ;;
     --help|-h)
-      echo 'Uso: sudo scripts/uninstall.sh --keep-data | --purge'
+      echo 'Uso: sudo scripts/uninstall.sh --keep-data | --purge [--remove-devflow-certificate]'
       exit 0
       ;;
     *) die "Opção desconhecida: $1" ;;
@@ -38,6 +42,13 @@ echo 'Recursos da aplicação que serão removidos:'
 "${DEVFLOW_COMPOSE[@]}" ps --all 2>/dev/null || true
 echo 'A configuração do proxy DevFlow e os timers DevFlow serão removidos.'
 
+if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
+  [[ -f "$FULLPASSWORD_OVERRIDE_FILE" && "$(head -n1 "$FULLPASSWORD_OVERRIDE_FILE")" == "$FULLPASSWORD_OVERRIDE_MARKER" ]] \
+    || die 'Override Full Password ausente ou não reconhecido; nenhuma remoção foi iniciada.'
+  [[ -f "$DEVFLOW_PROXY_CONFIG" && "$(head -n1 "$DEVFLOW_PROXY_CONFIG")" == "$FULLPASSWORD_CONFIG_MARKER" ]] \
+    || die 'Rota DevFlow do proxy compartilhado ausente ou não reconhecida.'
+fi
+
 if [[ -f /etc/nginx/conf.d/devflow.conf ]]; then
   [[ "$(head -n1 /etc/nginx/conf.d/devflow.conf)" == '# Managed by DevFlow installer. Do not merge with another application.' ]] \
     || die 'Configuração Nginx não reconhecida; nenhuma remoção foi iniciada.'
@@ -56,8 +67,13 @@ if [[ "$MODE" == keep-data ]]; then
   "${DEVFLOW_COMPOSE[@]}" down --remove-orphans
 else
   echo 'ATENÇÃO: serão removidos exatamente:'
-  printf '  %s\n' "$DEVFLOW_INSTALL_ROOT" /etc/nginx/conf.d/devflow.conf \
-    /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer
+  purge_targets=("$DEVFLOW_INSTALL_ROOT" /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer)
+  if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
+    purge_targets+=("$FULLPASSWORD_OVERRIDE_FILE" "$DEVFLOW_PROXY_CONFIG")
+  else
+    purge_targets+=(/etc/nginx/conf.d/devflow.conf)
+  fi
+  printf '  %s\n' "${purge_targets[@]}"
   latest_backup="$(find "$DEVFLOW_INSTALL_ROOT/backups" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -size +0c -print -quit 2>/dev/null || true)"
   [[ -n "$latest_backup" ]] || die 'Nenhum backup DevFlow válido foi encontrado. Execute scripts/backup.sh antes do purge.'
   echo 'Copie o backup para outro host antes de prosseguir; o diretório local de backups também será removido.'
@@ -67,9 +83,20 @@ else
   "${DEVFLOW_COMPOSE[@]}" down --volumes --remove-orphans
 fi
 
-remove_host_nginx_config /etc/nginx/conf.d/devflow.conf \
-  '# Managed by DevFlow installer. Do not merge with another application.' \
-  "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
+  uninstall_fullpassword_proxy_adapter
+else
+  remove_host_nginx_config /etc/nginx/conf.d/devflow.conf \
+    '# Managed by DevFlow installer. Do not merge with another application.' \
+    "$DEVFLOW_INSTALL_ROOT/backups/proxy"
+fi
+remove_devflow_edge_network_if_unused || log WARN 'A rede devflow_edge foi preservada porque ainda está em uso ou sua propriedade não foi comprovada.'
+
+if [[ "$REMOVE_DEVFLOW_CERTIFICATE" == true ]]; then
+  DEVFLOW_ASSUME_YES=false
+  confirm_exact 'REMOVER CERTIFICADO DEVFLOW' "Confirma remover somente o certificado de $DEVFLOW_DOMAIN?"
+  certbot delete --cert-name "$DEVFLOW_DOMAIN" --non-interactive
+fi
 
 systemctl disable --now devflow-backup.timer >/dev/null 2>&1 || true
 rm -f -- /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer

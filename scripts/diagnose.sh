@@ -5,6 +5,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/fullpassword-proxy.sh
+. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 
 OUTPUT=
 while [[ $# -gt 0 ]]; do
@@ -66,6 +68,7 @@ if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
   echo "env_file=present mode=$mode"
   load_devflow_env
   echo "proxy_mode=${DEVFLOW_PROXY_MODE:-unknown}"
+  echo "shared_proxy_adapter=${DEVFLOW_SHARED_PROXY_ADAPTER:-none}"
   echo "domain=${DEVFLOW_DOMAIN:-unknown}"
 else
   echo 'env_file=absent'
@@ -85,7 +88,13 @@ else
 fi
 echo
 echo '[proxy]'
-if command -v nginx >/dev/null 2>&1; then
+if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]] && command -v docker >/dev/null 2>&1; then
+  echo "override=$([[ -f "$FULLPASSWORD_OVERRIDE_FILE" ]] && echo present || echo absent)"
+  echo "devflow_config=$([[ -f "$DEVFLOW_PROXY_CONFIG" ]] && echo present || echo absent)"
+  docker exec "$FULLPASSWORD_CONTAINER" nginx -t 2>&1 | redact_stream || true
+  docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}network={{$name}}{{println}}{{end}}' \
+    "$FULLPASSWORD_CONTAINER" 2>&1 | redact_stream || true
+elif command -v nginx >/dev/null 2>&1; then
   nginx -t 2>&1 | redact_stream || true
 else
   echo 'Host Nginx ausente ou não utilizado.'
@@ -96,6 +105,9 @@ if [[ -r "$DEVFLOW_ENV_FILE" && -e "$DEVFLOW_INSTALL_ROOT/app/docker-compose.yml
   DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"
   compose_files
   "${DEVFLOW_COMPOSE[@]}" logs --tail 50 --no-color 2>&1 | redact_stream || true
+  if [[ -r "$DEVFLOW_LOG_ROOT/fullpassword-proxy.log" ]]; then
+    tail -n 50 "$DEVFLOW_LOG_ROOT/fullpassword-proxy.log" | redact_stream
+  fi
 else
   echo 'Logs indisponíveis.'
 fi

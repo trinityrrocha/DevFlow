@@ -1,0 +1,20 @@
+# Managed by DevFlow Full Password proxy adapter. Do not edit the original Compose.
+services:
+  nginx:
+    volumes:
+      - type: bind
+        source: /opt/devflow/config/nginx/devflow.conf
+        target: /etc/nginx/conf.d/devflow.conf
+        read_only: true
+      - type: bind
+        source: /var/www/certbot
+        target: /var/www/certbot
+        read_only: true
+    networks:
+      - fullpassword_network
+      - devflow_edge
+
+networks:
+  devflow_edge:
+    external: true
+    name: devflow_edge

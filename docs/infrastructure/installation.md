@@ -36,15 +36,15 @@ Docker é instalado somente se ausente e exclusivamente pelo repositório oficia
 
 Docker e Compose compatíveis são reutilizados. O instalador verifica nomes, labels de propriedade, redes, volumes e portas. Recursos com namespace DevFlow mas sem a label esperada causam parada. Nenhum container de terceiros é parado ou reiniciado.
 
-No modo compartilhado, um diagnóstico read-only precisa comprovar Nginx do host, configuração válida, include persistente, certificados, reload, domínio e portas. Só então o host recebe um único arquivo gerenciado. A candidata é promovida atomicamente e o arquivo anterior é restaurado em falha de sintaxe ou reload. No modo isolado, 80/443 precisam estar livres.
+No modo compartilhado, um diagnóstico read-only precisa comprovar o contrato inteiro antes de qualquer mutação. Um Nginx do host compatível recebe um único arquivo gerenciado e usa portas loopback. O inventário exato aprovado do `fullpassword_nginx` usa o adaptador por Compose override e rede externa; outras topologias permanecem bloqueadas. No modo isolado, 80/443 precisam estar livres.
 
 ## Full Password
 
-O container `fullpassword_nginx` é tratado como limite de segurança: sua detecção autoriza somente a geração confirmada do relatório `/var/log/devflow/shared-proxy-diagnostic.log` e bloqueia a instalação automática. A versão alpha não copia arquivos para o container, não conecta rede, não recarrega Nginx, não altera certificados e não instala reconciliador nele. Caddy recebe o mesmo bloqueio explícito porque ainda não existe suporte implementado.
+O container `fullpassword_nginx` continua sendo um limite de segurança. A instalação só avança quando projeto, serviço, working directory, Compose, mounts read-only, rede original, include, domínio, propriedade da rede de borda e merge final coincidem com o contrato aprovado. O resultado é `compatible-with-compose-override`; qualquer divergência bloqueia.
 
 O ensaio real do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` parou nesse gate, antes de qualquer integração. Esse evento comprova o fail-closed, não a compatibilidade.
 
-A coexistência só pode avançar depois que um ponto de extensão persistente, sua rede, certificado, probes e rollback forem comprovados pelo proprietário do ingress. As instruções estão no [guia de VPS](vps-installation.md).
+O adaptador cria apenas `/opt/fullpassword/docker-compose.devflow.yml`, `/opt/devflow/config/nginx/devflow.conf` e a rede externa `devflow_edge`. O Compose original e `nginx.runtime.conf` não são editados. O certificado DevFlow é independente; o serviço `nginx` é o único componente Full Password recriado, sempre com os dois arquivos Compose e com rollback. Veja o [contrato completo do adaptador](fullpassword-nginx-adapter.md) e o [guia de VPS](vps-installation.md).
 
 ## Recursos próprios
 
@@ -56,6 +56,7 @@ A coexistência só pode avançar depois que um ponto de extensão persistente, 
 - checkout operacional: `/opt/devflow/source`;
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/conf.d/devflow.conf`;
+- proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/fullpassword/docker-compose.devflow.yml`;
 - relatório de proxy compartilhado: `/var/log/devflow/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.
