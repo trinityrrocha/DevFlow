@@ -29,13 +29,13 @@ sudo ./install.sh --install \
   --super-admin-email admin@exemplo.com
 ```
 
-Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.3.1-alpha`.
+Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.3.2-alpha`.
 
 Para Nginx do host, substitua por `--proxy-mode shared` e confirme as portas loopback planejadas. O instalador pedirá autorização separada para o diagnóstico read-only. Só prossiga se o resultado for `Integração automática compatível.`
 
 Se identificar `fullpassword_nginx`, só prossiga quando todos os fatos do contrato aprovado resultarem em `compatible-with-compose-override`; leia o [runbook do adaptador](../infrastructure/fullpassword-nginx-adapter.md). Para outro Nginx containerizado ou Caddy, preserve o relatório e encerre o ensaio. Não conecte redes, copie arquivos ou recarregue o proxy manualmente.
 
-O ensaio do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` terminou nesse gate após detectar `fullpassword_nginx`. Ele é evidência histórica do fail-closed e do inventário, não homologação do adaptador corrigido em `0.3.1-alpha`.
+O dry-run da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, terminou ao encontrar `/opt/fullpassword/.env` protegido. Isso comprova o requisito de privilégio, não uma incompatibilidade estrutural. Em `0.3.2-alpha`, execute primeiro `--check`, depois o dry-run comum e, quando orientado, repita o mesmo dry-run com `sudo`. O ensaio privilegiado permanece pendente e não autoriza declarar o adaptador homologado.
 
 ## Aceite mínimo
 
@@ -51,7 +51,7 @@ sudo /opt/devflow/app/scripts/backup.sh
 Verifique:
 
 - todos os serviços necessários estão `healthy`;
-- `/api/health` informa `0.3.1-alpha` e migration `001_initial_schema.sql`;
+- `/api/health` informa `0.3.2-alpha` e migration `001_initial_schema.sql`;
 - em coexistência, `health.sh` confirma `nginx -t`, `dev.sti1.com.br`, `pw.sti1.com.br` e ausência do PostgreSQL na rede de borda;
 - o certificado corresponde ao domínio;
 - o Super Admin troca a senha e configura MFA;

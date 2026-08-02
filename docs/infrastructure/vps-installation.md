@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.3.1-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.3.2-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 
@@ -36,6 +36,8 @@ Não são necessários token, GitHub CLI, deploy key ou chave SSH. A VPS nunca d
 
 Esse modo cria somente um checkout temporário, comprova remote, branch, commit e `VERSION`, chama o diagnóstico interno e remove os temporários. Não requer `root` nem altera a instalação.
 
+No modo compartilhado, `--check` faz apenas o inventário básico. Ele identifica os caminhos dos inputs declarados pelo Compose (`.env`, `env_file` e variáveis obrigatórias), sem abrir seu conteúdo. Um input protegido é informado como requisito para o dry-run privilegiado, não como incompatibilidade.
+
 Escolha explicitamente o proxy e valide o plano:
 
 ```bash
@@ -47,6 +49,18 @@ Escolha explicitamente o proxy e valide o plano:
 ```
 
 Troque `isolated` por `shared` somente quando já existir um proxy. O modo compartilhado não é inferido automaticamente e não compartilha containers, volumes, banco ou storage. Esta versão aceita Nginx do host ou o contrato exato do `fullpassword_nginx`; Caddy e outros proxies containerizados são diagnosticados e bloqueados.
+
+Se o dry-run comum encerrar com código `3` e `reason=privileged-compose-validation-required`, repita exatamente o mesmo plano com `sudo`:
+
+```bash
+sudo ./install.sh --dry-run \
+  --proxy-mode shared \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br \
+  --super-admin-email ADMIN_AUTORIZADO
+```
+
+Essa execução privilegiada continua sem mutações: não instala pacotes, não cria recursos Docker, não reinicia containers e não altera permissões. Root é usado somente para que `docker compose --project-directory /opt/fullpassword` possa consumir seus próprios inputs protegidos. Somente depois de um dry-run privilegiado aprovado deve ser considerada uma execução separada com `--install`.
 
 Também é possível executar `sudo ./install.sh` sem argumentos. Nesse caso, o bootstrap pergunta domínio, e-mails, modo de proxy e confirmação antes de qualquer mudança permanente.
 
@@ -114,9 +128,9 @@ Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include 
 
 Se existir `fullpassword_nginx`, o instalador oferece o diagnóstico read-only. Ele só prossegue quando o relatório retorna `compatibility=compatible-with-compose-override` e comprova o contrato exato de projeto, serviço, caminhos, mounts, rede, include, domínio e merge. Não use o adaptador com uma topologia apenas parecida.
 
-O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção interrompeu o fluxo antes de qualquer integração insegura. Esse inventário originou o adaptador, corrigido em `0.3.1-alpha`, que ainda não foi executado na VPS; isso não representa instalação aprovada nem homologação do modo compartilhado.
+O dry-run real da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, comprovou que o Compose original depende de `/opt/fullpassword/.env` protegido. A versão `0.3.2-alpha` corrige a classificação e solicita uma nova execução privilegiada somente leitura. Esse novo dry-run ainda não foi executado na VPS; portanto, não existe instalação aprovada nem homologação do modo compartilhado.
 
-Para repetir somente o inventário a partir de um checkout confiável:
+Para repetir somente o inventário privilegiado a partir de um checkout confiável:
 
 ```bash
 sudo ./scripts/detect-shared-proxy.sh \
@@ -125,7 +139,7 @@ sudo ./scripts/detect-shared-proxy.sh \
   --output /opt/devflow/logs/shared-proxy-diagnostic.log
 ```
 
-O código de saída `2` significa que a compatibilidade não foi comprovada; não desabilite esse gate. Saída zero com `compatible-with-compose-override` comprova somente compatibilidade estrutural para iniciar a instalação transacional.
+O código de saída `2` significa que a compatibilidade não foi comprovada; o código `3` solicita a repetição privilegiada porque um input protegido impediu a tentativa completa. Em ambos os casos, não desabilite o gate. Saída zero com `compatible-with-compose-override` comprova somente compatibilidade estrutural para iniciar a instalação transacional.
 
 O adaptador implementado usa:
 

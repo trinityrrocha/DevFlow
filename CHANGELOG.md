@@ -2,6 +2,23 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.3.2-alpha] - 2026-08-02
+
+### Corrigido
+
+- diagnóstico comum distingue inputs protegidos do Compose de incompatibilidade entre diretórios;
+- `--check` retorna `passed-with-privileged-dry-run-required` sem falhar quando a validação completa exige root;
+- `--dry-run` comum encerra sem alterações, informa o arquivo protegido e apresenta o comando privilegiado completo;
+- `sudo --dry-run` usa `--project-directory /opt/fullpassword`, consome o `.env` somente pelo Docker Compose e mantém toda saída interpolada em temporário `0700`;
+- merge estrutural preserva serviços, imagens, restart, ambiente, portas, mounts, volumes e redes originais;
+- saída e erros do Compose são reduzidos a resultados derivados, sem valores sensíveis;
+- temporários são removidos em sucesso, erro e sinais, e a auditoria bloqueia leitura direta, cópia ou mutação de `/opt/fullpassword/.env`.
+
+### Testes
+
+- 20 cenários automatizados para inputs Compose protegidos, privilégios, sanitização, separação de modos e limpeza;
+- homologação real de `sudo --dry-run` permanece pendente na VPS; o modo compartilhado não está aprovado para produção.
+
 ## [0.3.1-alpha] - 2026-08-02
 
 ### Corrigido

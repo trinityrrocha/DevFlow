@@ -45,6 +45,15 @@ for (const fragment of [
   'compose_merge_valid=',
   'compose_validation_command=',
   'compose_executed_command=',
+  'execution_uid=',
+  'protected_compose_inputs_detected=',
+  'privileged_validation_required=',
+  'compose_validation_attempted=',
+  'compose_validation_blocked_by=',
+  'changes_applied=',
+  'installation_ready=',
+  'sensitive_values_logged=',
+  '--project-directory /opt/fullpassword',
   'compatibility=',
   'sanitize_proxy_stream',
 ]) {
@@ -53,6 +62,9 @@ for (const fragment of [
 if (/docker (restart|start|stop|network connect)/.test(diagnostic)
   || /^\s*(?:docker exec[^\n]+)?nginx -s reload/m.test(diagnostic)) {
   throw new Error('O diagnóstico contém uma mutação proibida do proxy.');
+}
+if (!diagnostic.includes('trap cleanup_diagnostic_temps EXIT') || !diagnostic.includes("trap 'exit 130' INT TERM")) {
+  throw new Error('Limpeza segura dos temporários diagnósticos está incompleta.');
 }
 if (!proxyConfig.includes('proxy_restore_transaction') || !proxyConfig.includes('systemctl reload nginx')) {
   throw new Error('Rollback atômico do proxy não está implementado.');

@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 OUTPUT=-
 DOMAIN=
+LETSENCRYPT_EMAIL=
+SUPER_ADMIN_EMAIL=
 HTTP_PORT=18080
 API_PORT=13000
 REQUESTED_CONTAINER=
@@ -36,18 +38,40 @@ DEVFLOW_DIRECTORY_WRITABLE=false
 DEVFLOW_OVERRIDE_WRITABLE=false
 DEVFLOW_PROXY_CONFIG_WRITABLE=false
 FULLPASSWORD_COMPOSE_READABLE=false
-COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
-COMPOSE_MERGE_VALID=false
-COMPOSE_VALIDATION_COMMAND='docker compose -f /opt/fullpassword/docker-compose.yml -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml config'
+COMPOSE_CROSS_DIRECTORY_SUPPORTED=unknown
+COMPOSE_MERGE_VALID=unknown
+COMPOSE_VALIDATION_COMMAND='docker compose --project-directory /opt/fullpassword -f /opt/fullpassword/docker-compose.yml -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml config --format json'
 COMPOSE_EXECUTED_COMMAND=not-run
 COMPOSE_VALIDATION_EXIT_CODE=not-run
 COMPOSE_VALIDATION_ERROR=not-run
+COMPOSE_VALIDATION_ATTEMPTED=false
+COMPOSE_VALIDATION_BLOCKED_BY=none
 COMPOSE_TEMP_OVERRIDE=not-created
+PROTECTED_COMPOSE_INPUTS_DETECTED=false
+PRIVILEGED_VALIDATION_REQUIRED=false
+CHANGES_APPLIED=false
+INSTALLATION_READY=false
+SENSITIVE_VALUES_LOGGED=false
+ORIGINAL_SERVICES_PRESERVED=unknown
+ORIGINAL_PORTS_PRESERVED=unknown
+ORIGINAL_MOUNTS_PRESERVED=unknown
+ORIGINAL_NETWORKS_PRESERVED=unknown
+ORIGINAL_RESTART_POLICIES_PRESERVED=unknown
+ORIGINAL_IMAGES_PRESERVED=unknown
+ORIGINAL_VOLUMES_PRESERVED=unknown
+ORIGINAL_ENVIRONMENT_PRESERVED=unknown
+DEVFLOW_OVERRIDE_ADDED=unknown
+DEVFLOW_EDGE_ADDED=unknown
+DEVFLOW_NGINX_MOUNT_ADDED=unknown
+DEVFLOW_DATABASE_EXPOSURE_ABSENT=unknown
+OPERATION_MODE=diagnostic
 FULLPASSWORD_EDGE_NETWORK_SAFE=false
 FULLPASSWORD_ROLLBACK_READY=false
 FULLPASSWORD_PUBLIC_HEALTH=false
 NGINX_CONF_D_INCLUDED=false
 declare -a BLOCKERS=()
+declare -a COMPOSE_INPUT_RECORDS=()
+declare -a DIAGNOSTIC_TEMP_DIRS=()
 
 usage() {
   cat <<'EOF'
@@ -56,8 +80,11 @@ Uso:
 
 Opções:
   --container NOME  inspeciona somente o container indicado
+  --letsencrypt-email EMAIL  preserva o comando completo de repetição
+  --super-admin-email EMAIL  preserva o comando completo de repetição
   --http-port PORT  porta loopback planejada para o frontend
   --api-port PORT   porta loopback planejada para o backend
+  --operation-mode MODO  contexto: diagnostic, check, dry-run ou install
   --output ARQUIVO  relatório atômico; padrão: saída padrão
   --help
 
@@ -83,6 +110,118 @@ root_installation_can_manage() {
   fi
 }
 
+execution_uid() { id -u; }
+
+new_diagnostic_temp() {
+  DIAGNOSTIC_TEMP_RESULT="$(mktemp -d /tmp/devflow-compose-validation.XXXXXX)"
+  chmod 0700 "$DIAGNOSTIC_TEMP_RESULT"
+  DIAGNOSTIC_TEMP_DIRS+=("$DIAGNOSTIC_TEMP_RESULT")
+}
+
+cleanup_diagnostic_temps() {
+  local temporary
+  for temporary in "${DIAGNOSTIC_TEMP_DIRS[@]:-}"; do
+    [[ -n "$temporary" && "$temporary" == /tmp/devflow-compose-validation.* ]] || continue
+    [[ ! -d "$temporary" ]] || rm -rf -- "$temporary"
+  done
+}
+
+discover_fullpassword_compose_inputs() {
+  local manifest="$1" kind path exists readable privileged protected
+  python3 "$DEVFLOW_SOURCE_ROOT/scripts/discover-compose-inputs.py" \
+    "$FULLPASSWORD_COMPOSE_FILE" > "$manifest"
+  while IFS=$'\t' read -r kind path exists readable privileged protected; do
+    [[ -n "$kind" ]] || continue
+    if [[ "$kind" == required-variable ]]; then
+      COMPOSE_INPUT_RECORDS+=("required-variable|$path|unknown|unknown|unknown|unknown")
+      continue
+    fi
+    COMPOSE_INPUT_RECORDS+=("$kind|$path|$exists|$readable|$privileged|$protected")
+    if [[ "$exists" == true && "$protected" == true ]]; then
+      PROTECTED_COMPOSE_INPUTS_DETECTED=true
+    fi
+    if [[ "$exists" == true && "$readable" == false ]]; then
+      PROTECTED_COMPOSE_INPUTS_DETECTED=true
+      PRIVILEGED_VALIDATION_REQUIRED=true
+    elif [[ "$exists" == true && "$protected" == true && "$(execution_uid)" -eq 0 ]]; then
+      # Root can read the input now, but the report must retain that privilege was required.
+      PRIVILEGED_VALIDATION_REQUIRED=true
+    fi
+  done < "$manifest"
+}
+
+print_privileged_dry_run_guidance() {
+  local record kind path exists readable privileged protected
+  cat <<EOF
+O Docker Compose do proxy compartilhado utiliza arquivos de configuração
+protegidos que não podem ser lidos pelo usuário atual.
+
+Arquivos protegidos detectados:
+EOF
+  for record in "${COMPOSE_INPUT_RECORDS[@]}"; do
+    IFS='|' read -r kind path exists readable privileged protected <<< "$record"
+    [[ "$kind" != required-variable && "$exists" == true && "$readable" == false ]] || continue
+    printf '  %s\n' "$path"
+  done
+  cat <<EOF
+
+Para concluir a validação somente leitura, execute o dry-run com sudo:
+
+  sudo ./install.sh --dry-run \\
+    --proxy-mode shared \\
+    --domain ${DOMAIN:-HOST_DEVFLOW} \\
+    --letsencrypt-email ${LETSENCRYPT_EMAIL:-EMAIL_TLS} \\
+    --super-admin-email ${SUPER_ADMIN_EMAIL:-EMAIL_ADMIN} \\
+    --http-port $HTTP_PORT \\
+    --api-port $API_PORT
+
+Nenhum arquivo, container, rede ou certificado será alterado durante
+essa validação.
+EOF
+}
+
+load_structural_results() {
+  local result_file="$1" key value
+  while IFS='=' read -r key value; do
+    [[ "$value" == true || "$value" == false ]] || continue
+    case "$key" in
+      original_services_preserved) ORIGINAL_SERVICES_PRESERVED="$value" ;;
+      original_ports_preserved) ORIGINAL_PORTS_PRESERVED="$value" ;;
+      original_mounts_preserved) ORIGINAL_MOUNTS_PRESERVED="$value" ;;
+      original_networks_preserved) ORIGINAL_NETWORKS_PRESERVED="$value" ;;
+      original_restart_policies_preserved) ORIGINAL_RESTART_POLICIES_PRESERVED="$value" ;;
+      original_images_preserved) ORIGINAL_IMAGES_PRESERVED="$value" ;;
+      original_volumes_preserved) ORIGINAL_VOLUMES_PRESERVED="$value" ;;
+      original_environment_preserved) ORIGINAL_ENVIRONMENT_PRESERVED="$value" ;;
+      devflow_override_added) DEVFLOW_OVERRIDE_ADDED="$value" ;;
+      devflow_edge_added) DEVFLOW_EDGE_ADDED="$value" ;;
+      devflow_nginx_mount_added) DEVFLOW_NGINX_MOUNT_ADDED="$value" ;;
+      devflow_database_exposure_absent) DEVFLOW_DATABASE_EXPOSURE_ABSENT="$value" ;;
+      sensitive_values_logged) SENSITIVE_VALUES_LOGGED="$value" ;;
+    esac
+  done < "$result_file"
+}
+
+classify_compose_failure() {
+  local error_file="$1"
+  if grep -Eqi 'permission denied|operation not permitted' "$error_file"; then
+    PROTECTED_COMPOSE_INPUTS_DETECTED=true
+    if [[ "$(execution_uid)" -ne 0 ]]; then
+      PRIVILEGED_VALIDATION_REQUIRED=true
+      COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file
+    else
+      COMPOSE_VALIDATION_BLOCKED_BY=protected-compose-input
+    fi
+  elif grep -Eqi 'required variable|variable is not set|must be set|required.*not set' "$error_file"; then
+    COMPOSE_VALIDATION_BLOCKED_BY=required-variable-missing
+  elif grep -Eqi 'env file|\.env.*(invalid|parse|format)|unexpected character' "$error_file"; then
+    COMPOSE_VALIDATION_BLOCKED_BY=invalid-env-file
+  else
+    COMPOSE_VALIDATION_BLOCKED_BY=compose-command-failed
+  fi
+  COMPOSE_VALIDATION_ERROR="$COMPOSE_VALIDATION_BLOCKED_BY"
+}
+
 assess_shared_proxy_compatibility() {
   BLOCKERS=()
   COMPATIBILITY=blocked
@@ -93,6 +232,11 @@ assess_shared_proxy_compatibility() {
       return 2
       ;;
     fullpassword-nginx)
+      if [[ "$PRIVILEGED_VALIDATION_REQUIRED" == true && "$(execution_uid)" -ne 0 ]]; then
+        add_blocker 'A validação completa do Compose exige execução privilegiada somente leitura.'
+        COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file
+        return 3
+      fi
       [[ "$FULLPASSWORD_PROJECT" == fullpassword ]] || add_blocker 'Projeto Compose esperado fullpassword não foi comprovado.'
       [[ "$FULLPASSWORD_SERVICE" == nginx ]] || add_blocker 'Serviço Compose esperado nginx não foi comprovado.'
       [[ "$FULLPASSWORD_IMAGE" == nginx:alpine ]] || add_blocker 'Imagem esperada nginx:alpine não foi comprovada.'
@@ -119,6 +263,7 @@ assess_shared_proxy_compatibility() {
       [[ "$FULLPASSWORD_PUBLIC_HEALTH" == true ]] || add_blocker 'Health público de pw.sti1.com.br falhou antes da integração.'
       if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
         COMPATIBILITY=compatible-with-compose-override
+        INSTALLATION_READY=true
         return 0
       fi
       return 2
@@ -236,7 +381,8 @@ collect_host_nginx() {
 }
 
 collect_container_nginx() {
-  local mounts networks temporary base_json merged_json merge_error override_candidate http_code certificate_sans domain_pattern compose_status
+  local mounts networks temporary base_json merged_json merge_error override_candidate input_manifest structural_result structural_error
+  local http_code certificate_sans domain_pattern compose_status validator_status
   domain_pattern="${DOMAIN//./\\.}"
   mounts="$(docker inspect --format '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}|{{.RW}}{{println}}{{end}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
   if docker exec "$PROXY_CONTAINER" nginx -t >/dev/null 2>&1; then CONFIG_VALID=true; fi
@@ -321,32 +467,64 @@ collect_container_nginx() {
       FULLPASSWORD_PUBLIC_HEALTH=true
     fi
     if [[ "$FULLPASSWORD_COMPOSE_READABLE" == true ]]; then
-      temporary="$(mktemp -d /tmp/devflow-fullpassword-diagnostic.XXXXXX)"
+      new_diagnostic_temp
+      temporary="$DIAGNOSTIC_TEMP_RESULT"
       base_json="$temporary/base.json"
       merged_json="$temporary/merged.json"
       merge_error="$temporary/merge.error"
+      input_manifest="$temporary/inputs.tsv"
+      structural_result="$temporary/structural-results.txt"
+      structural_error="$temporary/structural.error"
       override_candidate="$temporary/fullpassword-nginx.override.yml"
       COMPOSE_TEMP_OVERRIDE="$override_candidate (removido ao concluir)"
-      COMPOSE_EXECUTED_COMMAND="docker compose -f /opt/fullpassword/docker-compose.yml -f $override_candidate config --format json"
-      cp "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/fullpassword-nginx.override.yml.template" "$override_candidate"
-      compose_status=0
-      if docker compose -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>"$merge_error" \
-        && docker compose -f /opt/fullpassword/docker-compose.yml -f "$override_candidate" config --format json > "$merged_json" 2>>"$merge_error"; then
-        COMPOSE_CROSS_DIRECTORY_SUPPORTED=true
+      COMPOSE_EXECUTED_COMMAND="docker compose --project-directory /opt/fullpassword -f /opt/fullpassword/docker-compose.yml -f $override_candidate config --format json"
+      install -m 0600 "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/fullpassword-nginx.override.yml.template" "$override_candidate"
+      if ! discover_fullpassword_compose_inputs "$input_manifest"; then
+        COMPOSE_VALIDATION_BLOCKED_BY=input-discovery-failed
+        COMPOSE_VALIDATION_ERROR=input-discovery-failed
+      elif [[ "$PRIVILEGED_VALIDATION_REQUIRED" == true && "$(execution_uid)" -ne 0 ]]; then
+        COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file
+        COMPOSE_VALIDATION_ERROR=protected-env-file
       else
-        compose_status=$?
+        COMPOSE_VALIDATION_ATTEMPTED=true
+        compose_status=0
+        if docker compose --project-directory /opt/fullpassword \
+          -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>"$merge_error"; then
+          if docker compose --project-directory /opt/fullpassword \
+            -f /opt/fullpassword/docker-compose.yml -f "$override_candidate" \
+            config --format json > "$merged_json" 2>"$merge_error"; then
+            COMPOSE_CROSS_DIRECTORY_SUPPORTED=true
+          else
+            compose_status=$?
+            classify_compose_failure "$merge_error"
+            if [[ "$COMPOSE_VALIDATION_BLOCKED_BY" == compose-command-failed ]]; then
+              COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
+              COMPOSE_VALIDATION_BLOCKED_BY=compose-cross-directory-incompatible
+              COMPOSE_VALIDATION_ERROR=compose-cross-directory-incompatible
+            fi
+          fi
+        else
+          compose_status=$?
+          classify_compose_failure "$merge_error"
+        fi
+        COMPOSE_VALIDATION_EXIT_CODE="$compose_status"
+        if [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]]; then
+          validator_status=0
+          if python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" \
+            "$base_json" "$merged_json" > "$structural_result" 2>"$structural_error"; then
+            COMPOSE_MERGE_VALID=true
+            COMPOSE_VALIDATION_ERROR=none
+            COMPOSE_VALIDATION_BLOCKED_BY=none
+            load_structural_results "$structural_result"
+          else
+            validator_status=$?
+            COMPOSE_MERGE_VALID=false
+            COMPOSE_VALIDATION_EXIT_CODE="$validator_status"
+            COMPOSE_VALIDATION_BLOCKED_BY=structural-validation-failed
+            COMPOSE_VALIDATION_ERROR=structural-validation-failed
+          fi
+        fi
       fi
-      COMPOSE_VALIDATION_EXIT_CODE="$compose_status"
-      if [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]] \
-        && command -v python3 >/dev/null 2>&1 \
-        && python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" "$base_json" "$merged_json" >>"$merge_error" 2>&1; then
-        COMPOSE_MERGE_VALID=true
-      elif [[ "$compose_status" -eq 0 ]]; then
-        COMPOSE_VALIDATION_EXIT_CODE=1
-      fi
-      COMPOSE_VALIDATION_ERROR="$(sanitize_proxy_stream < "$merge_error" | tr '\n' ' ' | cut -c1-500)"
-      [[ -n "$COMPOSE_VALIDATION_ERROR" ]] || COMPOSE_VALIDATION_ERROR=none
-      rm -rf -- "$temporary"
     fi
   fi
 }
@@ -382,6 +560,10 @@ render_report() {
   echo "timestamp=$(timestamp)"
   echo "version=$DEVFLOW_VERSION"
   echo "commit=$commit"
+  echo "execution_uid=$(execution_uid)"
+  echo "execution_user=$(id -un 2>/dev/null || echo unknown)"
+  echo "running_as_root=$([[ "$(execution_uid)" -eq 0 ]] && echo true || echo false)"
+  echo "operation_mode=$OPERATION_MODE"
   echo "proxy_type=$PROXY_TYPE"
   echo "container=${PROXY_CONTAINER:-none}"
   echo "domain=${DOMAIN:-not-provided}"
@@ -417,8 +599,42 @@ render_report() {
     echo "compose_executed_command=$COMPOSE_EXECUTED_COMMAND"
     echo "compose_validation_exit_code=$COMPOSE_VALIDATION_EXIT_CODE"
     echo "compose_validation_error=$COMPOSE_VALIDATION_ERROR"
+    echo "compose_validation_attempted=$COMPOSE_VALIDATION_ATTEMPTED"
+    echo "compose_validation_blocked_by=$COMPOSE_VALIDATION_BLOCKED_BY"
     echo "compose_cross_directory_supported=$COMPOSE_CROSS_DIRECTORY_SUPPORTED"
     echo "compose_merge_valid=$COMPOSE_MERGE_VALID"
+    echo "protected_compose_inputs_detected=$PROTECTED_COMPOSE_INPUTS_DETECTED"
+    echo "privileged_validation_required=$PRIVILEGED_VALIDATION_REQUIRED"
+    echo "changes_applied=$CHANGES_APPLIED"
+    echo "installation_ready=$INSTALLATION_READY"
+    echo "original_services_preserved=$ORIGINAL_SERVICES_PRESERVED"
+    echo "original_ports_preserved=$ORIGINAL_PORTS_PRESERVED"
+    echo "original_mounts_preserved=$ORIGINAL_MOUNTS_PRESERVED"
+    echo "original_networks_preserved=$ORIGINAL_NETWORKS_PRESERVED"
+    echo "original_restart_policies_preserved=$ORIGINAL_RESTART_POLICIES_PRESERVED"
+    echo "original_images_preserved=$ORIGINAL_IMAGES_PRESERVED"
+    echo "original_volumes_preserved=$ORIGINAL_VOLUMES_PRESERVED"
+    echo "original_environment_preserved=$ORIGINAL_ENVIRONMENT_PRESERVED"
+    echo "devflow_override_added=$DEVFLOW_OVERRIDE_ADDED"
+    echo "devflow_edge_added=$DEVFLOW_EDGE_ADDED"
+    echo "devflow_nginx_mount_added=$DEVFLOW_NGINX_MOUNT_ADDED"
+    echo "devflow_database_exposure_absent=$DEVFLOW_DATABASE_EXPOSURE_ABSENT"
+    echo "sensitive_values_logged=$SENSITIVE_VALUES_LOGGED"
+    local record kind path exists readable privileged protected
+    for record in "${COMPOSE_INPUT_RECORDS[@]}"; do
+      IFS='|' read -r kind path exists readable privileged protected <<< "$record"
+      [[ "$kind" != required-variable ]] || continue
+      echo "compose_input_file=$path"
+      echo "compose_input_kind=$kind"
+      echo "compose_input_exists=$exists"
+      echo "compose_input_readable_current=$readable"
+      echo "compose_input_readable_privileged=$privileged"
+      echo 'compose_input_content_exposed=false'
+      echo "arquivo_detectado=$path"
+      echo "legivel_usuario_atual=$readable"
+      echo "legivel_execucao_privilegiada=$privileged"
+      echo 'conteudo_exposto=false'
+    done
     echo "fullpassword_edge_network_safe=$FULLPASSWORD_EDGE_NETWORK_SAFE"
     echo "fullpassword_rollback_ready=$FULLPASSWORD_ROLLBACK_READY"
     echo "fullpassword_public_health=$FULLPASSWORD_PUBLIC_HEALTH"
@@ -456,7 +672,9 @@ render_report() {
     echo 'not-available'
   fi
   echo '[recommendation]'
-  if [[ "$COMPATIBILITY" == compatible-with-compose-override ]]; then
+  if [[ "$COMPOSE_VALIDATION_BLOCKED_BY" == protected-env-file ]]; then
+    echo 'Validação completa requer nova execução privilegiada somente leitura; nenhuma alteração foi realizada.'
+  elif [[ "$COMPATIBILITY" == compatible-with-compose-override ]]; then
     echo 'Integração automática compatível com Compose override; nenhuma alteração foi realizada pelo diagnóstico.'
   elif [[ "$COMPATIBILITY" == compatible ]]; then
     echo 'Integração automática compatível para Nginx do host; nenhuma alteração foi realizada pelo diagnóstico.'
@@ -495,8 +713,11 @@ main() {
     case "$1" in
       --container) REQUESTED_CONTAINER="${2:-}"; shift 2 ;;
       --domain) DOMAIN="${2:-}"; shift 2 ;;
+      --letsencrypt-email) LETSENCRYPT_EMAIL="${2:-}"; shift 2 ;;
+      --super-admin-email) SUPER_ADMIN_EMAIL="${2:-}"; shift 2 ;;
       --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
       --api-port) API_PORT="${2:-}"; shift 2 ;;
+      --operation-mode) OPERATION_MODE="${2:-}"; shift 2 ;;
       --output) OUTPUT="${2:-}"; shift 2 ;;
       --help|-h) usage; exit 0 ;;
       *) die "Opção desconhecida: $1" ;;
@@ -510,6 +731,11 @@ main() {
   [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'As portas planejadas devem ser diferentes.'
   [[ -z "$REQUESTED_CONTAINER" || "$REQUESTED_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]] \
     || die 'Nome de container inválido.'
+  [[ "$OPERATION_MODE" == diagnostic || "$OPERATION_MODE" == check || "$OPERATION_MODE" == dry-run || "$OPERATION_MODE" == install ]] \
+    || die 'Modo operacional do diagnóstico inválido.'
+
+  trap cleanup_diagnostic_temps EXIT
+  trap 'exit 130' INT TERM
 
   detect_proxy
   case "$PROXY_TYPE" in
@@ -520,6 +746,9 @@ main() {
   assess_shared_proxy_compatibility || assessment_status=$?
   assessment_status="${assessment_status:-0}"
   write_report "$OUTPUT"
+  if [[ "$assessment_status" -eq 3 ]]; then
+    print_privileged_dry_run_guidance >&2
+  fi
   exit "$assessment_status"
 }
 

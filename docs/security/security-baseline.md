@@ -110,6 +110,9 @@ Auditoria é append-only para a aplicação. Alteração ou purga exige job admi
 - backup autenticado e release candidata íntegra são gates anteriores à mutação do código instalado;
 - migrations ocorrem com tráfego em manutenção e serviços de aplicação parados;
 - falhas acionam restauração coordenada de dados, release, containers e proxy, com log sanitizado.
+- `.env`, `env_file` e variáveis obrigatórias do Compose do Full Password são inputs opacos: apenas metadados de caminho/legibilidade podem ser inventariados e somente o próprio Docker Compose pode consumir seu conteúdo;
+- validação privilegiada é sempre explícita, somente leitura e separada da instalação; não há elevação automática, alteração de permissões, cópia ou carregamento do ambiente no shell;
+- JSON interpolado do Compose é mantido apenas em temporário `0700` com arquivos `0600`, removido por trap, e nunca aparece em stdout, relatório ou log;
 
 ## 10. Publicação segura
 

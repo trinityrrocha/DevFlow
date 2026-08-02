@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.3.1-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.3.2-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -81,9 +81,11 @@ A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-pr
 
 Para o contrato aprovado, o instalador cria a rede externa `devflow_edge`, mantém o PostgreSQL apenas em `devflow_internal`, instala `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e monta somente `/opt/devflow/config/nginx/devflow.conf` no proxy. O Compose e a configuração originais do Full Password são apenas lidos. Certificado, arquivos e recriação exclusiva do serviço `nginx` fazem parte de uma transação com backup e rollback. Consulte o [adaptador persistente](docs/infrastructure/fullpassword-nginx-adapter.md).
 
-O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, validou o bloqueio anterior e forneceu o inventário usado pelo adaptador. A correção `0.3.1-alpha` ainda não foi ensaiada nessa VPS; portanto, o modo compartilhado não está homologado.
+O dry-run real da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, comprovou que o Compose original depende do `.env` protegido do Full Password. A versão `0.3.2-alpha` orienta a repetição com `sudo` e mantém essa validação estritamente read-only. O dry-run privilegiado ainda não foi executado; portanto, o modo compartilhado não está homologado.
 
 > O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.
+
+No modo compartilhado, `--check` realiza somente o diagnóstico básico. Se um `.env` ou `env_file` necessário ao Compose estiver protegido, o dry-run comum encerra com `reason=privileged-compose-validation-required` e mostra o comando completo para nova execução. `sudo ./install.sh --dry-run ...` não instala, não reinicia serviços e não altera permissões: root serve apenas para permitir que o próprio Docker Compose consuma seus inputs protegidos. O DevFlow nunca abre, copia, exibe ou registra os valores desses arquivos.
 
 ## Configuração
 

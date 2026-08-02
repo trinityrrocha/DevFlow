@@ -63,23 +63,27 @@
 | Remoção reversível | `remove_host_nginx_config` remove somente a rota com marcador DevFlow |
 | Dados isolados | banco somente em `devflow_internal`; borda separada em `devflow_edge` |
 
-## Adaptador persistente `0.3.1-alpha`
+## Adaptador persistente `0.3.2-alpha`
 
 | Requisito | Evidência |
 |---|---|
 | Override independente | `../docker/fullpassword/fullpassword-nginx.override.yml.template` promovido em `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` |
 | Full Password read-only | `../scripts/audit-fullpassword-readonly.mjs` e teste transacional com hash/sentinel da fixture |
 | Configuração exclusiva | templates `../docker/nginx/fullpassword-*.conf.template` em `/opt/devflow/config/nginx/devflow.conf` |
-| Preservação estrutural | `../scripts/validate-fullpassword-compose.py` compara serviço, portas, mounts e redes |
+| Preservação estrutural | `../scripts/validate-fullpassword-compose.py` compara serviços, imagens, restart, portas, mounts, redes, volumes e environment |
+| Inputs protegidos | `../scripts/discover-compose-inputs.py` inventaria metadados de `.env`, `env_file` e variáveis obrigatórias sem abrir conteúdo |
+| Validação privilegiada | `--check` básico, dry-run comum fail-closed e repetição explícita com `sudo`; nenhum sudo oculto |
+| Projeto Compose | todos os comandos usam `--project-directory /opt/fullpassword` |
+| Temporários e sigilo | JSON normalizado em diretório `0700`, limpeza por trap e relatório apenas com fatos derivados |
 | Rede persistente | `devflow_edge` externa com label `devflow.managed=true`; PostgreSQL ausente pelo Compose e por `health.sh` |
 | Certificado exclusivo | prova HTTP ACME e `certbot --webroot` somente para o domínio configurado |
 | Aplicação/rollback | snapshots e promoção atômica em `../scripts/lib/fullpassword-proxy.sh` |
 | Update e manutenção | templates e promoção transacional chamados por `../scripts/update.sh` |
 | Remoção segura | `../scripts/uninstall.sh`; certificado separado por opção e confirmação |
-| Testes | `../tests/integration/fullpassword-adapter.test.sh` e `../scripts/validate-fullpassword-adapter.mjs` |
+| Testes | suites do adaptador e `../tests/integration/privileged-compose.test.sh` com 21 cenários |
 | Homologação real | pendente; `implementation-status.md` não declara aprovação operacional |
 
-## Mecanismo de atualização 0.3.1-alpha
+## Mecanismo de atualização 0.3.2-alpha
 
 | Requisito | Evidência |
 |---|---|

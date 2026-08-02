@@ -64,6 +64,9 @@ def main() -> None:
     for key, value in base.items():
         if key not in {"services", "networks"} and merged.get(key) != value:
             fail(f"definição original de topo alterada: {key}")
+    unexpected_top_level = set(merged) - set(base)
+    if unexpected_top_level:
+        fail("o override adicionou definições de topo não permitidas")
     base_networks = base.get("networks", {})
     merged_networks = merged.get("networks", {})
     for network_name, network in base_networks.items():
@@ -73,18 +76,23 @@ def main() -> None:
         fail("o override deve adicionar exclusivamente a rede devflow_edge")
 
     allowed_changes = {"volumes", "networks"}
+    if set(merged_service) - set(base_service) - allowed_changes:
+        fail("o override adicionou propriedades não permitidas ao serviço nginx")
     for key, value in base_service.items():
         if key not in allowed_changes and merged_service.get(key) != value:
             fail(f"definição original alterada: services.nginx.{key}")
 
-    if not normalize_ports(base_service).issubset(normalize_ports(merged_service)):
-        fail("portas originais do nginx não foram preservadas")
+    if normalize_ports(base_service) != normalize_ports(merged_service):
+        fail("portas originais do nginx foram removidas, substituídas ou ampliadas")
 
     base_volumes = volumes_by_target(base_service)
     merged_volumes = volumes_by_target(merged_service)
     for target, value in base_volumes.items():
         if merged_volumes.get(target) != value:
             fail(f"mount original alterado ou removido: {target}")
+    added_volume_targets = set(merged_volumes) - set(base_volumes)
+    if added_volume_targets != {"/etc/nginx/conf.d/devflow.conf", "/var/www/certbot"}:
+        fail("o override adicionou mounts diferentes dos dois recursos DevFlow permitidos")
 
     devflow_mount = merged_volumes.get("/etc/nginx/conf.d/devflow.conf")
     if not isinstance(devflow_mount, dict):
@@ -96,16 +104,30 @@ def main() -> None:
     if not isinstance(certbot_mount, dict) or not certbot_mount.get("read_only"):
         fail("mount read-only do webroot ACME ausente")
 
-    if not network_names(base_service).issubset(network_names(merged_service)):
-        fail("rede original do nginx não foi preservada")
-    if "devflow_edge" not in network_names(merged_service):
-        fail("devflow_edge ausente do serviço nginx")
+    expected_networks = network_names(base_service) | {"devflow_edge"}
+    if network_names(merged_service) != expected_networks:
+        fail("o override deve preservar as redes originais e adicionar exclusivamente devflow_edge")
 
     edge = merged.get("networks", {}).get("devflow_edge", {})
     if edge.get("name") != "devflow_edge" or edge.get("external") is not True:
         fail("devflow_edge não está declarada como rede externa persistente")
 
-    print("Compose override preserva serviço, portas, mounts e redes originais do Full Password.")
+    for key in (
+        "original_services_preserved",
+        "original_ports_preserved",
+        "original_mounts_preserved",
+        "original_networks_preserved",
+        "original_restart_policies_preserved",
+        "original_images_preserved",
+        "original_volumes_preserved",
+        "original_environment_preserved",
+        "devflow_override_added",
+        "devflow_edge_added",
+        "devflow_nginx_mount_added",
+        "devflow_database_exposure_absent",
+    ):
+        print(f"{key}=true")
+    print("sensitive_values_logged=false")
 
 
 if __name__ == "__main__":

@@ -21,11 +21,15 @@ const mutatingCommand = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:cp|install|mv|rm|mkdir|tou
 const fullPasswordTarget = /(?:\/opt\/fullpassword|\$\{?FULLPASSWORD_(?:ROOT|COMPOSE_FILE|RUNTIME_CONFIG)\}?)/;
 const redirectToFullPassword = /(?:>|>>|tee(?:\s+-a)?)\s*(?:["']?\/opt\/fullpassword|["']?\$\{?FULLPASSWORD_(?:ROOT|COMPOSE_FILE|RUNTIME_CONFIG)\}?)/;
 const inPlaceEdit = /(?:sed|perl)\s+[^\n]*(?:-i|--in-place)[^\n]*(?:\/opt\/fullpassword|\$\{?FULLPASSWORD_(?:ROOT|COMPOSE_FILE|RUNTIME_CONFIG)\}?)/;
+const forbiddenEnvRead = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:cat|source|\.|grep|sed|awk|head|tail|less|more|strings|cp)\b[^\n]*(?:\/opt\/fullpassword\/\.env|\$\{?FULLPASSWORD_ROOT\}?\/\.env)/;
+const envInputRedirect = /<\s*["']?(?:\/opt\/fullpassword\/\.env|\$\{?FULLPASSWORD_ROOT\}?\/\.env)/;
 
 function forbiddenWrite(line) {
   return (mutatingCommand.test(line) && fullPasswordTarget.test(line))
     || redirectToFullPassword.test(line)
-    || inPlaceEdit.test(line);
+    || inPlaceEdit.test(line)
+    || forbiddenEnvRead.test(line)
+    || envInputRedirect.test(line);
 }
 
 for (const file of files) {
@@ -45,6 +49,10 @@ for (const malicious of [
   'chmod 0644 ${FULLPASSWORD_ROOT}/docker-compose.yml',
   'printf value > /opt/fullpassword/new-file',
   'sed -i s/a/b/ /opt/fullpassword/docker-compose.yml',
+  'cat /opt/fullpassword/.env',
+  'source "$FULLPASSWORD_ROOT/.env"',
+  'grep TOKEN /opt/fullpassword/.env',
+  'read value < /opt/fullpassword/.env',
 ]) {
   if (!forbiddenWrite(malicious)) failures.push(`a auditoria não detectou a escrita simulada: ${malicious}`);
 }

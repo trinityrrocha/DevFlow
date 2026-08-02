@@ -20,6 +20,8 @@ PROXY_MODE=
 HTTP_PORT=18080
 API_PORT=13000
 SHARED_PROXY_ADAPTER=none
+CHECK_STATUS=passed
+CHECK_PRIVILEGED_DRY_RUN_REQUIRED=false
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
@@ -188,7 +190,14 @@ if [[ "$compose_state" == present ]]; then
 fi
 
 run_shared_proxy_diagnostic() {
-  local -a diagnostic_args=(--domain "$DOMAIN" --http-port "$HTTP_PORT" --api-port "$API_PORT")
+  local -a diagnostic_args=(
+    --domain "$DOMAIN"
+    --letsencrypt-email "$LETSENCRYPT_EMAIL"
+    --super-admin-email "$SUPER_ADMIN_EMAIL"
+    --http-port "$HTTP_PORT"
+    --api-port "$API_PORT"
+    --operation-mode "$MODE"
+  )
   local diagnostic_status=0 report=/opt/devflow/logs/shared-proxy-diagnostic.log answer
   [[ -z "$shared_proxy_container" ]] || diagnostic_args+=(--container "$shared_proxy_container")
 
@@ -216,6 +225,26 @@ EOF
     return 0
   else
     diagnostic_status=$?
+    if [[ "$diagnostic_status" -eq 3 && "$MODE" == dry-run ]]; then
+      cat <<EOF
+dry_run_status=blocked
+reason=privileged-compose-validation-required
+changes_applied=false
+
+Para concluir a validação somente leitura, execute:
+
+  sudo ./install.sh --dry-run \\
+    --proxy-mode shared \\
+    --domain $DOMAIN \\
+    --letsencrypt-email $LETSENCRYPT_EMAIL \\
+    --super-admin-email $SUPER_ADMIN_EMAIL \\
+    --http-port $HTTP_PORT \\
+    --api-port $API_PORT
+
+Nenhum arquivo, container, rede ou certificado será alterado durante essa validação.
+EOF
+      return 3
+    fi
     echo 'Integração automática não comprovada.'
     echo 'Nenhuma alteração foi realizada no proxy.'
     [[ "$MODE" != install ]] || echo "Consulte o relatório gerado: $report"
@@ -223,9 +252,42 @@ EOF
   fi
 }
 
+check_protected_compose_inputs() {
+  local inventory kind path exists readable privileged protected
+  [[ -n "$fullpassword_container" && -r /opt/fullpassword/docker-compose.yml ]] || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    if ! inventory="$(python3 "$SCRIPT_DIR/discover-compose-inputs.py" /opt/fullpassword/docker-compose.yml)"; then
+      log WARN 'Não foi possível inventariar todos os inputs do Compose no diagnóstico básico.'
+      return 0
+    fi
+    while IFS=$'\t' read -r kind path exists readable privileged protected; do
+      [[ "$kind" != required-variable ]] || continue
+      if [[ "$exists" == true && "$readable" == false ]]; then
+        CHECK_PRIVILEGED_DRY_RUN_REQUIRED=true
+        printf 'Arquivo protegido detectado: %s\n' "$path"
+      fi
+    done <<< "$inventory"
+  elif [[ -e /opt/fullpassword/.env && ! -r /opt/fullpassword/.env ]]; then
+    CHECK_PRIVILEGED_DRY_RUN_REQUIRED=true
+    printf 'Arquivo protegido detectado: %s\n' /opt/fullpassword/.env
+  fi
+  if [[ "$CHECK_PRIVILEGED_DRY_RUN_REQUIRED" == true ]]; then
+    CHECK_STATUS=passed-with-privileged-dry-run-required
+  fi
+}
+
+if [[ "$MODE" == check ]]; then
+  check_protected_compose_inputs
+fi
+
 if [[ "$MODE" != check && "$PROXY_MODE" == shared ]]; then
-  run_shared_proxy_diagnostic \
-    || die 'O modo compartilhado permaneceu bloqueado por segurança; consulte o diagnóstico.'
+  shared_diagnostic_status=0
+  run_shared_proxy_diagnostic || shared_diagnostic_status=$?
+  if [[ "$shared_diagnostic_status" -eq 3 && "$MODE" == dry-run ]]; then
+    exit 3
+  elif [[ "$shared_diagnostic_status" -ne 0 ]]; then
+    die 'O modo compartilhado permaneceu bloqueado por segurança; consulte o diagnóstico.'
+  fi
 fi
 
 if [[ "$MODE" != check ]]; then
@@ -302,6 +364,19 @@ if [[ "$MODE" == check ]]; then
   [[ "$docker_version" != daemon-unavailable ]] || log WARN 'Docker ausente ou daemon indisponível.'
   [[ "$compose_state" == present ]] || log WARN 'Docker Compose v2 ausente.'
   [[ -z "$fullpassword_container" ]] || log WARN 'fullpassword_nginx exige diagnóstico estrito; somente o contrato aprovado permite o Compose override transacional.'
+  if [[ "$CHECK_PRIVILEGED_DRY_RUN_REQUIRED" == true ]]; then
+    cat <<EOF
+Validação básica concluída.
+
+A configuração compartilhada utiliza arquivos protegidos.
+A validação completa do Compose exigirá execução privilegiada do modo --dry-run.
+check_status=$CHECK_STATUS
+changes_applied=false
+EOF
+  else
+    echo "check_status=$CHECK_STATUS"
+    echo 'changes_applied=false'
+  fi
   log INFO 'Diagnóstico concluído sem alterações.'
   exit 0
 fi

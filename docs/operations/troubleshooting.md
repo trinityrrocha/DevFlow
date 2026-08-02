@@ -60,10 +60,27 @@ O relatório contém somente inventário sanitizado. Se retornar `blocked`, nenh
 
 O commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` foi ensaiado em VPS e parou corretamente nesse ponto. Não classifique o evento como instalação compartilhada aprovada.
 
+### Compose bloqueado por `/opt/fullpassword/.env`
+
+Se o dry-run comum informar `reason=privileged-compose-validation-required`, `compose_validation_attempted=false` e `changes_performed=false`, a estrutura ainda não foi classificada como incompatível. Repita o comando completo exibido, adicionando apenas o `sudo` já orientado pelo instalador. Não execute `chmod`, `chown`, `cat`, `source`, `cp`, `grep` ou outro comando para abrir ou copiar o `.env` do Full Password.
+
+No dry-run privilegiado, confirme no relatório:
+
+```text
+operation_mode=dry-run
+execution_is_root=true
+compose_validation_attempted=true
+changes_performed=false
+sensitive_values_logged=false
+```
+
+Somente `compose_cross_directory_supported=true`, `compose_merge_valid=true` e `installation_ready=true` permitem avançar para uma instalação separada. Um erro de permissão como root, variável obrigatória ausente ou conteúdo inválido mantém o gate fechado com motivo sanitizado; não exponha o arquivo para contornar o erro.
+
 Depois de instalar o adaptador, diagnostique sempre com os dois Compose:
 
 ```bash
 sudo docker compose \
+  --project-directory /opt/fullpassword \
   -f /opt/fullpassword/docker-compose.yml \
   -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
   config

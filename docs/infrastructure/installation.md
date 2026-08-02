@@ -38,13 +38,17 @@ Docker e Compose compatíveis são reutilizados. O instalador verifica nomes, la
 
 No modo compartilhado, um diagnóstico read-only precisa comprovar o contrato inteiro antes de qualquer mutação. Um Nginx do host compatível recebe um único arquivo gerenciado e usa portas loopback. O inventário exato aprovado do `fullpassword_nginx` usa o adaptador por Compose override e rede externa; outras topologias permanecem bloqueadas. No modo isolado, 80/443 precisam estar livres.
 
+`--check` não executa a composição completa: ele identifica inputs protegidos e pode retornar `check_status=passed-with-privileged-dry-run-required`. `--dry-run` executa a validação completa somente se o processo puder ler todos os inputs. Quando isso exigir root, o modo comum encerra sem alterações e fornece o comando com `sudo`. Mesmo como root, o dry-run termina antes de qualquer código de instalação e usa somente temporários sob `/tmp`.
+
 ## Full Password
 
 O container `fullpassword_nginx` continua sendo um limite de segurança. A instalação só avança quando projeto, serviço, working directory, Compose, mounts read-only, rede original, include, domínio, propriedade da rede de borda e merge final coincidem com o contrato aprovado. O resultado é `compatible-with-compose-override`; qualquer divergência bloqueia.
 
-O ensaio real do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` parou nesse gate, antes de qualquer integração. Esse evento comprova o fail-closed, não a compatibilidade.
+O dry-run real da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, parou ao encontrar `/opt/fullpassword/.env` protegido. Esse evento comprova o fail-closed e a necessidade de privilégio, não incompatibilidade entre diretórios. A validação privilegiada de `0.3.2-alpha` permanece pendente.
 
 O adaptador cria apenas artefatos sob `/opt/devflow`, incluindo `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e `/opt/devflow/config/nginx/devflow.conf`, além da rede externa `devflow_edge`. O Compose original e `nginx.runtime.conf` são somente leitura. O certificado DevFlow é independente; o serviço `nginx` é o único componente Full Password reconciliado, sempre com os dois arquivos Compose e com rollback. Veja o [contrato completo do adaptador](fullpassword-nginx-adapter.md) e o [guia de VPS](vps-installation.md).
+
+O Docker Compose pode precisar de `/opt/fullpassword/.env` e de `env_file` adicionais para interpolar a configuração original. Esses arquivos são inputs opacos: somente o processo `docker compose --project-directory /opt/fullpassword` pode consumi-los. O DevFlow registra caminhos e estados de legibilidade, nunca conteúdo ou valores interpolados.
 
 ## Recursos próprios
 

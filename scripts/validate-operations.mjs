@@ -12,6 +12,7 @@ const bootstrap = read('scripts/bootstrap.sh');
 const update = read('scripts/update.sh');
 const restore = read('scripts/restore.sh');
 const diagnostic = read('scripts/detect-shared-proxy.sh');
+const composeInputDiscovery = read('scripts/discover-compose-inputs.py');
 const proxyConfig = read('scripts/lib/proxy-config.sh');
 const changelog = read('CHANGELOG.md');
 
@@ -64,6 +65,26 @@ const dryRunExit = install.indexOf('[[ "$MODE" == dry-run ]] && {');
 const directoryCreation = install.indexOf('install -d -m 0750 "$DEVFLOW_INSTALL_ROOT"');
 if (!(dryRunExit >= 0 && directoryCreation > dryRunExit)) {
   throw new Error('Dry-run deve encerrar antes de criar a estrutura persistente.');
+}
+for (const fragment of [
+  'CHECK_STATUS=passed-with-privileged-dry-run-required',
+  'reason=privileged-compose-validation-required',
+  'changes_applied=false',
+]) {
+  if (!install.includes(fragment)) throw new Error(`Separação check/dry-run incompleta: ${fragment}`);
+}
+for (const fragment of [
+  '--project-directory /opt/fullpassword',
+  'COMPOSE_CROSS_DIRECTORY_SUPPORTED=unknown',
+  'COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file',
+  'trap cleanup_diagnostic_temps EXIT',
+]) {
+  if (!diagnostic.includes(fragment)) throw new Error(`Gate privilegiado ausente: ${fragment}`);
+}
+if (!composeInputDiscovery.includes('COMPOSE_ENV_FILES')
+  || !composeInputDiscovery.includes('env_file')
+  || !composeInputDiscovery.includes('required-variable')) {
+  throw new Error('Descoberta opaca dos inputs do Compose está incompleta.');
 }
 if (!diagnostic.includes('fullpassword-nginx') || !diagnostic.includes('caddy-container')) {
   throw new Error('Política fail-closed de proxies containerizados está incompleta.');

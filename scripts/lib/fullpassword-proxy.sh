@@ -34,9 +34,10 @@ fullpassword_audit() {
 
 fullpassword_compose() {
   if [[ -f "$FULLPASSWORD_OVERRIDE_FILE" ]]; then
-    docker compose -f "$FULLPASSWORD_COMPOSE_FILE" -f "$FULLPASSWORD_OVERRIDE_FILE" "$@"
+    docker compose --project-directory "$FULLPASSWORD_ROOT" \
+      -f "$FULLPASSWORD_COMPOSE_FILE" -f "$FULLPASSWORD_OVERRIDE_FILE" "$@"
   else
-    docker compose -f "$FULLPASSWORD_COMPOSE_FILE" "$@"
+    docker compose --project-directory "$FULLPASSWORD_ROOT" -f "$FULLPASSWORD_COMPOSE_FILE" "$@"
   fi
 }
 
@@ -173,16 +174,24 @@ render_fullpassword_proxy() {
 
 validate_fullpassword_compose_merge() {
   local root="$1" override="$2" temporary base_json merged_json
+  local previous_umask
+  previous_umask="$(umask)"
+  umask 077
   temporary="$(mktemp -d "${TMPDIR:-/tmp}/devflow-compose-validation.XXXXXX")"
+  chmod 0700 "$temporary"
   base_json="$temporary/base.json"
   merged_json="$temporary/merged.json"
-  if ! docker compose -f "$FULLPASSWORD_COMPOSE_FILE" config --format json > "$base_json" \
-    || ! docker compose -f "$FULLPASSWORD_COMPOSE_FILE" -f "$override" config --format json > "$merged_json" \
+  if ! docker compose --project-directory "$FULLPASSWORD_ROOT" \
+      -f "$FULLPASSWORD_COMPOSE_FILE" config --format json > "$base_json" \
+    || ! docker compose --project-directory "$FULLPASSWORD_ROOT" \
+      -f "$FULLPASSWORD_COMPOSE_FILE" -f "$override" config --format json > "$merged_json" \
     || ! python3 "$root/scripts/validate-fullpassword-compose.py" "$base_json" "$merged_json"; then
     rm -rf -- "$temporary"
+    umask "$previous_umask"
     return 1
   fi
   rm -rf -- "$temporary"
+  umask "$previous_umask"
 }
 
 validate_fullpassword_nginx_candidate() {
