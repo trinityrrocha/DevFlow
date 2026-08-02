@@ -10,6 +10,7 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 - o override Compose passou para `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`, com mounts de origem absoluta;
 - `/opt/fullpassword` passou a ser tratado estritamente como origem somente leitura do Compose e da configuração runtime;
 - diagnóstico ampliado com legibilidade da origem, gravabilidade do DevFlow, comando e resultado sanitizado do merge entre diretórios;
+- `--dry-run` avalia a capacidade do filesystem para a futura instalação root sem tentar escrever em `/opt`;
 - estado operacional em JSON separado de dados persistentes: instalação, versão e adaptador em `/opt/devflow/state`;
 - retomada de instalação inicial incompleta por fast-forward verificado do checkout preservado em `/opt/devflow/source`;
 - testes transacionais e auditoria estática agora falham diante de comandos de escrita destinados ao Full Password.

@@ -34,6 +34,7 @@ FULLPASSWORD_UPSTREAM_SAFE=false
 FULLPASSWORD_CERTIFICATE_SAFE=false
 DEVFLOW_DIRECTORY_WRITABLE=false
 DEVFLOW_OVERRIDE_WRITABLE=false
+DEVFLOW_PROXY_CONFIG_WRITABLE=false
 FULLPASSWORD_COMPOSE_READABLE=false
 COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
 COMPOSE_MERGE_VALID=false
@@ -67,6 +68,19 @@ EOF
 
 add_blocker() {
   BLOCKERS+=("$1")
+}
+
+root_installation_can_manage() {
+  local target="$1" existing="$1" mount_options attributes
+  while [[ ! -e "$existing" && "$existing" != / ]]; do
+    existing="$(dirname "$existing")"
+  done
+  mount_options="$(findmnt -n -o OPTIONS --target "$existing" 2>/dev/null || true)"
+  [[ -n "$mount_options" && ! ",$mount_options," =~ ,ro, ]] || return 1
+  if command -v lsattr >/dev/null 2>&1; then
+    attributes="$(lsattr -d "$existing" 2>/dev/null | awk 'NR==1 {print $1}')"
+    [[ ! "$attributes" =~ [ia] ]] || return 1
+  fi
 }
 
 assess_shared_proxy_compatibility() {
@@ -279,30 +293,25 @@ collect_container_nginx() {
       DOMAIN_CONFLICT=false
     fi
     [[ -r /opt/fullpassword/docker-compose.yml ]] && FULLPASSWORD_COMPOSE_READABLE=true
-    if [[ -d /opt/devflow ]]; then
-      [[ -w /opt/devflow ]] && DEVFLOW_DIRECTORY_WRITABLE=true
-    elif [[ "$(id -u)" -eq 0 && -w /opt ]]; then
-      DEVFLOW_DIRECTORY_WRITABLE=true
-    fi
+    root_installation_can_manage /opt/devflow && DEVFLOW_DIRECTORY_WRITABLE=true
     if [[ -e /opt/devflow/config/proxy/fullpassword-nginx.override.yml ]]; then
-      if [[ -w /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
+      if root_installation_can_manage /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
         && "$(head -n1 /opt/devflow/config/proxy/fullpassword-nginx.override.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Stored exclusively under /opt/devflow.' ]]; then
         DEVFLOW_OVERRIDE_WRITABLE=true
       fi
-    elif [[ -d /opt/devflow/config/proxy ]]; then
-      [[ -w /opt/devflow/config/proxy ]] && DEVFLOW_OVERRIDE_WRITABLE=true
-    elif [[ "$DEVFLOW_DIRECTORY_WRITABLE" == true ]]; then
+    elif root_installation_can_manage /opt/devflow/config/proxy/fullpassword-nginx.override.yml; then
       DEVFLOW_OVERRIDE_WRITABLE=true
     fi
+    root_installation_can_manage /opt/devflow/config/nginx/devflow.conf && DEVFLOW_PROXY_CONFIG_WRITABLE=true
     if ! docker network inspect devflow_edge >/dev/null 2>&1 \
       || [[ "$(docker network inspect devflow_edge --format '{{index .Labels "devflow.managed"}}' 2>/dev/null || true)" == true ]]; then
       FULLPASSWORD_EDGE_NETWORK_SAFE=true
     fi
     if { [[ ! -e /opt/devflow/config/proxy/fullpassword-nginx.override.yml ]] \
-          || [[ -w /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
+          || [[ "$DEVFLOW_OVERRIDE_WRITABLE" == true \
             && "$(head -n1 /opt/devflow/config/proxy/fullpassword-nginx.override.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Stored exclusively under /opt/devflow.' ]]; } \
       && { [[ ! -e /opt/devflow/config/nginx/devflow.conf ]] \
-          || [[ -w /opt/devflow/config/nginx/devflow.conf \
+          || [[ "$DEVFLOW_PROXY_CONFIG_WRITABLE" == true \
             && "$(head -n1 /opt/devflow/config/nginx/devflow.conf 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Independent virtual host.' ]]; }; then
       FULLPASSWORD_ROLLBACK_READY=true
     fi
@@ -398,6 +407,8 @@ render_report() {
     echo "nginx_conf_d_included=$NGINX_CONF_D_INCLUDED"
     echo "devflow_directory_writable=$DEVFLOW_DIRECTORY_WRITABLE"
     echo "devflow_override_writable=$DEVFLOW_OVERRIDE_WRITABLE"
+    echo "devflow_proxy_config_writable=$DEVFLOW_PROXY_CONFIG_WRITABLE"
+    echo 'devflow_write_context=root-installation'
     echo "fullpassword_compose_readable=$FULLPASSWORD_COMPOSE_READABLE"
     echo "fullpassword_compose_original=/opt/fullpassword/docker-compose.yml"
     echo "devflow_override_planned=/opt/devflow/config/proxy/fullpassword-nginx.override.yml"

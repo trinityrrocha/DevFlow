@@ -38,6 +38,8 @@ for (const fragment of [
   'compose_working_dir=',
   'devflow_directory_writable=',
   'devflow_override_writable=',
+  'devflow_proxy_config_writable=',
+  'devflow_write_context=root-installation',
   'fullpassword_compose_readable=',
   'compose_cross_directory_supported=',
   'compose_merge_valid=',

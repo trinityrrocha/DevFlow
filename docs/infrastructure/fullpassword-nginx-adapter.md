@@ -21,7 +21,7 @@ O adaptador opera somente quando o diagnóstico read-only comprova simultaneamen
 
 O diagnóstico usa `python3` para comparar o Compose base com o resultado normalizado do merge. Como essa verificação ocorre antes de qualquer mutação, o comando precisa existir previamente na VPS compartilhada.
 
-O relatório registra `devflow_directory_writable`, `devflow_override_writable`, `fullpassword_compose_readable`, `compose_cross_directory_supported`, `compose_merge_valid`, o Compose original, o override temporário removido ao final, o caminho final planejado, o comando Compose, o exit code e o erro sanitizado. O diagnóstico nunca cria arquivos em `/opt/fullpassword`; seus candidatos ficam em `/tmp` e o relatório opcional fica em `/opt/devflow/logs`.
+O relatório registra `devflow_directory_writable` e `devflow_override_writable` no contexto planejado `root-installation`, verificando filesystem read-write e atributos imutáveis sem criar arquivos. Também registra `fullpassword_compose_readable`, `compose_cross_directory_supported`, `compose_merge_valid`, o Compose original, o override temporário removido ao final, o caminho final planejado, o comando Compose, o exit code e o erro sanitizado. O diagnóstico nunca cria arquivos em `/opt/fullpassword`; seus candidatos ficam em `/tmp` e o relatório opcional fica em `/opt/devflow/logs`.
 
 Qualquer divergência mantém `compatibility=blocked`. O adaptador não tenta descobrir uma alternativa por tentativa e erro.
 
