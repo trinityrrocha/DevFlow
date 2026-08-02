@@ -56,6 +56,9 @@ reset_fullpassword_facts() {
   CONFIG_VALID=true
   DOMAIN_CONFLICT=false
   FULLPASSWORD_COMPOSE_READABLE=true
+  FULLPASSWORD_COMPOSE_VARIABLE_INITIALIZED=true
+  FULLPASSWORD_COMPOSE_DETECTED=true
+  FULLPASSWORD_COMPOSE_EXISTS=true
   DEVFLOW_DIRECTORY_WRITABLE=true
   DEVFLOW_OVERRIDE_WRITABLE=true
   FULLPASSWORD_EDGE_NETWORK_SAFE=true
@@ -184,7 +187,7 @@ scenario 'sinais acionam a limpeza por trap'
 
 # 20. Auditoria read-only do Full Password.
 AUDIT_SOURCE="$(<"$ROOT/scripts/audit-fullpassword-readonly.mjs")"
-[[ "$AUDIT_SOURCE" == *'forbiddenEnvRead'* && "$AUDIT_SOURCE" == *'envInputRedirect'* && "$DIAGNOSTIC_SOURCE" == *'--project-directory /opt/fullpassword'* ]]
+[[ "$AUDIT_SOURCE" == *'forbiddenEnvRead'* && "$AUDIT_SOURCE" == *'envInputRedirect'* && "$DIAGNOSTIC_SOURCE" == *'--project-directory %q'* ]]
 scenario 'auditoria bloqueia leitura ou escrita indevida no Full Password'
 
 [[ "$passed" -eq 20 ]] || { echo "Expected 20 privileged Compose scenarios, got $passed." >&2; exit 1; }

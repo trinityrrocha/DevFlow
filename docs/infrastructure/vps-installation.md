@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.3.2-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.3.3-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 
@@ -128,7 +128,7 @@ Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include 
 
 Se existir `fullpassword_nginx`, o instalador oferece o diagnóstico read-only. Ele só prossegue quando o relatório retorna `compatibility=compatible-with-compose-override` e comprova o contrato exato de projeto, serviço, caminhos, mounts, rede, include, domínio e merge. Não use o adaptador com uma topologia apenas parecida.
 
-O dry-run real da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, comprovou que o Compose original depende de `/opt/fullpassword/.env` protegido. A versão `0.3.2-alpha` corrige a classificação e solicita uma nova execução privilegiada somente leitura. Esse novo dry-run ainda não foi executado na VPS; portanto, não existe instalação aprovada nem homologação do modo compartilhado.
+O `--check` real da versão `0.3.2-alpha`, commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, comprovou que o Compose original depende de `/opt/fullpassword/.env` protegido. O dry-run revelou uma variável de caminho não inicializada antes de qualquer mutação. A versão `0.3.3-alpha` corrige esse fluxo; ainda precisa repetir check, dry-run comum e dry-run privilegiado na VPS. Isso não representa instalação aprovada nem homologação do modo compartilhado.
 
 Para repetir somente o inventário privilegiado a partir de um checkout confiável:
 

@@ -2,6 +2,22 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.3.3-alpha] - 2026-08-02
+
+### Corrigido
+
+- `FULLPASSWORD_COMPOSE_FILE` e demais estados de descoberta passam a ser inicializados antes de qualquer função sob `set -u`;
+- o Compose original é descoberto pela label `com.docker.compose.project.config_files`, normalizado pelo working directory e validado, com fallback controlado para `/opt/fullpassword/docker-compose.yml`;
+- caminhos ausentes, relativos sem base, inexistentes ou não legíveis produzem bloqueio funcional e relatório sanitizado, nunca erro interno do Bash;
+- descoberta de Compose, validação do caminho, inventário de inputs protegidos e merge possuem contratos separados e parâmetros explícitos;
+- trap `ERR` registra apenas script, linha, função, código e operação lógica, sem ambiente ou segredos.
+
+### Testes
+
+- 20 cenários de descoberta do Compose, incluindo variável ausente, labels, fallback, múltiplos arquivos, espaços, root simulado e regressão `unbound variable`;
+- auditoria de inicialização e modo estrito em sete entrypoints e na biblioteca operacional herdada;
+- homologação do novo dry-run comum e privilegiado permanece pendente na VPS.
+
 ## [0.3.2-alpha] - 2026-08-02
 
 ### Corrigido

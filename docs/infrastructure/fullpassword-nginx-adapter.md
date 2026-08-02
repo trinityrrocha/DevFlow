@@ -1,6 +1,6 @@
 # Adaptador persistente para `fullpassword_nginx`
 
-> Corrigido em `0.3.2-alpha` para homologação. Ainda não aprovado para produção nem homologado na VPS real.
+> Corrigido em `0.3.3-alpha` para homologação. Ainda não aprovado para produção nem homologado na VPS real.
 
 > O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.
 
@@ -20,6 +20,8 @@ O adaptador opera somente quando o diagnóstico read-only comprova simultaneamen
 - merge estrutural do Compose válido.
 
 O diagnóstico usa `python3` para comparar o Compose base com o resultado normalizado do merge. Como essa verificação ocorre antes de qualquer mutação, o comando precisa existir previamente na VPS compartilhada. Todos os comandos usam explicitamente `docker compose --project-directory /opt/fullpassword`, preservando a resolução original de `.env`, `env_file` e caminhos relativos.
+
+O caminho do Compose não é mais implícito. A descoberta consulta as labels de working directory e config files, normaliza o primeiro Compose original, valida caminho absoluto, arquivo regular e legibilidade e só então permite o inventário dos inputs. `/opt/fullpassword/docker-compose.yml` é fallback apenas quando validado. Falhas geram `compose_original_detected=false` ou fatos equivalentes no relatório, mantendo `compatibility=blocked` e `changes_applied=false`.
 
 Os inputs protegidos são opacos. O DevFlow identifica apenas caminho, tipo, existência e legibilidade; não usa `cat`, `source`, `cp`, `chmod` ou `chown` e não interpreta seus valores. O próprio Docker Compose pode consumi-los durante um dry-run executado explicitamente com `sudo`. A configuração JSON interpolada fica exclusivamente em diretório temporário `0700`, com arquivos `0600`, e é removida por trap em sucesso, erro ou sinal. O relatório contém somente fatos estruturais derivados.
 

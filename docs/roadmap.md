@@ -64,7 +64,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.3.2-alpha` consistente;
+- versão `0.3.3-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

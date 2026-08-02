@@ -44,7 +44,7 @@ No modo compartilhado, um diagnóstico read-only precisa comprovar o contrato in
 
 O container `fullpassword_nginx` continua sendo um limite de segurança. A instalação só avança quando projeto, serviço, working directory, Compose, mounts read-only, rede original, include, domínio, propriedade da rede de borda e merge final coincidem com o contrato aprovado. O resultado é `compatible-with-compose-override`; qualquer divergência bloqueia.
 
-O dry-run real da versão `0.3.1-alpha`, commit `74e9092f85dfce6983a1b686851f191462ee3139`, parou ao encontrar `/opt/fullpassword/.env` protegido. Esse evento comprova o fail-closed e a necessidade de privilégio, não incompatibilidade entre diretórios. A validação privilegiada de `0.3.2-alpha` permanece pendente.
+O check real da versão `0.3.2-alpha`, commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, detectou o input protegido, mas o dry-run encontrou `FULLPASSWORD_COMPOSE_FILE` não inicializada. Em `0.3.3-alpha`, labels, working directory, fallback, existência e legibilidade são validados por funções independentes antes do inventário. A validação privilegiada permanece pendente.
 
 O adaptador cria apenas artefatos sob `/opt/devflow`, incluindo `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e `/opt/devflow/config/nginx/devflow.conf`, além da rede externa `devflow_edge`. O Compose original e `nginx.runtime.conf` são somente leitura. O certificado DevFlow é independente; o serviço `nginx` é o único componente Full Password reconciliado, sempre com os dois arquivos Compose e com rollback. Veja o [contrato completo do adaptador](fullpassword-nginx-adapter.md) e o [guia de VPS](vps-installation.md).
 

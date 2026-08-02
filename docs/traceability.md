@@ -63,7 +63,7 @@
 | Remoção reversível | `remove_host_nginx_config` remove somente a rota com marcador DevFlow |
 | Dados isolados | banco somente em `devflow_internal`; borda separada em `devflow_edge` |
 
-## Adaptador persistente `0.3.2-alpha`
+## Adaptador persistente `0.3.3-alpha`
 
 | Requisito | Evidência |
 |---|---|
@@ -83,7 +83,19 @@
 | Testes | suites do adaptador e `../tests/integration/privileged-compose.test.sh` com 21 cenários |
 | Homologação real | pendente; `implementation-status.md` não declara aprovação operacional |
 
-## Mecanismo de atualização 0.3.2-alpha
+## Correção de inicialização `0.3.3-alpha`
+
+| Requisito | Evidência |
+|---|---|
+| Variáveis inicializadas | estado completo no topo de `../scripts/detect-shared-proxy.sh` e auditoria `../scripts/audit-bash-initialization.mjs` |
+| Descoberta previsível | labels Compose, working directory e fallback validado em `discover_fullpassword_compose` |
+| Validação explícita | `validate_fullpassword_compose_path`, `discover_protected_compose_inputs` e `validate_compose_merge` |
+| Relatório controlado | flags de inicialização, detecção, existência, leitura, erro interno e ausência de mudanças |
+| Trap sanitizado | `handle_internal_error` registra somente metadados operacionais allowlisted |
+| 20 regressões | `../tests/integration/compose-discovery.test.sh` inclui ausência, labels, caminhos, root simulado e `unbound variable` |
+| Contratos Bash | `security/bash-variable-contracts.md` classifica variáveis dos oito fluxos revisados |
+
+## Mecanismo de atualização 0.3.3-alpha
 
 | Requisito | Evidência |
 |---|---|

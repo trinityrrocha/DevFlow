@@ -28,6 +28,12 @@ FULLPASSWORD_SERVICE=
 FULLPASSWORD_IMAGE=
 FULLPASSWORD_WORKING_DIR=
 FULLPASSWORD_CONFIG_FILES=
+FULLPASSWORD_COMPOSE_FILE=
+FULLPASSWORD_COMPOSE_DIR=
+FULLPASSWORD_ENV_FILE=
+FULLPASSWORD_COMPOSE_VARIABLE_INITIALIZED=true
+FULLPASSWORD_COMPOSE_DETECTED=false
+FULLPASSWORD_COMPOSE_EXISTS=false
 FULLPASSWORD_RUNTIME_MOUNT=false
 FULLPASSWORD_CERTIFICATE_MOUNT=false
 FULLPASSWORD_ORIGINAL_NETWORK=false
@@ -40,7 +46,7 @@ DEVFLOW_PROXY_CONFIG_WRITABLE=false
 FULLPASSWORD_COMPOSE_READABLE=false
 COMPOSE_CROSS_DIRECTORY_SUPPORTED=unknown
 COMPOSE_MERGE_VALID=unknown
-COMPOSE_VALIDATION_COMMAND='docker compose --project-directory /opt/fullpassword -f /opt/fullpassword/docker-compose.yml -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml config --format json'
+COMPOSE_VALIDATION_COMMAND=not-planned
 COMPOSE_EXECUTED_COMMAND=not-run
 COMPOSE_VALIDATION_EXIT_CODE=not-run
 COMPOSE_VALIDATION_ERROR=not-run
@@ -69,6 +75,8 @@ FULLPASSWORD_EDGE_NETWORK_SAFE=false
 FULLPASSWORD_ROLLBACK_READY=false
 FULLPASSWORD_PUBLIC_HEALTH=false
 NGINX_CONF_D_INCLUDED=false
+INTERNAL_SCRIPT_ERROR=false
+CURRENT_OPERATION=initialization
 declare -a BLOCKERS=()
 declare -a COMPOSE_INPUT_RECORDS=()
 declare -a DIAGNOSTIC_TEMP_DIRS=()
@@ -112,6 +120,109 @@ root_installation_can_manage() {
 
 execution_uid() { id -u; }
 
+compose_path_readable() {
+  local path="${1:-}"
+  [[ -n "$path" && -r "$path" ]]
+}
+
+trim_whitespace() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s\n' "$value"
+}
+
+normalize_docker_label() {
+  local value
+  value="$(trim_whitespace "${1:-}")"
+  case "$value" in
+    '<no value>'|'<nil>'|null) value= ;;
+  esac
+  printf '%s\n' "$value"
+}
+
+normalize_compose_path() {
+  local candidate="${1:-}" project_dir="${2:-}" normalized
+  candidate="$(trim_whitespace "$candidate")"
+  [[ -n "$candidate" && "$candidate" != *$'\n'* && "$candidate" != *$'\r'* && "$candidate" != *$'\t'* ]] || return 1
+  if [[ "$candidate" != /* ]]; then
+    [[ "$project_dir" == /* ]] || return 1
+    candidate="$project_dir/$candidate"
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    normalized="$(realpath -m -- "$candidate")" || return 1
+  else
+    normalized="$candidate"
+  fi
+  [[ "$normalized" == /* ]] || return 1
+  printf '%s\n' "$normalized"
+}
+
+validate_fullpassword_compose_path() {
+  local compose_file="${1:-}"
+  FULLPASSWORD_COMPOSE_DETECTED=false
+  FULLPASSWORD_COMPOSE_EXISTS=false
+  FULLPASSWORD_COMPOSE_READABLE=false
+  FULLPASSWORD_COMPOSE_DIR=
+  FULLPASSWORD_ENV_FILE=
+  [[ -n "$compose_file" && "$compose_file" == /* ]] || return 2
+  FULLPASSWORD_COMPOSE_FILE="$compose_file"
+  FULLPASSWORD_COMPOSE_DETECTED=true
+  [[ -f "$compose_file" ]] || return 3
+  FULLPASSWORD_COMPOSE_EXISTS=true
+  FULLPASSWORD_COMPOSE_DIR="$(dirname "$compose_file")"
+  FULLPASSWORD_ENV_FILE="$FULLPASSWORD_COMPOSE_DIR/.env"
+  compose_path_readable "$compose_file" || return 4
+  FULLPASSWORD_COMPOSE_READABLE=true
+}
+
+discover_fullpassword_compose() {
+  local container="${1:-}" fallback="${2-/opt/fullpassword/docker-compose.yml}"
+  local config_files="${FULLPASSWORD_CONFIG_FILES:-}" project_dir="${FULLPASSWORD_WORKING_DIR:-}"
+  local first_candidate= normalized= fallback_normalized= discovery_status=0
+
+  FULLPASSWORD_COMPOSE_FILE="${FULLPASSWORD_COMPOSE_FILE:-}"
+  FULLPASSWORD_COMPOSE_DIR="${FULLPASSWORD_COMPOSE_DIR:-}"
+  FULLPASSWORD_ENV_FILE="${FULLPASSWORD_ENV_FILE:-}"
+  FULLPASSWORD_COMPOSE_VARIABLE_INITIALIZED=true
+  config_files="$(normalize_docker_label "$config_files")"
+  project_dir="$(normalize_docker_label "$project_dir")"
+  FULLPASSWORD_CONFIG_FILES="$config_files"
+  FULLPASSWORD_WORKING_DIR="$project_dir"
+
+  if [[ -n "$container" && -z "$project_dir" ]]; then
+    project_dir="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null || true)"
+    project_dir="$(normalize_docker_label "$project_dir")"
+    FULLPASSWORD_WORKING_DIR="$project_dir"
+  fi
+  if [[ -n "$container" && -z "$config_files" ]]; then
+    config_files="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$container" 2>/dev/null || true)"
+    config_files="$(normalize_docker_label "$config_files")"
+    FULLPASSWORD_CONFIG_FILES="$config_files"
+  fi
+
+  first_candidate="${config_files%%,*}"
+  if [[ -n "$(trim_whitespace "$first_candidate")" ]]; then
+    normalized="$(normalize_compose_path "$first_candidate" "$project_dir" 2>/dev/null || true)"
+  fi
+  fallback_normalized="$(normalize_compose_path "$fallback" / 2>/dev/null || true)"
+
+  if [[ -n "$normalized" && -f "$normalized" ]]; then
+    validate_fullpassword_compose_path "$normalized" || discovery_status=$?
+  elif [[ -n "$fallback_normalized" && -f "$fallback_normalized" ]]; then
+    validate_fullpassword_compose_path "$fallback_normalized" || discovery_status=$?
+  elif [[ -n "$normalized" ]]; then
+    validate_fullpassword_compose_path "$normalized" || discovery_status=$?
+  elif [[ -n "$fallback_normalized" ]]; then
+    validate_fullpassword_compose_path "$fallback_normalized" || discovery_status=$?
+  else
+    FULLPASSWORD_COMPOSE_FILE=
+    FULLPASSWORD_COMPOSE_DETECTED=false
+    discovery_status=2
+  fi
+  return "$discovery_status"
+}
+
 new_diagnostic_temp() {
   DIAGNOSTIC_TEMP_RESULT="$(mktemp -d /tmp/devflow-compose-validation.XXXXXX)"
   chmod 0700 "$DIAGNOSTIC_TEMP_RESULT"
@@ -126,10 +237,11 @@ cleanup_diagnostic_temps() {
   done
 }
 
-discover_fullpassword_compose_inputs() {
-  local manifest="$1" kind path exists readable privileged protected
+discover_protected_compose_inputs() {
+  local compose_file="${1:?compose_file obrigatório}" manifest="${2:?manifest obrigatório}"
+  local kind path exists readable privileged protected
   python3 "$DEVFLOW_SOURCE_ROOT/scripts/discover-compose-inputs.py" \
-    "$FULLPASSWORD_COMPOSE_FILE" > "$manifest"
+    "$compose_file" > "$manifest"
   while IFS=$'\t' read -r kind path exists readable privileged protected; do
     [[ -n "$kind" ]] || continue
     if [[ "$kind" == required-variable ]]; then
@@ -222,6 +334,56 @@ classify_compose_failure() {
   COMPOSE_VALIDATION_ERROR="$COMPOSE_VALIDATION_BLOCKED_BY"
 }
 
+validate_compose_merge() {
+  local compose_file="${1:?compose_file obrigatório}" project_dir="${2:?project_dir obrigatório}"
+  local override_file="${3:?override_file obrigatório}" base_json="${4:?base_json obrigatório}"
+  local merged_json="${5:?merged_json obrigatório}" error_file="${6:?error_file obrigatório}"
+  local structural_result="${7:?structural_result obrigatório}" structural_error="${8:?structural_error obrigatório}"
+  local compose_status=0 validator_status=0
+
+  printf -v COMPOSE_EXECUTED_COMMAND \
+    'docker compose --project-directory %q -f %q -f %q config --format json' \
+    "$project_dir" "$compose_file" "$override_file"
+  COMPOSE_VALIDATION_ATTEMPTED=true
+  if docker compose --project-directory "$project_dir" \
+    -f "$compose_file" config --format json > "$base_json" 2>"$error_file"; then
+    if docker compose --project-directory "$project_dir" \
+      -f "$compose_file" -f "$override_file" \
+      config --format json > "$merged_json" 2>"$error_file"; then
+      COMPOSE_CROSS_DIRECTORY_SUPPORTED=true
+    else
+      compose_status=$?
+      classify_compose_failure "$error_file"
+      if [[ "$COMPOSE_VALIDATION_BLOCKED_BY" == compose-command-failed ]]; then
+        COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
+        COMPOSE_VALIDATION_BLOCKED_BY=compose-cross-directory-incompatible
+        COMPOSE_VALIDATION_ERROR=compose-cross-directory-incompatible
+      fi
+    fi
+  else
+    compose_status=$?
+    classify_compose_failure "$error_file"
+  fi
+  COMPOSE_VALIDATION_EXIT_CODE="$compose_status"
+
+  if [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]]; then
+    if python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" \
+      "$base_json" "$merged_json" > "$structural_result" 2>"$structural_error"; then
+      COMPOSE_MERGE_VALID=true
+      COMPOSE_VALIDATION_ERROR=none
+      COMPOSE_VALIDATION_BLOCKED_BY=none
+      load_structural_results "$structural_result"
+    else
+      validator_status=$?
+      COMPOSE_MERGE_VALID=false
+      COMPOSE_VALIDATION_EXIT_CODE="$validator_status"
+      COMPOSE_VALIDATION_BLOCKED_BY=structural-validation-failed
+      COMPOSE_VALIDATION_ERROR=structural-validation-failed
+    fi
+  fi
+  return 0
+}
+
 assess_shared_proxy_compatibility() {
   BLOCKERS=()
   COMPATIBILITY=blocked
@@ -253,6 +415,9 @@ assess_shared_proxy_compatibility() {
       [[ "$NGINX_CONF_D_INCLUDED" == true ]] || add_blocker 'Include /etc/nginx/conf.d/*.conf não foi comprovado.'
       [[ "$CONFIG_VALID" == true ]] || add_blocker 'Configuração atual do fullpassword_nginx é inválida.'
       [[ "$DOMAIN_CONFLICT" == false ]] || add_blocker 'O domínio DevFlow conflita com uma rota existente.'
+      [[ "$FULLPASSWORD_COMPOSE_VARIABLE_INITIALIZED" == true ]] || add_blocker 'Variável do Compose original não foi inicializada.'
+      [[ "$FULLPASSWORD_COMPOSE_DETECTED" == true ]] || add_blocker 'Não foi possível identificar o Compose original do Full Password.'
+      [[ "$FULLPASSWORD_COMPOSE_EXISTS" == true ]] || add_blocker 'Compose original do Full Password não existe como arquivo regular.'
       [[ "$FULLPASSWORD_COMPOSE_READABLE" == true ]] || add_blocker 'Compose original do Full Password não está legível.'
       [[ "$DEVFLOW_DIRECTORY_WRITABLE" == true ]] || add_blocker 'Diretório /opt/devflow não pode receber os artefatos do adaptador.'
       [[ "$DEVFLOW_OVERRIDE_WRITABLE" == true ]] || add_blocker 'Override em /opt/devflow não pode ser criado ou atualizado com segurança.'
@@ -382,7 +547,7 @@ collect_host_nginx() {
 
 collect_container_nginx() {
   local mounts networks temporary base_json merged_json merge_error override_candidate input_manifest structural_result structural_error
-  local http_code certificate_sans domain_pattern compose_status validator_status
+  local http_code certificate_sans domain_pattern compose_discovery_status=0
   domain_pattern="${DOMAIN//./\\.}"
   mounts="$(docker inspect --format '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}|{{.RW}}{{println}}{{end}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
   if docker exec "$PROXY_CONTAINER" nginx -t >/dev/null 2>&1; then CONFIG_VALID=true; fi
@@ -410,6 +575,17 @@ collect_container_nginx() {
     FULLPASSWORD_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
     FULLPASSWORD_WORKING_DIR="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
     FULLPASSWORD_CONFIG_FILES="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
+    discover_fullpassword_compose "$PROXY_CONTAINER" || compose_discovery_status=$?
+    case "$compose_discovery_status" in
+      0) ;;
+      2) COMPOSE_VALIDATION_BLOCKED_BY=compose-original-not-detected ;;
+      3) COMPOSE_VALIDATION_BLOCKED_BY=compose-original-not-found ;;
+      4) COMPOSE_VALIDATION_BLOCKED_BY=compose-original-unreadable ;;
+      *) COMPOSE_VALIDATION_BLOCKED_BY=compose-original-invalid ;;
+    esac
+    if [[ "$compose_discovery_status" -ne 0 ]]; then
+      COMPOSE_VALIDATION_ERROR="$COMPOSE_VALIDATION_BLOCKED_BY"
+    fi
     grep -Fxq 'bind|/opt/fullpassword/docker/nginx.runtime.conf|/etc/nginx/conf.d/default.conf|false' <<< "$mounts" \
       && FULLPASSWORD_RUNTIME_MOUNT=true
     [[ "$FULLPASSWORD_RUNTIME_MOUNT" == true ]] && PERSISTENT_CONFIG=true
@@ -438,7 +614,6 @@ collect_container_nginx() {
       && grep -Eq "server_name[[:space:]]+$domain_pattern[[:space:]]*;" /opt/devflow/config/nginx/devflow.conf; then
       DOMAIN_CONFLICT=false
     fi
-    [[ -r /opt/fullpassword/docker-compose.yml ]] && FULLPASSWORD_COMPOSE_READABLE=true
     root_installation_can_manage /opt/devflow && DEVFLOW_DIRECTORY_WRITABLE=true
     if [[ -e /opt/devflow/config/proxy/fullpassword-nginx.override.yml ]]; then
       if root_installation_can_manage /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
@@ -477,53 +652,21 @@ collect_container_nginx() {
       structural_error="$temporary/structural.error"
       override_candidate="$temporary/fullpassword-nginx.override.yml"
       COMPOSE_TEMP_OVERRIDE="$override_candidate (removido ao concluir)"
-      COMPOSE_EXECUTED_COMMAND="docker compose --project-directory /opt/fullpassword -f /opt/fullpassword/docker-compose.yml -f $override_candidate config --format json"
+      printf -v COMPOSE_VALIDATION_COMMAND \
+        'docker compose --project-directory %q -f %q -f %q config --format json' \
+        "$FULLPASSWORD_COMPOSE_DIR" "$FULLPASSWORD_COMPOSE_FILE" \
+        /opt/devflow/config/proxy/fullpassword-nginx.override.yml
       install -m 0600 "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/fullpassword-nginx.override.yml.template" "$override_candidate"
-      if ! discover_fullpassword_compose_inputs "$input_manifest"; then
+      if ! discover_protected_compose_inputs "$FULLPASSWORD_COMPOSE_FILE" "$input_manifest"; then
         COMPOSE_VALIDATION_BLOCKED_BY=input-discovery-failed
         COMPOSE_VALIDATION_ERROR=input-discovery-failed
       elif [[ "$PRIVILEGED_VALIDATION_REQUIRED" == true && "$(execution_uid)" -ne 0 ]]; then
         COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file
         COMPOSE_VALIDATION_ERROR=protected-env-file
       else
-        COMPOSE_VALIDATION_ATTEMPTED=true
-        compose_status=0
-        if docker compose --project-directory /opt/fullpassword \
-          -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>"$merge_error"; then
-          if docker compose --project-directory /opt/fullpassword \
-            -f /opt/fullpassword/docker-compose.yml -f "$override_candidate" \
-            config --format json > "$merged_json" 2>"$merge_error"; then
-            COMPOSE_CROSS_DIRECTORY_SUPPORTED=true
-          else
-            compose_status=$?
-            classify_compose_failure "$merge_error"
-            if [[ "$COMPOSE_VALIDATION_BLOCKED_BY" == compose-command-failed ]]; then
-              COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
-              COMPOSE_VALIDATION_BLOCKED_BY=compose-cross-directory-incompatible
-              COMPOSE_VALIDATION_ERROR=compose-cross-directory-incompatible
-            fi
-          fi
-        else
-          compose_status=$?
-          classify_compose_failure "$merge_error"
-        fi
-        COMPOSE_VALIDATION_EXIT_CODE="$compose_status"
-        if [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]]; then
-          validator_status=0
-          if python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" \
-            "$base_json" "$merged_json" > "$structural_result" 2>"$structural_error"; then
-            COMPOSE_MERGE_VALID=true
-            COMPOSE_VALIDATION_ERROR=none
-            COMPOSE_VALIDATION_BLOCKED_BY=none
-            load_structural_results "$structural_result"
-          else
-            validator_status=$?
-            COMPOSE_MERGE_VALID=false
-            COMPOSE_VALIDATION_EXIT_CODE="$validator_status"
-            COMPOSE_VALIDATION_BLOCKED_BY=structural-validation-failed
-            COMPOSE_VALIDATION_ERROR=structural-validation-failed
-          fi
-        fi
+        validate_compose_merge \
+          "$FULLPASSWORD_COMPOSE_FILE" "$FULLPASSWORD_COMPOSE_DIR" "$override_candidate" \
+          "$base_json" "$merged_json" "$merge_error" "$structural_result" "$structural_error"
       fi
     fi
   fi
@@ -591,8 +734,13 @@ render_report() {
     echo "devflow_override_writable=$DEVFLOW_OVERRIDE_WRITABLE"
     echo "devflow_proxy_config_writable=$DEVFLOW_PROXY_CONFIG_WRITABLE"
     echo 'devflow_write_context=root-installation'
+    echo "fullpassword_compose_variable_initialized=$FULLPASSWORD_COMPOSE_VARIABLE_INITIALIZED"
+    echo "fullpassword_compose_detected=$FULLPASSWORD_COMPOSE_DETECTED"
+    echo "compose_original_detected=$FULLPASSWORD_COMPOSE_DETECTED"
+    echo "fullpassword_compose_file=${FULLPASSWORD_COMPOSE_FILE:-not-detected}"
+    echo "fullpassword_compose_exists=$FULLPASSWORD_COMPOSE_EXISTS"
     echo "fullpassword_compose_readable=$FULLPASSWORD_COMPOSE_READABLE"
-    echo "fullpassword_compose_original=/opt/fullpassword/docker-compose.yml"
+    echo "fullpassword_compose_original=${FULLPASSWORD_COMPOSE_FILE:-not-detected}"
     echo "devflow_override_planned=/opt/devflow/config/proxy/fullpassword-nginx.override.yml"
     echo "compose_temporary_override=$COMPOSE_TEMP_OVERRIDE"
     echo "compose_validation_command=$COMPOSE_VALIDATION_COMMAND"
@@ -604,6 +752,7 @@ render_report() {
     echo "compose_cross_directory_supported=$COMPOSE_CROSS_DIRECTORY_SUPPORTED"
     echo "compose_merge_valid=$COMPOSE_MERGE_VALID"
     echo "protected_compose_inputs_detected=$PROTECTED_COMPOSE_INPUTS_DETECTED"
+    echo "protected_input_detected=$PROTECTED_COMPOSE_INPUTS_DETECTED"
     echo "privileged_validation_required=$PRIVILEGED_VALIDATION_REQUIRED"
     echo "changes_applied=$CHANGES_APPLIED"
     echo "installation_ready=$INSTALLATION_READY"
@@ -620,6 +769,7 @@ render_report() {
     echo "devflow_nginx_mount_added=$DEVFLOW_NGINX_MOUNT_ADDED"
     echo "devflow_database_exposure_absent=$DEVFLOW_DATABASE_EXPOSURE_ABSENT"
     echo "sensitive_values_logged=$SENSITIVE_VALUES_LOGGED"
+    echo "internal_script_error=$INTERNAL_SCRIPT_ERROR"
     local record kind path exists readable privileged protected
     for record in "${COMPOSE_INPUT_RECORDS[@]}"; do
       IFS='|' read -r kind path exists readable privileged protected <<< "$record"
@@ -708,6 +858,17 @@ write_report() {
   cat "$output"
 }
 
+handle_internal_error() {
+  local exit_code="${1:-1}" line="${2:-unknown}" function_name="${3:-main}"
+  local operation="${CURRENT_OPERATION:-unknown}"
+  trap - ERR
+  INTERNAL_SCRIPT_ERROR=true
+  printf 'Erro interno sanitizado: script=detect-shared-proxy.sh line=%s function=%s exit_code=%s operation=%s\n' \
+    "$line" "$function_name" "$exit_code" "$operation" >&2
+  printf 'internal_script_error=true\ncompatibility=blocked\nchanges_applied=false\n' >&2
+  exit "$exit_code"
+}
+
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -736,15 +897,20 @@ main() {
 
   trap cleanup_diagnostic_temps EXIT
   trap 'exit 130' INT TERM
+  trap 'handle_internal_error "$?" "$LINENO" "${FUNCNAME[0]:-main}"' ERR
 
+  CURRENT_OPERATION=detect-proxy
   detect_proxy
+  CURRENT_OPERATION=collect-proxy-facts
   case "$PROXY_TYPE" in
     host-nginx) collect_host_nginx ;;
     fullpassword-nginx|nginx-container) collect_container_nginx ;;
     *) ;;
   esac
+  CURRENT_OPERATION=assess-compatibility
   assess_shared_proxy_compatibility || assessment_status=$?
   assessment_status="${assessment_status:-0}"
+  CURRENT_OPERATION=write-sanitized-report
   write_report "$OUTPUT"
   if [[ "$assessment_status" -eq 3 ]]; then
     print_privileged_dry_run_guidance >&2

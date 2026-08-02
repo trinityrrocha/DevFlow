@@ -13,6 +13,7 @@ const update = read('scripts/update.sh');
 const restore = read('scripts/restore.sh');
 const diagnostic = read('scripts/detect-shared-proxy.sh');
 const composeInputDiscovery = read('scripts/discover-compose-inputs.py');
+const bashInitializationAudit = read('scripts/audit-bash-initialization.mjs');
 const proxyConfig = read('scripts/lib/proxy-config.sh');
 const changelog = read('CHANGELOG.md');
 
@@ -74,7 +75,7 @@ for (const fragment of [
   if (!install.includes(fragment)) throw new Error(`Separação check/dry-run incompleta: ${fragment}`);
 }
 for (const fragment of [
-  '--project-directory /opt/fullpassword',
+  '--project-directory %q',
   'COMPOSE_CROSS_DIRECTORY_SUPPORTED=unknown',
   'COMPOSE_VALIDATION_BLOCKED_BY=protected-env-file',
   'trap cleanup_diagnostic_temps EXIT',
@@ -85,6 +86,11 @@ if (!composeInputDiscovery.includes('COMPOSE_ENV_FILES')
   || !composeInputDiscovery.includes('env_file')
   || !composeInputDiscovery.includes('required-variable')) {
   throw new Error('Descoberta opaca dos inputs do Compose está incompleta.');
+}
+if (!bashInitializationAudit.includes('FULLPASSWORD_COMPOSE_FILE')
+  || !bashInitializationAudit.includes('unsafeFixture')
+  || !rootPackage.scripts['audit:bash-initialization']) {
+  throw new Error('Auditoria de variáveis Bash não está integrada ao pipeline.');
 }
 if (!diagnostic.includes('fullpassword-nginx') || !diagnostic.includes('caddy-container')) {
   throw new Error('Política fail-closed de proxies containerizados está incompleta.');

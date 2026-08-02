@@ -41,6 +41,12 @@ for (const fragment of [
   'devflow_proxy_config_writable=',
   'devflow_write_context=root-installation',
   'fullpassword_compose_readable=',
+  'fullpassword_compose_variable_initialized=',
+  'fullpassword_compose_detected=',
+  'fullpassword_compose_file=',
+  'fullpassword_compose_exists=',
+  'protected_input_detected=',
+  'internal_script_error=',
   'compose_cross_directory_supported=',
   'compose_merge_valid=',
   'compose_validation_command=',
@@ -53,9 +59,14 @@ for (const fragment of [
   'changes_applied=',
   'installation_ready=',
   'sensitive_values_logged=',
-  '--project-directory /opt/fullpassword',
+  '--project-directory %q',
   'compatibility=',
   'sanitize_proxy_stream',
+  'discover_fullpassword_compose()',
+  'validate_fullpassword_compose_path()',
+  'discover_protected_compose_inputs()',
+  'validate_compose_merge()',
+  'handle_internal_error()',
 ]) {
   if (!diagnostic.includes(fragment)) throw new Error(`Coleta diagnóstica ausente: ${fragment}`);
 }

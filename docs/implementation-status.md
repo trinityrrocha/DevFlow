@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-02. Versão: `0.3.2-alpha`.
+Data de corte: 2026-08-02. Versão: `0.3.3-alpha`.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 
@@ -24,7 +24,7 @@ Worker e serviço de fila não existem nesta versão. O processamento disponíve
 
 ## Evidência real de VPS
 
-O dry-run real do commit `74e9092f85dfce6983a1b686851f191462ee3139`, versão `0.3.1-alpha`, confirmou o contrato do `fullpassword_nginx` até a leitura do Compose e então encontrou `/opt/fullpassword/.env` protegido. A versão `0.3.2-alpha` separa o check básico do dry-run completo, classifica o caso como requisito de validação privilegiada e preserva `compose_cross_directory_supported=unknown` até existir prova. O novo dry-run com `sudo` ainda não foi executado nessa VPS. O modo compartilhado continua não homologado.
+Na VPS Ubuntu 24.04 ARM64, `--check` do commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, versão `0.3.2-alpha`, concluiu com `passed-with-privileged-dry-run-required`. O dry-run comum não chegou ao gate: `discover_fullpassword_compose_inputs` referenciava `FULLPASSWORD_COMPOSE_FILE` sem inicialização sob `set -u`. Nenhuma alteração foi realizada. A versão `0.3.3-alpha` introduz descoberta defensiva e o teste de regressão; ainda não foi executada nessa VPS. O modo compartilhado continua não homologado.
 
 ## Validações locais aplicáveis
 
@@ -37,9 +37,9 @@ Os resultados efetivamente obtidos nesta rodada devem constar no relatório fina
 - construir imagens e iniciar todos os containers em Linux com Docker;
 - executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
 - executar migration em PostgreSQL real e confirmar `/api/health`;
-- executar `--check`, dry-run comum e dry-run privilegiado somente leitura com `0.3.2-alpha`;
+- executar `--check`, dry-run comum e dry-run privilegiado somente leitura com `0.3.3-alpha`;
 - confirmar `compose_cross_directory_supported=true`, `compose_merge_valid=true`, `changes_performed=false` e `installation_ready=true` no dry-run privilegiado;
-- executar posteriormente o modo compartilhado com `0.3.2-alpha` e confirmar o diagnóstico `compatible-with-compose-override`;
+- executar posteriormente o modo compartilhado com `0.3.3-alpha` e confirmar o diagnóstico `compatible-with-compose-override`;
 - ensaiar instalação completa com Nginx do host compatível e o modo isolado, incluindo renovação TLS;
 - realizar bootstrap, troca de senha e MFA ponta a ponta;
 - validar backup e restore com dados descartáveis;
