@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.3.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.3.1-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -77,11 +77,13 @@ O guia completo está em [instalação na VPS](docs/infrastructure/vps-installat
 
 A rede `devflow_edge` contém somente frontend, backend e edge; `devflow_internal` é interna e contém somente PostgreSQL e backend. O proxy nunca recebe acesso à rede do banco.
 
-A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e estratégia de aplicação sem alterá-los. Um `fullpassword_nginx` só recebe `compatibility=compatible-with-compose-override` quando coincide integralmente com o contrato aprovado de `/opt/fullpassword`; outros Nginx containerizados e Caddy continuam bloqueados. O relatório sanitizado fica em `/var/log/devflow/shared-proxy-diagnostic.log`.
+A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e estratégia de aplicação sem alterá-los. Um `fullpassword_nginx` só recebe `compatibility=compatible-with-compose-override` quando coincide integralmente com o contrato aprovado de `/opt/fullpassword`; outros Nginx containerizados e Caddy continuam bloqueados. O relatório sanitizado fica em `/opt/devflow/logs/shared-proxy-diagnostic.log`.
 
-Para o contrato aprovado, o instalador cria a rede externa `devflow_edge`, mantém o PostgreSQL apenas em `devflow_internal`, instala `/opt/fullpassword/docker-compose.devflow.yml` e monta somente `/opt/devflow/config/nginx/devflow.conf` no proxy. O Compose e a configuração originais do Full Password não são editados. Certificado, arquivos e recriação exclusiva do serviço `nginx` fazem parte de uma transação com backup e rollback. Consulte o [adaptador persistente](docs/infrastructure/fullpassword-nginx-adapter.md).
+Para o contrato aprovado, o instalador cria a rede externa `devflow_edge`, mantém o PostgreSQL apenas em `devflow_internal`, instala `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e monta somente `/opt/devflow/config/nginx/devflow.conf` no proxy. O Compose e a configuração originais do Full Password são apenas lidos. Certificado, arquivos e recriação exclusiva do serviço `nginx` fazem parte de uma transação com backup e rollback. Consulte o [adaptador persistente](docs/infrastructure/fullpassword-nginx-adapter.md).
 
-O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, validou o bloqueio anterior e forneceu o inventário usado pelo adaptador. A implementação `0.3.0-alpha` ainda não foi ensaiada nessa VPS; portanto, o modo compartilhado não está homologado.
+O primeiro ensaio real na VPS, usando `0.2.0-alpha` no commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, validou o bloqueio anterior e forneceu o inventário usado pelo adaptador. A correção `0.3.1-alpha` ainda não foi ensaiada nessa VPS; portanto, o modo compartilhado não está homologado.
+
+> O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.
 
 ## Configuração
 

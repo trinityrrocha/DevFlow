@@ -2,12 +2,28 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.3.1-alpha] - 2026-08-02
+
+### Corrigido
+
+- todos os artefatos do adaptador compartilhado foram centralizados em `/opt/devflow`;
+- o override Compose passou para `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`, com mounts de origem absoluta;
+- `/opt/fullpassword` passou a ser tratado estritamente como origem somente leitura do Compose e da configuração runtime;
+- diagnóstico ampliado com legibilidade da origem, gravabilidade do DevFlow, comando e resultado sanitizado do merge entre diretórios;
+- estado operacional em JSON separado de dados persistentes: instalação, versão e adaptador em `/opt/devflow/state`;
+- testes transacionais e auditoria estática agora falham diante de comandos de escrita destinados ao Full Password.
+
+### Homologação
+
+- validações locais cobrem contrato, merge modelado, rollback e preservação da fixture read-only;
+- `--check`, `--dry-run` e instalação compartilhada real permanecem pendentes na VPS Linux; esta versão não está aprovada para produção.
+
 ## [0.3.0-alpha] - 2026-07-31
 
 ### Adicionado
 
 - adaptador persistente e independente para o contrato comprovado do `fullpassword_nginx`;
-- Compose override gerenciado em `/opt/fullpassword/docker-compose.devflow.yml`, sem modificar o Compose original;
+- Compose override gerenciado de forma independente (caminho substituído em `0.3.1-alpha`), sem modificar o Compose original;
 - virtual host exclusivo em `/opt/devflow/config/nginx/devflow.conf` e templates separados para ACME, operação e manutenção;
 - rede externa persistente `devflow_edge`, com aliases exclusivos para frontend e backend e PostgreSQL restrito à rede interna;
 - validação fail-closed do merge do Compose, preservando portas, mounts, redes e definições originais;

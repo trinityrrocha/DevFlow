@@ -2,15 +2,17 @@
 
 FULLPASSWORD_ROOT=/opt/fullpassword
 FULLPASSWORD_COMPOSE_FILE="$FULLPASSWORD_ROOT/docker-compose.yml"
-FULLPASSWORD_OVERRIDE_FILE="$FULLPASSWORD_ROOT/docker-compose.devflow.yml"
 FULLPASSWORD_SERVICE=nginx
 FULLPASSWORD_CONTAINER=fullpassword_nginx
 FULLPASSWORD_ORIGINAL_DOMAIN="${FULLPASSWORD_ORIGINAL_DOMAIN:-pw.sti1.com.br}"
 FULLPASSWORD_RUNTIME_CONFIG="$FULLPASSWORD_ROOT/docker/nginx.runtime.conf"
 DEVFLOW_PROXY_CONFIG="$DEVFLOW_CONFIG_ROOT/nginx/devflow.conf"
+DEVFLOW_PROXY_ROOT="$DEVFLOW_CONFIG_ROOT/proxy"
+FULLPASSWORD_OVERRIDE_FILE="$DEVFLOW_PROXY_ROOT/fullpassword-nginx.override.yml"
+DEVFLOW_PROXY_STATE="$DEVFLOW_STATE_ROOT/proxy-adapter.json"
 DEVFLOW_EDGE_NETWORK=devflow_edge
-DEVFLOW_ACME_WEBROOT="${DEVFLOW_ACME_WEBROOT:-/var/www/certbot}"
-FULLPASSWORD_OVERRIDE_MARKER='# Managed by DevFlow Full Password proxy adapter. Do not edit the original Compose.'
+DEVFLOW_ACME_WEBROOT="${DEVFLOW_ACME_WEBROOT:-$DEVFLOW_INSTALL_ROOT/storage/acme}"
+FULLPASSWORD_OVERRIDE_MARKER='# Managed by DevFlow Full Password proxy adapter. Stored exclusively under /opt/devflow.'
 FULLPASSWORD_CONFIG_MARKER='# Managed by DevFlow Full Password proxy adapter. Independent virtual host.'
 
 fullpassword_audit() {
@@ -36,6 +38,25 @@ fullpassword_compose() {
   else
     docker compose -f "$FULLPASSWORD_COMPOSE_FILE" "$@"
   fi
+}
+
+write_proxy_adapter_state() {
+  local status="$1" temporary
+  install -d -m 0750 "$DEVFLOW_STATE_ROOT"
+  temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.proxy-adapter.XXXXXX")"
+  {
+    printf '{\n'
+    printf '  "status": "%s",\n' "$status"
+    printf '  "adapter": "fullpassword-nginx",\n'
+    printf '  "fullpassword_compose": "%s",\n' "$FULLPASSWORD_COMPOSE_FILE"
+    printf '  "override": "%s",\n' "$FULLPASSWORD_OVERRIDE_FILE"
+    printf '  "nginx_config": "%s",\n' "$DEVFLOW_PROXY_CONFIG"
+    printf '  "edge_network": "%s",\n' "$DEVFLOW_EDGE_NETWORK"
+    printf '  "updated_at": "%s"\n' "$(timestamp)"
+    printf '}\n'
+  } > "$temporary"
+  chmod 0640 "$temporary"
+  mv -f -- "$temporary" "$DEVFLOW_PROXY_STATE"
 }
 
 fullpassword_public_health() {
@@ -70,7 +91,8 @@ fullpassword_adapter_preflight() {
   local mounts networks working_dir config_files image certificate_sans
   [[ -r "$FULLPASSWORD_COMPOSE_FILE" ]] || { log ERROR "Compose original ausente: $FULLPASSWORD_COMPOSE_FILE"; return 1; }
   [[ -r "$FULLPASSWORD_RUNTIME_CONFIG" ]] || { log ERROR 'Configuração runtime original do Full Password ausente.'; return 1; }
-  [[ -w "$FULLPASSWORD_ROOT" ]] || { log ERROR "$FULLPASSWORD_ROOT não permite criar o override independente."; return 1; }
+  [[ -d "$DEVFLOW_PROXY_ROOT" && -w "$DEVFLOW_PROXY_ROOT" ]] \
+    || { log ERROR 'Diretório de override do DevFlow não está disponível para escrita.'; return 1; }
   docker inspect "$FULLPASSWORD_CONTAINER" >/dev/null 2>&1 || { log ERROR 'fullpassword_nginx não está disponível.'; return 1; }
   image="$(docker inspect --format '{{.Config.Image}}' "$FULLPASSWORD_CONTAINER")"
   [[ "$image" == nginx:alpine ]] || { log ERROR 'Imagem do proxy diverge de nginx:alpine.'; return 1; }
@@ -107,7 +129,7 @@ fullpassword_adapter_preflight() {
   if [[ -e "$FULLPASSWORD_OVERRIDE_FILE" ]]; then
     grep -Fxq "bind|$DEVFLOW_PROXY_CONFIG|/etc/nginx/conf.d/devflow.conf|false" <<< "$mounts" \
       || { log ERROR 'Mount persistente de devflow.conf não está ativo no proxy.'; return 1; }
-    grep -Fxq 'bind|/var/www/certbot|/var/www/certbot|false' <<< "$mounts" \
+    grep -Fxq 'bind|/opt/devflow/storage/acme|/var/www/certbot|false' <<< "$mounts" \
       || { log ERROR 'Mount persistente do webroot ACME não está ativo no proxy.'; return 1; }
     grep -Fxq "$DEVFLOW_EDGE_NETWORK" <<< "$networks" \
       || { log ERROR 'fullpassword_nginx não está conectado à devflow_edge.'; return 1; }
@@ -139,7 +161,7 @@ remove_devflow_edge_network_if_unused() {
 
 render_fullpassword_override() {
   local root="$1" output="$2"
-  install -m 0600 "$root/docker/fullpassword/docker-compose.devflow.yml.template" "$output"
+  install -m 0600 "$root/docker/fullpassword/fullpassword-nginx.override.yml.template" "$output"
 }
 
 render_fullpassword_proxy() {
@@ -215,7 +237,7 @@ atomic_managed_install() {
 fullpassword_recreate_nginx() {
   fullpassword_audit INFO 'Validando os dois arquivos Compose e recriando somente o serviço nginx.'
   fullpassword_compose config --quiet \
-    && fullpassword_compose up -d --no-deps --force-recreate "$FULLPASSWORD_SERVICE" \
+    && fullpassword_compose up -d --no-deps "$FULLPASSWORD_SERVICE" \
     && docker exec "$FULLPASSWORD_CONTAINER" nginx -t >/dev/null 2>&1 \
     && fullpassword_audit INFO 'Serviço nginx recriado e nginx -t confirmado.'
 }
@@ -242,6 +264,7 @@ fullpassword_adapter_restore_snapshot() {
     remove_devflow_edge_network_if_unused || true
   fi
   if [[ "$status" -eq 0 ]]; then
+    write_proxy_adapter_state rollback-restored || status=1
     fullpassword_audit WARN 'Rollback do adaptador concluído; health do Full Password confirmado.'
   else
     fullpassword_audit ERROR 'Rollback do adaptador terminou com falha e requer intervenção.'
@@ -267,7 +290,7 @@ fullpassword_adapter_apply_files() {
 
 install_fullpassword_proxy_adapter() {
   local root="$1" domain="$2" email="$3" transaction override_candidate config_candidate
-  install -d -m 0750 "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx"
+  install -d -m 0750 "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx" "$DEVFLOW_PROXY_ROOT" "$DEVFLOW_STATE_ROOT"
   install -d -m 0755 "$DEVFLOW_ACME_WEBROOT"
   transaction="$(mktemp -d "$DEVFLOW_INSTALL_ROOT/backups/proxy/fullpassword-install.XXXXXX")"
   override_candidate="$(mktemp /tmp/devflow-fullpassword-override.XXXXXX)"
@@ -295,13 +318,14 @@ install_fullpassword_proxy_adapter() {
 
   rm -f -- "$override_candidate" "$config_candidate"
   chmod -R go-rwx "$transaction"
+  write_proxy_adapter_state installed
   fullpassword_audit INFO 'Adaptador fullpassword_nginx aplicado com sucesso e backup transacional preservado.'
 }
 
 promote_fullpassword_proxy_config() {
   local root="$1" template="$2" domain="$3" expected_http="${4:-healthy}"
   local transaction override_candidate config_candidate
-  install -d -m 0750 "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx"
+  install -d -m 0750 "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx" "$DEVFLOW_PROXY_ROOT" "$DEVFLOW_STATE_ROOT"
   transaction="$(mktemp -d "$DEVFLOW_INSTALL_ROOT/backups/proxy/fullpassword-update.XXXXXX")"
   override_candidate="$(mktemp /tmp/devflow-fullpassword-override.XXXXXX)"
   config_candidate="$(mktemp /tmp/devflow-fullpassword-nginx.XXXXXX)"
@@ -323,6 +347,7 @@ promote_fullpassword_proxy_config() {
   fi
   rm -f -- "$override_candidate" "$config_candidate"
   chmod -R go-rwx "$transaction"
+  write_proxy_adapter_state "$expected_http"
   fullpassword_audit INFO 'Configuração compartilhada DevFlow promovida com health confirmado.'
 }
 
@@ -339,5 +364,6 @@ uninstall_fullpassword_proxy_adapter() {
   fi
   remove_devflow_edge_network_if_unused || true
   chmod -R go-rwx "$transaction"
+  write_proxy_adapter_state removed
   fullpassword_audit INFO 'Adaptador removido; Compose original e health do Full Password confirmados.'
 }

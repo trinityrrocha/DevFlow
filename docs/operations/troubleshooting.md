@@ -53,7 +53,7 @@ Não pare o proprietário da porta. Escolha `shared` com portas loopback livres 
 Esse resultado inicia um gate estrito, não autoriza integração por si só. Consulte:
 
 ```bash
-sudo less /var/log/devflow/shared-proxy-diagnostic.log
+sudo less /opt/devflow/logs/shared-proxy-diagnostic.log
 ```
 
 O relatório contém somente inventário sanitizado. Se retornar `blocked`, nenhuma mutação deve ocorrer. Se retornar `compatible-with-compose-override`, confirme que os caminhos e mounts são exatamente os aprovados antes de autorizar o instalador. Consulte o [adaptador persistente](../infrastructure/fullpassword-nginx-adapter.md).
@@ -65,7 +65,7 @@ Depois de instalar o adaptador, diagnostique sempre com os dois Compose:
 ```bash
 sudo docker compose \
   -f /opt/fullpassword/docker-compose.yml \
-  -f /opt/fullpassword/docker-compose.devflow.yml \
+  -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
   config
 sudo docker exec fullpassword_nginx nginx -t
 sudo /opt/devflow/app/scripts/health.sh
@@ -108,7 +108,7 @@ sudo certbot certificates
 
 Não reutilize certificado de outro domínio nem copie chave privada para o repositório.
 
-No adaptador Full Password, a instalação publica antes um desafio aleatório em `/var/www/certbot` e exige que ele seja recuperado por `http://dev.sti1.com.br`. Falha nessa prova interrompe a emissão e restaura o proxy anterior. Não emita manualmente até corrigir DNS, NAT ou porta 80.
+No adaptador Full Password, a instalação publica antes um desafio aleatório em `/opt/devflow/storage/acme` (montado como `/var/www/certbot` no Nginx) e exige que ele seja recuperado por `http://dev.sti1.com.br`. Falha nessa prova interrompe a emissão e restaura o proxy anterior. Não emita manualmente até corrigir DNS, NAT ou porta 80.
 
 ## Banco não fica saudável
 
@@ -141,7 +141,7 @@ O remote deve ser exatamente `https://github.com/trinityrrocha/DevFlow.git`. Nã
 Consulte primeiro os resultados sanitizados:
 
 ```bash
-sudo cat /opt/devflow/data/update-report.txt
+sudo cat /opt/devflow/state/update-report.txt
 sudo ls -lt /opt/devflow/logs/update-*.log
 sudo /opt/devflow/app/scripts/health.sh
 ```

@@ -51,6 +51,20 @@ if (!install.includes("public_remote='https://github.com/trinityrrocha/DevFlow.g
 if (!install.includes('run_shared_proxy_diagnostic') || !install.includes('detect-shared-proxy.sh')) {
   throw new Error('Instalador não exige diagnóstico antes do modo compartilhado.');
 }
+for (const fragment of [
+  '$DEVFLOW_CONFIG_ROOT/proxy',
+  '$DEVFLOW_DATA_ROOT/postgres',
+  '$DEVFLOW_STATE_ROOT',
+  '$DEVFLOW_INSTALL_ROOT/storage/acme',
+  '/opt/devflow/logs/shared-proxy-diagnostic.log',
+]) {
+  if (!install.includes(fragment)) throw new Error(`Estrutura centralizada ausente no instalador: ${fragment}`);
+}
+const dryRunExit = install.indexOf('[[ "$MODE" == dry-run ]] && {');
+const directoryCreation = install.indexOf('install -d -m 0750 "$DEVFLOW_INSTALL_ROOT"');
+if (!(dryRunExit >= 0 && directoryCreation > dryRunExit)) {
+  throw new Error('Dry-run deve encerrar antes de criar a estrutura persistente.');
+}
 if (!diagnostic.includes('fullpassword-nginx') || !diagnostic.includes('caddy-container')) {
   throw new Error('Política fail-closed de proxies containerizados está incompleta.');
 }
@@ -74,6 +88,7 @@ const updaterGates = [
   ['restauração', 'restore.sh'],
   ['log', 'UPDATE_LOG'],
   ['confirmação', "confirm_exact 'ATUALIZAR DEVFLOW'"],
+  ['estado de versão', 'write_version_state "$NEW_SHA"'],
 ];
 for (const [label, fragment] of updaterGates) {
   if (!update.includes(fragment)) throw new Error(`Gate ausente no updater: ${label}.`);

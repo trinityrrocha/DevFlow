@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.3.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.3.1-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 
@@ -104,7 +104,7 @@ sudo ./install.sh --install \
   --api-port 13000
 ```
 
-Antes do plano, o instalador pede autorização específica para executar um diagnóstico somente leitura. O relatório sanitizado é salvo em `/var/log/devflow/shared-proxy-diagnostic.log` e registra tipo, container, imagem, status, health, portas, redes, mounts, includes, certificados, reload, compatibilidade e bloqueios. Nenhuma chave, senha, token ou conteúdo do ambiente é coletado.
+Antes do plano, o instalador pede autorização específica para executar um diagnóstico somente leitura. O relatório sanitizado é salvo em `/opt/devflow/logs/shared-proxy-diagnostic.log` e registra tipo, container, imagem, status, health, portas, redes, mounts, includes, certificados, reload, compatibilidade e bloqueios. Nenhuma chave, senha, token ou conteúdo do ambiente é coletado.
 
 Um Nginx do host é aceito apenas quando `nginx -t`, include persistente de `/etc/nginx/conf.d/*.conf`, mecanismo de certificado, reload, domínio e portas forem comprovados. O instalador cria exclusivamente `/etc/nginx/conf.d/devflow.conf`. Durante ACME, apenas o challenge é servido e todo o restante responde `503`; o proxy da aplicação só é publicado depois dos health checks internos. A aplicação é atômica, guarda backup em `/opt/devflow/backups/proxy`, valida antes e depois, e restaura o arquivo anterior inclusive quando o reload falha.
 
@@ -114,7 +114,7 @@ Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include 
 
 Se existir `fullpassword_nginx`, o instalador oferece o diagnóstico read-only. Ele só prossegue quando o relatório retorna `compatibility=compatible-with-compose-override` e comprova o contrato exato de projeto, serviço, caminhos, mounts, rede, include, domínio e merge. Não use o adaptador com uma topologia apenas parecida.
 
-O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção interrompeu o fluxo antes de qualquer integração insegura. Esse inventário originou o adaptador `0.3.0-alpha`, que ainda não foi executado na VPS; isso não representa instalação aprovada nem homologação do modo compartilhado.
+O primeiro ensaio real ocorreu com o commit `4d350685cbc9d21b49fb4c01176b846ca66d6584`, versão `0.2.0-alpha`. O bootstrap funcionou e a detecção interrompeu o fluxo antes de qualquer integração insegura. Esse inventário originou o adaptador, corrigido em `0.3.1-alpha`, que ainda não foi executado na VPS; isso não representa instalação aprovada nem homologação do modo compartilhado.
 
 Para repetir somente o inventário a partir de um checkout confiável:
 
@@ -122,18 +122,18 @@ Para repetir somente o inventário a partir de um checkout confiável:
 sudo ./scripts/detect-shared-proxy.sh \
   --container fullpassword_nginx \
   --domain devflow.exemplo.com \
-  --output /var/log/devflow/shared-proxy-diagnostic.log
+  --output /opt/devflow/logs/shared-proxy-diagnostic.log
 ```
 
 O código de saída `2` significa que a compatibilidade não foi comprovada; não desabilite esse gate. Saída zero com `compatible-with-compose-override` comprova somente compatibilidade estrutural para iniciar a instalação transacional.
 
 O adaptador implementado usa:
 
-- `/opt/fullpassword/docker-compose.devflow.yml` como override independente;
+- `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` como override independente;
 - `/opt/devflow/config/nginx/devflow.conf` como virtual host exclusivo;
 - `devflow_edge` como rede externa gerenciada;
 - `devflow-frontend:80` e `devflow-backend:3000` como upstreams;
-- `/var/www/certbot` para a prova de rota e o desafio ACME;
+- `/opt/devflow/storage/acme` como origem persistente da prova de rota e do desafio ACME;
 - `/etc/letsencrypt/live/dev.sti1.com.br` para o certificado exclusivo;
 - snapshots em `/opt/devflow/backups/proxy` para rollback.
 
@@ -211,7 +211,7 @@ curl --fail --silent https://devflow.exemplo.com/api/health
 curl --fail --silent https://devflow.exemplo.com/
 ```
 
-O relatório da instalação fica em `/opt/devflow/data/install-report.txt`. A conclusão exige `healthy`, não apenas `running`.
+O relatório da instalação fica em `/opt/devflow/state/installation.json`; a versão instalada fica em `/opt/devflow/state/version.json`. A conclusão exige `healthy`, não apenas `running`.
 
 ## 11. Atualização, remoção e recuperação
 

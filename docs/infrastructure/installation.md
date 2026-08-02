@@ -44,7 +44,7 @@ O container `fullpassword_nginx` continua sendo um limite de segurança. A insta
 
 O ensaio real do commit `4d350685cbc9d21b49fb4c01176b846ca66d6584` parou nesse gate, antes de qualquer integração. Esse evento comprova o fail-closed, não a compatibilidade.
 
-O adaptador cria apenas `/opt/fullpassword/docker-compose.devflow.yml`, `/opt/devflow/config/nginx/devflow.conf` e a rede externa `devflow_edge`. O Compose original e `nginx.runtime.conf` não são editados. O certificado DevFlow é independente; o serviço `nginx` é o único componente Full Password recriado, sempre com os dois arquivos Compose e com rollback. Veja o [contrato completo do adaptador](fullpassword-nginx-adapter.md) e o [guia de VPS](vps-installation.md).
+O adaptador cria apenas artefatos sob `/opt/devflow`, incluindo `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e `/opt/devflow/config/nginx/devflow.conf`, além da rede externa `devflow_edge`. O Compose original e `nginx.runtime.conf` são somente leitura. O certificado DevFlow é independente; o serviço `nginx` é o único componente Full Password reconciliado, sempre com os dois arquivos Compose e com rollback. Veja o [contrato completo do adaptador](fullpassword-nginx-adapter.md) e o [guia de VPS](vps-installation.md).
 
 ## Recursos próprios
 
@@ -56,8 +56,9 @@ O adaptador cria apenas `/opt/fullpassword/docker-compose.devflow.yml`, `/opt/de
 - checkout operacional: `/opt/devflow/source`;
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/conf.d/devflow.conf`;
-- proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/fullpassword/docker-compose.devflow.yml`;
-- relatório de proxy compartilhado: `/var/log/devflow/shared-proxy-diagnostic.log`;
+- proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`;
+- estado operacional: `/opt/devflow/state/installation.json`, `version.json` e `proxy-adapter.json`;
+- relatório de proxy compartilhado: `/opt/devflow/logs/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.
 

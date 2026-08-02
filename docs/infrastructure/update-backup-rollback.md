@@ -73,7 +73,7 @@ Antes da primeira mutação, uma falha apenas remove os temporários gerados e d
 
 Se a atualização precisou criar a rede externa `devflow_edge`, um rollback a remove somente depois que os containers anteriores e o proxy deixarem de usá-la. Uma rede preexistente nunca é assumida como DevFlow sem a label de propriedade.
 
-O resultado fica em `/opt/devflow/data/update-report.txt`; o log sanitizado fica em `/opt/devflow/logs/update-<timestamp>.log`. Se o rollback também falhar, o script registra cada falha, tenta retirar a manutenção e encerra com erro. Nesse caso, preserve o ambiente e siga o runbook de troubleshooting; nunca marque migration ou versão manualmente.
+O resultado fica em `/opt/devflow/state/update-report.txt`; o log sanitizado fica em `/opt/devflow/logs/update-<timestamp>.log`. Se o rollback também falhar, o script registra cada falha, tenta retirar a manutenção e encerra com erro. Nesse caso, preserve o ambiente e siga o runbook de troubleshooting; nunca marque migration ou versão manualmente.
 
 ## Backup manual
 

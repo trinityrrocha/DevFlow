@@ -11,7 +11,8 @@ DEVFLOW_INSTALL_ROOT="${DEVFLOW_INSTALL_ROOT:-/opt/devflow}"
 DEVFLOW_CONFIG_ROOT="${DEVFLOW_CONFIG_ROOT:-$DEVFLOW_INSTALL_ROOT/config}"
 DEVFLOW_ENV_FILE="${DEVFLOW_ENV_FILE:-$DEVFLOW_CONFIG_ROOT/devflow.env}"
 DEVFLOW_LOG_ROOT="${DEVFLOW_LOG_ROOT:-$DEVFLOW_INSTALL_ROOT/logs}"
-DEVFLOW_STATE_ROOT="${DEVFLOW_STATE_ROOT:-$DEVFLOW_INSTALL_ROOT/data}"
+DEVFLOW_DATA_ROOT="${DEVFLOW_DATA_ROOT:-$DEVFLOW_INSTALL_ROOT/data}"
+DEVFLOW_STATE_ROOT="${DEVFLOW_STATE_ROOT:-$DEVFLOW_INSTALL_ROOT/state}"
 
 timestamp() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 
@@ -165,7 +166,7 @@ validate_runtime_paths() {
   uploads_path="$(realpath -m "${DEVFLOW_UPLOADS_PATH:-}")"
   backups_path="$(realpath -m "${BACKUP_ARCHIVE_DIR:-}")"
   passphrase_path="$(realpath -m "${BACKUP_PASSPHRASE_FILE:-}")"
-  [[ "$db_path" == "$DEVFLOW_STATE_ROOT/postgres" ]] || die 'Caminho persistente do PostgreSQL inválido.'
+  [[ "$db_path" == "$DEVFLOW_DATA_ROOT/postgres" ]] || die 'Caminho persistente do PostgreSQL inválido.'
   [[ "$uploads_path" == "$DEVFLOW_INSTALL_ROOT/storage/uploads" ]] || die 'Caminho persistente de uploads inválido.'
   [[ "$backups_path" == "$DEVFLOW_INSTALL_ROOT/backups" ]] || die 'Caminho de backups inválido.'
   [[ "$passphrase_path" == "$DEVFLOW_CONFIG_ROOT/backup.passphrase" ]] || die 'Caminho da passphrase de backup inválido.'
@@ -241,22 +242,41 @@ check_capacity() {
   [[ "${memory_kb:-0}" -ge 1900000 ]] || die 'São necessários pelo menos 2 GiB de memória RAM para homologação.'
 }
 
-write_install_report() {
-  local result="$1" report="$DEVFLOW_STATE_ROOT/install-report.txt"
+write_version_state() {
+  local commit="${1:-unknown}" temporary
   install -d -m 0750 "$DEVFLOW_STATE_ROOT"
+  temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.version.XXXXXX")"
   {
-    printf 'DevFlow installation report\n'
-    printf 'timestamp=%s\n' "$(timestamp)"
-    printf 'version=%s\n' "$DEVFLOW_VERSION"
-    printf 'commit=%s\n' "${DEVFLOW_RELEASE_COMMIT:-unknown}"
-    printf 'ref=%s\n' "${DEVFLOW_RELEASE_REF:-unknown}"
-    printf 'repository=%s\n' "${DEVFLOW_REPOSITORY_URL:-unknown}"
-    printf 'update_channel=%s\n' "${DEVFLOW_UPDATE_CHANNEL:-${UPDATE_CHANNEL:-unknown}}"
-    printf 'result=%s\n' "$result"
-    printf 'proxy_mode=%s\n' "${DEVFLOW_PROXY_MODE:-unknown}"
-    printf 'shared_proxy_adapter=%s\n' "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}"
-    printf 'domain=%s\n' "${DEVFLOW_DOMAIN:-unknown}"
-    printf 'migration=%s\n' "${DEVFLOW_MIGRATION_VERSION:-unknown}"
-  } > "$report"
-  chmod 0640 "$report"
+    printf '{\n'
+    printf '  "version": "%s",\n' "$DEVFLOW_VERSION"
+    printf '  "commit": "%s",\n' "$commit"
+    printf '  "updated_at": "%s"\n' "$(timestamp)"
+    printf '}\n'
+  } > "$temporary"
+  chmod 0640 "$temporary"
+  mv -f -- "$temporary" "$DEVFLOW_STATE_ROOT/version.json"
+}
+
+write_install_report() {
+  local result="$1" report="$DEVFLOW_STATE_ROOT/installation.json" temporary
+  install -d -m 0750 "$DEVFLOW_STATE_ROOT"
+  temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.installation.XXXXXX")"
+  {
+    printf '{\n'
+    printf '  "timestamp": "%s",\n' "$(timestamp)"
+    printf '  "version": "%s",\n' "$DEVFLOW_VERSION"
+    printf '  "commit": "%s",\n' "${DEVFLOW_RELEASE_COMMIT:-unknown}"
+    printf '  "ref": "%s",\n' "${DEVFLOW_RELEASE_REF:-unknown}"
+    printf '  "repository": "%s",\n' "${DEVFLOW_REPOSITORY_URL:-unknown}"
+    printf '  "update_channel": "%s",\n' "${DEVFLOW_UPDATE_CHANNEL:-${UPDATE_CHANNEL:-unknown}}"
+    printf '  "result": "%s",\n' "$result"
+    printf '  "proxy_mode": "%s",\n' "${DEVFLOW_PROXY_MODE:-unknown}"
+    printf '  "shared_proxy_adapter": "%s",\n' "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}"
+    printf '  "domain": "%s",\n' "${DEVFLOW_DOMAIN:-unknown}"
+    printf '  "migration": "%s"\n' "${DEVFLOW_MIGRATION_VERSION:-unknown}"
+    printf '}\n'
+  } > "$temporary"
+  chmod 0640 "$temporary"
+  mv -f -- "$temporary" "$report"
+  write_version_state "${DEVFLOW_RELEASE_COMMIT:-unknown}"
 }

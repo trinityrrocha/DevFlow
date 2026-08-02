@@ -189,7 +189,7 @@ fi
 
 run_shared_proxy_diagnostic() {
   local -a diagnostic_args=(--domain "$DOMAIN" --http-port "$HTTP_PORT" --api-port "$API_PORT")
-  local diagnostic_status=0 report=/var/log/devflow/shared-proxy-diagnostic.log answer
+  local diagnostic_status=0 report=/opt/devflow/logs/shared-proxy-diagnostic.log answer
   [[ -z "$shared_proxy_container" ]] || diagnostic_args+=(--container "$shared_proxy_container")
 
   cat <<'EOF'
@@ -291,6 +291,10 @@ Resumo DevFlow $DEVFLOW_VERSION
   domínio: ${DOMAIN:-não definido}
   diretório: $DEVFLOW_INSTALL_ROOT
   configuração privada: $DEVFLOW_ENV_FILE
+  override compartilhado: $DEVFLOW_CONFIG_ROOT/proxy/fullpassword-nginx.override.yml
+  rota Nginx DevFlow: $DEVFLOW_CONFIG_ROOT/nginx/devflow.conf
+  backups do proxy: $DEVFLOW_INSTALL_ROOT/backups/proxy
+  estado operacional: $DEVFLOW_STATE_ROOT
   estado da configuração: $config_state
 EOF
 
@@ -311,7 +315,9 @@ Ações planejadas:
   - iniciar o banco, executar migrations reais e então subir a aplicação;
   - validar healthchecks HTTP e HTTPS;
   - preservar Compose, configuração, rede, certificados e rotas originais do Full Password;
-  - no adaptador aprovado, recriar somente fullpassword_nginx com override transacional.
+  - armazenar todos os artefatos do adaptador exclusivamente sob $DEVFLOW_INSTALL_ROOT;
+  - ler /opt/fullpassword/docker-compose.yml sem criar, alterar ou remover nada em /opt/fullpassword;
+  - no adaptador aprovado, recriar somente fullpassword_nginx com override transacional em $DEVFLOW_CONFIG_ROOT/proxy.
 EOF
 [[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
 
@@ -324,9 +330,9 @@ else
 fi
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
-  "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
+  "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONFIG_ROOT/proxy" "$DEVFLOW_DATA_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
   "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx" \
-  "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_STATE_ROOT/postgres"
+  "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_INSTALL_ROOT/storage/acme" "$DEVFLOW_DATA_ROOT/postgres"
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
@@ -481,7 +487,7 @@ DEVFLOW_ENV_FILE=$DEVFLOW_ENV_FILE
 DEVFLOW_BIND_ADDRESS=127.0.0.1
 DEVFLOW_HTTP_PORT=$HTTP_PORT
 DEVFLOW_API_PORT=$API_PORT
-DEVFLOW_DB_DATA_PATH=$DEVFLOW_STATE_ROOT/postgres
+DEVFLOW_DB_DATA_PATH=$DEVFLOW_DATA_ROOT/postgres
 DEVFLOW_UPLOADS_PATH=$DEVFLOW_INSTALL_ROOT/storage/uploads
 DB_HOST=db
 DB_PORT=5432
@@ -536,9 +542,9 @@ backend_image="$("${DEVFLOW_COMPOSE[@]}" images -q backend)"
 read -r backend_uid backend_gid < <(docker run --rm --entrypoint sh "$backend_image" -c 'printf "%s %s\n" "$(id -u devflow)" "$(id -g devflow)"')
 [[ "$db_uid" =~ ^[0-9]+$ && "$db_gid" =~ ^[0-9]+$ && "$backend_uid" =~ ^[0-9]+$ && "$backend_gid" =~ ^[0-9]+$ ]] \
   || die 'Não foi possível validar os usuários não-root dos containers.'
-chown "$db_uid:$db_gid" "$DEVFLOW_STATE_ROOT/postgres"
+chown "$db_uid:$db_gid" "$DEVFLOW_DATA_ROOT/postgres"
 chown "$backend_uid:$backend_gid" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
-chmod 0750 "$DEVFLOW_STATE_ROOT/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
+chmod 0750 "$DEVFLOW_DATA_ROOT/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps backend node scripts/migrate.js

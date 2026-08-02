@@ -44,7 +44,7 @@
 | Bootstrap público | `../scripts/bootstrap.sh` |
 | Estado alpha | `implementation-status.md` e README |
 | Documento 004 não iniciado | `implementation-status.md` e roadmap |
-| Diagnóstico de proxy compartilhado | `../scripts/detect-shared-proxy.sh` e `/var/log/devflow/shared-proxy-diagnostic.log` |
+| Diagnóstico de proxy compartilhado | `../scripts/detect-shared-proxy.sh` e `/opt/devflow/logs/shared-proxy-diagnostic.log` |
 | Redes separadas | `../docker-compose.yml`: `devflow_edge` e `devflow_internal` |
 | Configuração Nginx transacional | `../scripts/lib/proxy-config.sh` |
 | Testes do modo compartilhado | `../tests/integration/shared-proxy.test.sh` e `../scripts/validate-shared-proxy.mjs` |
@@ -58,16 +58,17 @@
 | Detecção read-only | inspect, `nginx -T`, `nginx -t` e network inspect em `../scripts/detect-shared-proxy.sh` |
 | Full Password preservado | política só aceita o inventário exato e o validador compara Compose base/merge sem escrever no original |
 | Caddy não anunciado | política explícita `caddy-host`/`caddy-container` bloqueada |
-| Relatório sanitizado | `/var/log/devflow/shared-proxy-diagnostic.log`, modo `0600` |
+| Relatório sanitizado | `/opt/devflow/logs/shared-proxy-diagnostic.log`, modo `0600` |
 | Aplicação atômica | arquivo exclusivo, backup, validação, reload e rollback em `../scripts/lib/proxy-config.sh` |
 | Remoção reversível | `remove_host_nginx_config` remove somente a rota com marcador DevFlow |
 | Dados isolados | banco somente em `devflow_internal`; borda separada em `devflow_edge` |
 
-## Adaptador persistente `0.3.0-alpha`
+## Adaptador persistente `0.3.1-alpha`
 
 | Requisito | Evidência |
 |---|---|
-| Override independente | `../docker/fullpassword/docker-compose.devflow.yml.template` promovido em `/opt/fullpassword/docker-compose.devflow.yml` |
+| Override independente | `../docker/fullpassword/fullpassword-nginx.override.yml.template` promovido em `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` |
+| Full Password read-only | `../scripts/audit-fullpassword-readonly.mjs` e teste transacional com hash/sentinel da fixture |
 | Configuração exclusiva | templates `../docker/nginx/fullpassword-*.conf.template` em `/opt/devflow/config/nginx/devflow.conf` |
 | Preservação estrutural | `../scripts/validate-fullpassword-compose.py` compara serviço, portas, mounts e redes |
 | Rede persistente | `devflow_edge` externa com label `devflow.managed=true`; PostgreSQL ausente pelo Compose e por `health.sh` |
@@ -78,7 +79,7 @@
 | Testes | `../tests/integration/fullpassword-adapter.test.sh` e `../scripts/validate-fullpassword-adapter.mjs` |
 | Homologação real | pendente; `implementation-status.md` não declara aprovação operacional |
 
-## Mecanismo de atualização 0.3.0-alpha
+## Mecanismo de atualização 0.3.1-alpha
 
 | Requisito | Evidência |
 |---|---|
@@ -91,7 +92,7 @@
 | Migrations coordenadas | backend/frontend parados, advisory lock e confirmação no PostgreSQL |
 | Health checks | `../scripts/health.sh`, probes internos e públicos |
 | Rollback automático | restauração de dados, código, containers, proxy e timers em `../scripts/update.sh` |
-| Log e relatório | `/opt/devflow/logs/update-*.log` e `/opt/devflow/data/update-report.txt` |
+| Log e relatório | `/opt/devflow/logs/update-*.log` e `/opt/devflow/state/update-report.txt` |
 | Instalador sem update | validação estrutural em `../scripts/validate-operations.mjs` |
 
 ## Publicação pública
@@ -104,7 +105,7 @@
 | Atualização anônima | remote operacional HTTPS público validado em `../scripts/update.sh` |
 | Sem segredos atuais | `../scripts/repository-audit.mjs` |
 | Sem segredos históricos | `../scripts/history-audit.mjs` |
-| Metadados instalados | `/opt/devflow/data/install-report.txt` registra versão, commit, ref, URL, data e canal |
+| Metadados instalados | `/opt/devflow/state/installation.json` e `version.json` registram versão, commit, ref, URL, data e canal |
 | Licença | ausência declarada no README; direitos autorais padrão, sem licença escolhida automaticamente |
 
 ## Documento 002

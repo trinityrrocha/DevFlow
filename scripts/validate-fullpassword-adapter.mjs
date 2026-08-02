@@ -7,7 +7,7 @@ import YAML from 'yaml';
 const root = resolve(import.meta.dirname, '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const base = YAML.parse(read('tests/fixtures/fullpassword-compose.yml'));
-const override = YAML.parse(read('docker/fullpassword/docker-compose.devflow.yml.template'));
+const override = YAML.parse(read('docker/fullpassword/fullpassword-nginx.override.yml.template'));
 const adapter = read('scripts/lib/fullpassword-proxy.sh');
 const install = read('scripts/install.sh');
 const update = read('scripts/update.sh');
@@ -47,6 +47,9 @@ for (const target of ['/etc/nginx/conf.d/default.conf', '/etc/letsencrypt']) {
 for (const target of ['/etc/nginx/conf.d/devflow.conf', '/var/www/certbot']) {
   const value = merged.services.nginx.volumes.find((item) => volumeTarget(item) === target);
   if (!value?.read_only) throw new Error(`Mount read-only do adaptador ausente: ${target}`);
+}
+for (const source of ['/opt/devflow/config/nginx/devflow.conf', '/opt/devflow/storage/acme']) {
+  if (!JSON.stringify(override).includes(source)) throw new Error(`Origem absoluta ausente no override: ${source}`);
 }
 for (const network of ['fullpassword_network', 'devflow_edge']) {
   if (!merged.services.nginx.networks.includes(network)) throw new Error(`Rede ausente no merge: ${network}`);
@@ -94,7 +97,7 @@ for (const [label, source, fragment] of [
   ['rollback', adapter, 'fullpassword_adapter_restore_snapshot'],
   ['health Full Password', adapter, 'fullpassword_public_health'],
   ['health DevFlow', adapter, 'devflow_public_health'],
-  ['recriação sem dependências', adapter, 'up -d --no-deps --force-recreate'],
+  ['recriação sem dependências', adapter, 'up -d --no-deps "$FULLPASSWORD_SERVICE"'],
   ['instalação', install, 'install_fullpassword_proxy_adapter'],
   ['atualização', update, 'promote_fullpassword_proxy_config'],
   ['rede transacional no update', update, 'EDGE_NETWORK_PREEXISTED'],
@@ -105,6 +108,12 @@ for (const [label, source, fragment] of [
 }
 if (/docker-compose\.yml[^\n]*(>|tee)|nginx\.runtime\.conf[^\n]*(>|tee)/.test(adapter)) {
   throw new Error('Adaptador contém escrita aparente em arquivo original do Full Password.');
+}
+if (!adapter.includes('FULLPASSWORD_OVERRIDE_FILE="$DEVFLOW_PROXY_ROOT/fullpassword-nginx.override.yml"')) {
+  throw new Error('Override persistente não está centralizado em /opt/devflow/config/proxy.');
+}
+if (adapter.includes('$FULLPASSWORD_ROOT/docker-compose.devflow.yml')) {
+  throw new Error('Caminho legado de override sob /opt/fullpassword ainda está ativo.');
 }
 
 const bashCandidates = process.platform === 'win32' ? ['C:\\Program Files\\Git\\bin\\bash.exe'] : ['bash'];

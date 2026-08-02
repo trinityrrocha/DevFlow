@@ -32,8 +32,16 @@ FULLPASSWORD_ORIGINAL_NETWORK=false
 FULLPASSWORD_PORTS=false
 FULLPASSWORD_UPSTREAM_SAFE=false
 FULLPASSWORD_CERTIFICATE_SAFE=false
-FULLPASSWORD_COMPOSE_VALID=false
-FULLPASSWORD_OVERRIDE_WRITABLE=false
+DEVFLOW_DIRECTORY_WRITABLE=false
+DEVFLOW_OVERRIDE_WRITABLE=false
+FULLPASSWORD_COMPOSE_READABLE=false
+COMPOSE_CROSS_DIRECTORY_SUPPORTED=false
+COMPOSE_MERGE_VALID=false
+COMPOSE_VALIDATION_COMMAND='docker compose -f /opt/fullpassword/docker-compose.yml -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml config'
+COMPOSE_EXECUTED_COMMAND=not-run
+COMPOSE_VALIDATION_EXIT_CODE=not-run
+COMPOSE_VALIDATION_ERROR=not-run
+COMPOSE_TEMP_OVERRIDE=not-created
 FULLPASSWORD_EDGE_NETWORK_SAFE=false
 FULLPASSWORD_ROLLBACK_READY=false
 FULLPASSWORD_PUBLIC_HEALTH=false
@@ -76,7 +84,7 @@ assess_shared_proxy_compatibility() {
       [[ "$FULLPASSWORD_IMAGE" == nginx:alpine ]] || add_blocker 'Imagem esperada nginx:alpine não foi comprovada.'
       [[ "$FULLPASSWORD_WORKING_DIR" == /opt/fullpassword ]] || add_blocker 'Working directory /opt/fullpassword não foi comprovado.'
       [[ "$FULLPASSWORD_CONFIG_FILES" == /opt/fullpassword/docker-compose.yml \
-        || "$FULLPASSWORD_CONFIG_FILES" == /opt/fullpassword/docker-compose.yml,/opt/fullpassword/docker-compose.devflow.yml ]] \
+        || "$FULLPASSWORD_CONFIG_FILES" == /opt/fullpassword/docker-compose.yml,/opt/devflow/config/proxy/fullpassword-nginx.override.yml ]] \
         || add_blocker 'Lista de arquivos Compose diverge do contrato aprovado.'
       [[ "$FULLPASSWORD_RUNTIME_MOUNT" == true ]] || add_blocker 'Mount original nginx.runtime.conf read-only diverge do diagnóstico aprovado.'
       [[ "$FULLPASSWORD_CERTIFICATE_MOUNT" == true ]] || add_blocker 'Mount read-only de /etc/letsencrypt não foi comprovado.'
@@ -87,9 +95,12 @@ assess_shared_proxy_compatibility() {
       [[ "$NGINX_CONF_D_INCLUDED" == true ]] || add_blocker 'Include /etc/nginx/conf.d/*.conf não foi comprovado.'
       [[ "$CONFIG_VALID" == true ]] || add_blocker 'Configuração atual do fullpassword_nginx é inválida.'
       [[ "$DOMAIN_CONFLICT" == false ]] || add_blocker 'O domínio DevFlow conflita com uma rota existente.'
-      [[ "$FULLPASSWORD_OVERRIDE_WRITABLE" == true ]] || add_blocker 'Diretório /opt/fullpassword não permite o override independente.'
+      [[ "$FULLPASSWORD_COMPOSE_READABLE" == true ]] || add_blocker 'Compose original do Full Password não está legível.'
+      [[ "$DEVFLOW_DIRECTORY_WRITABLE" == true ]] || add_blocker 'Diretório /opt/devflow não pode receber os artefatos do adaptador.'
+      [[ "$DEVFLOW_OVERRIDE_WRITABLE" == true ]] || add_blocker 'Override em /opt/devflow não pode ser criado ou atualizado com segurança.'
       [[ "$FULLPASSWORD_EDGE_NETWORK_SAFE" == true ]] || add_blocker 'devflow_edge existente não possui propriedade segura ou não pode ser criada.'
-      [[ "$FULLPASSWORD_COMPOSE_VALID" == true ]] || add_blocker 'Merge do Compose original com o override não foi validado.'
+      [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]] || add_blocker 'Compose com arquivos em diretórios distintos não foi comprovado.'
+      [[ "$COMPOSE_MERGE_VALID" == true ]] || add_blocker 'Merge do Compose original com o override não foi validado.'
       [[ "$FULLPASSWORD_ROLLBACK_READY" == true ]] || add_blocker 'Reversibilidade dos arquivos gerenciados não foi comprovada.'
       [[ "$FULLPASSWORD_PUBLIC_HEALTH" == true ]] || add_blocker 'Health público de pw.sti1.com.br falhou antes da integração.'
       if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
@@ -211,7 +222,7 @@ collect_host_nginx() {
 }
 
 collect_container_nginx() {
-  local mounts networks temporary base_json merged_json http_code certificate_sans domain_pattern
+  local mounts networks temporary base_json merged_json merge_error override_candidate http_code certificate_sans domain_pattern compose_status
   domain_pattern="${DOMAIN//./\\.}"
   mounts="$(docker inspect --format '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}|{{.RW}}{{println}}{{end}}' "$PROXY_CONTAINER" 2>/dev/null || true)"
   if docker exec "$PROXY_CONTAINER" nginx -t >/dev/null 2>&1; then CONFIG_VALID=true; fi
@@ -267,14 +278,29 @@ collect_container_nginx() {
       && grep -Eq "server_name[[:space:]]+$domain_pattern[[:space:]]*;" /opt/devflow/config/nginx/devflow.conf; then
       DOMAIN_CONFLICT=false
     fi
-    [[ -w /opt/fullpassword ]] && FULLPASSWORD_OVERRIDE_WRITABLE=true
+    [[ -r /opt/fullpassword/docker-compose.yml ]] && FULLPASSWORD_COMPOSE_READABLE=true
+    if [[ -d /opt/devflow ]]; then
+      [[ -w /opt/devflow ]] && DEVFLOW_DIRECTORY_WRITABLE=true
+    elif [[ "$(id -u)" -eq 0 && -w /opt ]]; then
+      DEVFLOW_DIRECTORY_WRITABLE=true
+    fi
+    if [[ -e /opt/devflow/config/proxy/fullpassword-nginx.override.yml ]]; then
+      if [[ -w /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
+        && "$(head -n1 /opt/devflow/config/proxy/fullpassword-nginx.override.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Stored exclusively under /opt/devflow.' ]]; then
+        DEVFLOW_OVERRIDE_WRITABLE=true
+      fi
+    elif [[ -d /opt/devflow/config/proxy ]]; then
+      [[ -w /opt/devflow/config/proxy ]] && DEVFLOW_OVERRIDE_WRITABLE=true
+    elif [[ "$DEVFLOW_DIRECTORY_WRITABLE" == true ]]; then
+      DEVFLOW_OVERRIDE_WRITABLE=true
+    fi
     if ! docker network inspect devflow_edge >/dev/null 2>&1 \
       || [[ "$(docker network inspect devflow_edge --format '{{index .Labels "devflow.managed"}}' 2>/dev/null || true)" == true ]]; then
       FULLPASSWORD_EDGE_NETWORK_SAFE=true
     fi
-    if { [[ ! -e /opt/fullpassword/docker-compose.devflow.yml ]] \
-          || [[ -w /opt/fullpassword/docker-compose.devflow.yml \
-            && "$(head -n1 /opt/fullpassword/docker-compose.devflow.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Do not edit the original Compose.' ]]; } \
+    if { [[ ! -e /opt/devflow/config/proxy/fullpassword-nginx.override.yml ]] \
+          || [[ -w /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
+            && "$(head -n1 /opt/devflow/config/proxy/fullpassword-nginx.override.yml 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Stored exclusively under /opt/devflow.' ]]; } \
       && { [[ ! -e /opt/devflow/config/nginx/devflow.conf ]] \
           || [[ -w /opt/devflow/config/nginx/devflow.conf \
             && "$(head -n1 /opt/devflow/config/nginx/devflow.conf 2>/dev/null || true)" == '# Managed by DevFlow Full Password proxy adapter. Independent virtual host.' ]]; }; then
@@ -285,17 +311,32 @@ collect_container_nginx() {
       && curl --fail --silent --show-error --max-time 20 'https://pw.sti1.com.br/' >/dev/null; then
       FULLPASSWORD_PUBLIC_HEALTH=true
     fi
-    if [[ -r /opt/fullpassword/docker-compose.yml ]]; then
+    if [[ "$FULLPASSWORD_COMPOSE_READABLE" == true ]]; then
       temporary="$(mktemp -d /tmp/devflow-fullpassword-diagnostic.XXXXXX)"
       base_json="$temporary/base.json"
       merged_json="$temporary/merged.json"
-      cp "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/docker-compose.devflow.yml.template" "$temporary/override.yml"
-      if command -v python3 >/dev/null 2>&1 \
-        && docker compose -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>/dev/null \
-        && docker compose -f /opt/fullpassword/docker-compose.yml -f "$temporary/override.yml" config --format json > "$merged_json" 2>/dev/null \
-        && python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" "$base_json" "$merged_json" >/dev/null 2>&1; then
-        FULLPASSWORD_COMPOSE_VALID=true
+      merge_error="$temporary/merge.error"
+      override_candidate="$temporary/fullpassword-nginx.override.yml"
+      COMPOSE_TEMP_OVERRIDE="$override_candidate (removido ao concluir)"
+      COMPOSE_EXECUTED_COMMAND="docker compose -f /opt/fullpassword/docker-compose.yml -f $override_candidate config --format json"
+      cp "$DEVFLOW_SOURCE_ROOT/docker/fullpassword/fullpassword-nginx.override.yml.template" "$override_candidate"
+      compose_status=0
+      if docker compose -f /opt/fullpassword/docker-compose.yml config --format json > "$base_json" 2>"$merge_error" \
+        && docker compose -f /opt/fullpassword/docker-compose.yml -f "$override_candidate" config --format json > "$merged_json" 2>>"$merge_error"; then
+        COMPOSE_CROSS_DIRECTORY_SUPPORTED=true
+      else
+        compose_status=$?
       fi
+      COMPOSE_VALIDATION_EXIT_CODE="$compose_status"
+      if [[ "$COMPOSE_CROSS_DIRECTORY_SUPPORTED" == true ]] \
+        && command -v python3 >/dev/null 2>&1 \
+        && python3 "$DEVFLOW_SOURCE_ROOT/scripts/validate-fullpassword-compose.py" "$base_json" "$merged_json" >>"$merge_error" 2>&1; then
+        COMPOSE_MERGE_VALID=true
+      elif [[ "$compose_status" -eq 0 ]]; then
+        COMPOSE_VALIDATION_EXIT_CODE=1
+      fi
+      COMPOSE_VALIDATION_ERROR="$(sanitize_proxy_stream < "$merge_error" | tr '\n' ' ' | cut -c1-500)"
+      [[ -n "$COMPOSE_VALIDATION_ERROR" ]] || COMPOSE_VALIDATION_ERROR=none
       rm -rf -- "$temporary"
     fi
   fi
@@ -355,9 +396,19 @@ render_report() {
     echo "fullpassword_upstream_safe=$FULLPASSWORD_UPSTREAM_SAFE"
     echo "fullpassword_certificate_safe=$FULLPASSWORD_CERTIFICATE_SAFE"
     echo "nginx_conf_d_included=$NGINX_CONF_D_INCLUDED"
-    echo "fullpassword_override_writable=$FULLPASSWORD_OVERRIDE_WRITABLE"
+    echo "devflow_directory_writable=$DEVFLOW_DIRECTORY_WRITABLE"
+    echo "devflow_override_writable=$DEVFLOW_OVERRIDE_WRITABLE"
+    echo "fullpassword_compose_readable=$FULLPASSWORD_COMPOSE_READABLE"
+    echo "fullpassword_compose_original=/opt/fullpassword/docker-compose.yml"
+    echo "devflow_override_planned=/opt/devflow/config/proxy/fullpassword-nginx.override.yml"
+    echo "compose_temporary_override=$COMPOSE_TEMP_OVERRIDE"
+    echo "compose_validation_command=$COMPOSE_VALIDATION_COMMAND"
+    echo "compose_executed_command=$COMPOSE_EXECUTED_COMMAND"
+    echo "compose_validation_exit_code=$COMPOSE_VALIDATION_EXIT_CODE"
+    echo "compose_validation_error=$COMPOSE_VALIDATION_ERROR"
+    echo "compose_cross_directory_supported=$COMPOSE_CROSS_DIRECTORY_SUPPORTED"
+    echo "compose_merge_valid=$COMPOSE_MERGE_VALID"
     echo "fullpassword_edge_network_safe=$FULLPASSWORD_EDGE_NETWORK_SAFE"
-    echo "fullpassword_compose_valid=$FULLPASSWORD_COMPOSE_VALID"
     echo "fullpassword_rollback_ready=$FULLPASSWORD_ROLLBACK_READY"
     echo "fullpassword_public_health=$FULLPASSWORD_PUBLIC_HEALTH"
   fi
@@ -412,7 +463,7 @@ write_report() {
   validate_safe_absolute_path "$output" 'Arquivo de relatório'
   parent="$(dirname "$output")"
   if [[ ! -d "$parent" ]]; then
-    [[ "$output" == /var/log/devflow/shared-proxy-diagnostic.log ]] \
+    [[ "$output" == /opt/devflow/logs/shared-proxy-diagnostic.log ]] \
       || die "Diretório do relatório ausente: $parent"
     require_root
     install -d -m 0750 "$parent"

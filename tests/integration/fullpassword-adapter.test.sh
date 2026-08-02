@@ -9,20 +9,30 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/devflow-fullpassword-adapter.XXXXXX")"
 cleanup_test() {
+  [[ ! -d "${FULLPASSWORD_ROOT:-}" ]] || chmod -R u+w "$FULLPASSWORD_ROOT" 2>/dev/null || true
   [[ "$TEST_ROOT" == "${TMPDIR:-/tmp}/devflow-fullpassword-adapter."* ]] && rm -rf -- "$TEST_ROOT"
 }
 trap cleanup_test EXIT
 
 DEVFLOW_INSTALL_ROOT="$TEST_ROOT/devflow"
 DEVFLOW_CONFIG_ROOT="$DEVFLOW_INSTALL_ROOT/config"
+DEVFLOW_DATA_ROOT="$DEVFLOW_INSTALL_ROOT/data"
+DEVFLOW_STATE_ROOT="$DEVFLOW_INSTALL_ROOT/state"
 DEVFLOW_LOG_ROOT="$DEVFLOW_INSTALL_ROOT/logs"
 DEVFLOW_PROXY_CONFIG="$DEVFLOW_CONFIG_ROOT/nginx/devflow.conf"
+DEVFLOW_PROXY_ROOT="$DEVFLOW_CONFIG_ROOT/proxy"
 DEVFLOW_ACME_WEBROOT="$TEST_ROOT/certbot"
 FULLPASSWORD_ROOT="$TEST_ROOT/fullpassword"
 FULLPASSWORD_COMPOSE_FILE="$FULLPASSWORD_ROOT/docker-compose.yml"
-FULLPASSWORD_OVERRIDE_FILE="$FULLPASSWORD_ROOT/docker-compose.devflow.yml"
+FULLPASSWORD_OVERRIDE_FILE="$DEVFLOW_PROXY_ROOT/fullpassword-nginx.override.yml"
+DEVFLOW_PROXY_STATE="$DEVFLOW_STATE_ROOT/proxy-adapter.json"
 DEVFLOW_DOMAIN=dev.sti1.com.br
-mkdir -p "$DEVFLOW_CONFIG_ROOT/nginx" "$FULLPASSWORD_ROOT" "$DEVFLOW_ACME_WEBROOT"
+mkdir -p "$DEVFLOW_CONFIG_ROOT/nginx" "$DEVFLOW_PROXY_ROOT" "$DEVFLOW_STATE_ROOT" "$FULLPASSWORD_ROOT" "$DEVFLOW_ACME_WEBROOT"
+printf 'services: {}\n' > "$FULLPASSWORD_COMPOSE_FILE"
+printf 'ORIGINAL FULL PASSWORD\n' > "$FULLPASSWORD_ROOT/read-only-sentinel"
+FULLPASSWORD_BEFORE="$(sha256sum "$FULLPASSWORD_COMPOSE_FILE" "$FULLPASSWORD_ROOT/read-only-sentinel")"
+chmod 0444 "$FULLPASSWORD_COMPOSE_FILE" "$FULLPASSWORD_ROOT/read-only-sentinel" 2>/dev/null || true
+chmod 0555 "$FULLPASSWORD_ROOT" 2>/dev/null || true
 
 # O Git Bash no Windows não consegue aplicar todos os modos POSIX; os testes
 # preservam a semântica de criação/cópia e os modos são validados estaticamente.
@@ -120,5 +130,9 @@ printf '%s\n' "$FULLPASSWORD_CONFIG_MARKER" > "$DEVFLOW_PROXY_CONFIG"
 FAIL_STAGE=recreate ROLLBACK_COUNT=0
 if uninstall_fullpassword_proxy_adapter >/dev/null 2>&1; then exit 1; fi
 [[ "$ROLLBACK_COUNT" -eq 1 ]]
+
+FULLPASSWORD_AFTER="$(sha256sum "$FULLPASSWORD_COMPOSE_FILE" "$FULLPASSWORD_ROOT/read-only-sentinel")"
+[[ "$FULLPASSWORD_AFTER" == "$FULLPASSWORD_BEFORE" ]]
+[[ "$(find "$FULLPASSWORD_ROOT" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == 2 ]]
 
 printf 'Full Password transaction tests passed: install, repeat, reinstall, update, failures, rollback and uninstall.\n'

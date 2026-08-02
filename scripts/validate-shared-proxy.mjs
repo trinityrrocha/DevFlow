@@ -26,7 +26,7 @@ for (const fragment of [
   'Deseja executar o diagnóstico? [s/N]',
   'detect-shared-proxy.sh',
   'Integração automática não comprovada.',
-  '/var/log/devflow/shared-proxy-diagnostic.log',
+  '/opt/devflow/logs/shared-proxy-diagnostic.log',
 ]) {
   if (!install.includes(fragment)) throw new Error(`Gate do instalador compartilhado ausente: ${fragment}`);
 }
@@ -36,6 +36,13 @@ for (const fragment of [
   'docker network inspect',
   'certificate_method=',
   'compose_working_dir=',
+  'devflow_directory_writable=',
+  'devflow_override_writable=',
+  'fullpassword_compose_readable=',
+  'compose_cross_directory_supported=',
+  'compose_merge_valid=',
+  'compose_validation_command=',
+  'compose_executed_command=',
   'compatibility=',
   'sanitize_proxy_stream',
 ]) {

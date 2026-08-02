@@ -347,6 +347,10 @@ rollback_update() {
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
+    DEVFLOW_VERSION="$OLD_VERSION" write_version_state "$OLD_SHA" || rollback_failures=$((rollback_failures + 1))
+  fi
+
+  if [[ "$rollback_failures" -eq 0 ]]; then
     ROLLBACK_RESULT=success
     log WARN "Rollback concluído. DevFlow retornou a $OLD_VERSION ($OLD_SHA)."
   else
@@ -476,6 +480,7 @@ install -m 0644 "$CANDIDATE_DIR/scripts/systemd/devflow-backup.timer" /etc/syste
 systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
 BACKUP_TIMER_PAUSED=false
+write_version_state "$NEW_SHA"
 ROLLBACK_RESULT=not-required
 write_update_report success
 ROLLBACK_ARMED=false

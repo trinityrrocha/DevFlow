@@ -1,6 +1,8 @@
 # Adaptador persistente para `fullpassword_nginx`
 
-> Implementado em `0.3.0-alpha` para homologação. Ainda não aprovado para produção nem homologado na VPS real.
+> Corrigido em `0.3.1-alpha` para homologação. Ainda não aprovado para produção nem homologado na VPS real.
+
+> O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.
 
 ## Contrato aceito
 
@@ -13,11 +15,13 @@ O adaptador opera somente quando o diagnóstico read-only comprova simultaneamen
 - rede original `fullpassword_fullpassword_network`;
 - publicação original das portas 80/443 e ausência dos aliases reservados `devflow-backend`/`devflow-frontend` no runtime original;
 - include persistente `/etc/nginx/conf.d/*.conf` e `nginx -t` válido;
-- domínio DevFlow sem conflito, diretório do override gravável e rede `devflow_edge` ausente ou pertencente ao DevFlow;
+- domínio DevFlow sem conflito, `/opt/devflow/config/proxy` gravável e rede `devflow_edge` ausente ou pertencente ao DevFlow;
 - certificado preexistente, quando houver, específico para o domínio DevFlow e nunca wildcard;
 - merge estrutural do Compose válido.
 
 O diagnóstico usa `python3` para comparar o Compose base com o resultado normalizado do merge. Como essa verificação ocorre antes de qualquer mutação, o comando precisa existir previamente na VPS compartilhada.
+
+O relatório registra `devflow_directory_writable`, `devflow_override_writable`, `fullpassword_compose_readable`, `compose_cross_directory_supported`, `compose_merge_valid`, o Compose original, o override temporário removido ao final, o caminho final planejado, o comando Compose, o exit code e o erro sanitizado. O diagnóstico nunca cria arquivos em `/opt/fullpassword`; seus candidatos ficam em `/tmp` e o relatório opcional fica em `/opt/devflow/logs`.
 
 Qualquer divergência mantém `compatibility=blocked`. O adaptador não tenta descobrir uma alternativa por tentativa e erro.
 
@@ -33,13 +37,31 @@ O DevFlow não edita:
 Ele gerencia exclusivamente:
 
 ```text
-/opt/fullpassword/docker-compose.devflow.yml
+/opt/devflow/config/proxy/fullpassword-nginx.override.yml
 /opt/devflow/config/nginx/devflow.conf
 /opt/devflow/backups/proxy/fullpassword-*/
 /opt/devflow/logs/fullpassword-proxy.log
-/var/www/certbot/
+/opt/devflow/state/proxy-adapter.json
+/opt/devflow/storage/acme/
 devflow_edge
 ```
+
+Estrutura persistente do adaptador:
+
+```text
+/opt/devflow/
+├── config/
+│   ├── nginx/devflow.conf                 # 0644; conteúdo não secreto
+│   └── proxy/fullpassword-nginx.override.yml # 0644; conteúdo não secreto
+├── backups/proxy/                         # 0700 por transação
+├── logs/                                  # diretório 0750; logs 0640
+└── state/
+    ├── installation.json                  # 0640
+    ├── version.json                       # 0640
+    └── proxy-adapter.json                 # 0640
+```
+
+Os diretórios do DevFlow usam `0750`; segredos continuam fora desses arquivos, em `/opt/devflow/config/devflow.env` e arquivos de chave com `0600`. O instalador não aplica `chmod`, `chown`, links, backups ou qualquer outra mutação em `/opt/fullpassword`.
 
 O override acrescenta ao serviço `nginx` o mount read-only de `devflow.conf`, o webroot ACME read-only e a rede externa `devflow_edge`. As portas 80/443, os mounts originais e `fullpassword_fullpassword_network` precisam permanecer idênticos após o merge. O validador Python recusa qualquer perda ou alteração.
 
@@ -53,7 +75,7 @@ Frontend e backend recebem aliases `devflow-frontend` e `devflow-backend` em `de
 4. renderiza candidatos temporários e valida o merge completo do Compose;
 5. valida a configuração Nginx em container descartável usando o image ID imutável atual;
 6. promove atomicamente o override e o virtual host HTTP/ACME;
-7. recria somente `nginx`, com `--no-deps --force-recreate`, e executa `nginx -t`;
+7. reconcilia somente `nginx`, com `up -d --no-deps nginx`, e executa `nginx -t`;
 8. publica um desafio aleatório e confirma que `dev.sti1.com.br` chega ao webroot correto;
 9. emite ou valida somente o certificado `dev.sti1.com.br` com o e-mail informado;
 10. promove o virtual host HTTPS, recria apenas `nginx` e valida os dois domínios.
@@ -67,12 +89,12 @@ Enquanto o adaptador estiver instalado, toda reconciliação do proxy deve usar 
 ```bash
 docker compose \
   -f /opt/fullpassword/docker-compose.yml \
-  -f /opt/fullpassword/docker-compose.devflow.yml \
+  -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
   config
 
 docker compose \
   -f /opt/fullpassword/docker-compose.yml \
-  -f /opt/fullpassword/docker-compose.devflow.yml \
+  -f /opt/devflow/config/proxy/fullpassword-nginx.override.yml \
   up -d --no-deps nginx
 ```
 

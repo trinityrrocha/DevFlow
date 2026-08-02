@@ -71,6 +71,7 @@ Certbot emite certificado exclusivo para o domínio. No modo isolado, usa desafi
 |---|---:|---:|---:|
 | `/opt/devflow/config` | sim | não | sim, após confirmações |
 | `/opt/devflow/data` | sim | não | sim, após backup |
+| `/opt/devflow/state` | sim | não | sim, após backup |
 | `/opt/devflow/storage` | sim | não | sim, após backup |
 | `/opt/devflow/backups` | sim | não | sim; copiar antes |
 | `/opt/devflow/releases` | operacional | não | sim |
