@@ -162,3 +162,7 @@ curl --fail --verbose https://devflow.exemplo.com/api/health
 ## Recuperação
 
 Preserve `/opt/devflow/config`, `/opt/devflow/data`, `/opt/devflow/storage` e `/opt/devflow/backups`. Consulte [atualização, backup e rollback](../infrastructure/update-backup-rollback.md) antes de restaurar. Não use `docker system prune`, não apague volumes por tentativa e não remova recursos do Full Password.
+
+### Instalação inicial interrompida antes da promoção
+
+Se não existe `/opt/devflow/app`, mas uma tentativa anterior preservou `/opt/devflow/source`, execute novamente `--check` e `--dry-run` a partir do clone atualizado. O modo `--install` aceita somente checkout limpo, remote oficial, branch `main` e avanço fast-forward até a release verificada. Ele preserva configuração, banco, storage, backups e releases anteriores. Divergência, alteração local ou histórico não linear interrompe a retomada; não remova `/opt/devflow` por tentativa.

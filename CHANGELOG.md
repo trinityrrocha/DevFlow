@@ -11,6 +11,7 @@ Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 - `/opt/fullpassword` passou a ser tratado estritamente como origem somente leitura do Compose e da configuração runtime;
 - diagnóstico ampliado com legibilidade da origem, gravabilidade do DevFlow, comando e resultado sanitizado do merge entre diretórios;
 - estado operacional em JSON separado de dados persistentes: instalação, versão e adaptador em `/opt/devflow/state`;
+- retomada de instalação inicial incompleta por fast-forward verificado do checkout preservado em `/opt/devflow/source`;
 - testes transacionais e auditoria estática agora falham diante de comandos de escrita destinados ao Full Password.
 
 ### Homologação

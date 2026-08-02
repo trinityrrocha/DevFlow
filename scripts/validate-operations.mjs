@@ -112,5 +112,12 @@ if (!(maintenance < servicesStop && servicesStop < migration)) {
 if (!install.includes('DEVFLOW_SOURCE_DIR=$operational_source_dir') || !install.includes('core.hooksPath /dev/null')) {
   throw new Error('Instalador não prepara o checkout operacional protegido.');
 }
+for (const fragment of [
+  'status --porcelain',
+  'merge-base --is-ancestor "$operational_sha" "$release_sha"',
+  'merge --ff-only "$release_sha"',
+]) {
+  if (!install.includes(fragment)) throw new Error(`Retomada segura da instalação incompleta ausente: ${fragment}`);
+}
 
 process.stdout.write(`Operações DevFlow ${version} validadas estruturalmente.\n`);

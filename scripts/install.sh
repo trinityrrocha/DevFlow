@@ -449,12 +449,25 @@ if [[ ! -e "$operational_source_dir" ]]; then
   git -C "$operational_source_dir" config --local core.hooksPath /dev/null
 else
   [[ -d "$operational_source_dir/.git" ]] || die 'Checkout operacional existente não é um repositório Git.'
-  [[ "$(git -C "$operational_source_dir" rev-parse HEAD 2>/dev/null || true)" == "$release_sha" ]] \
-    || die 'Checkout operacional existente diverge da release inicial.'
   [[ "$(git -C "$operational_source_dir" remote get-url origin 2>/dev/null || true)" == "$public_remote" ]] \
     || die 'Checkout operacional existente possui remote divergente.'
   [[ "$(git -C "$operational_source_dir" config --local --get core.hooksPath 2>/dev/null || true)" == /dev/null ]] \
     || die 'Checkout operacional existente não possui hooks desabilitados.'
+  [[ "$(git -C "$operational_source_dir" branch --show-current)" == main ]] \
+    || die 'Checkout operacional existente não está na branch main.'
+  [[ -z "$(git -C "$operational_source_dir" status --porcelain)" ]] \
+    || die 'Checkout operacional existente possui alterações; a retomada foi bloqueada.'
+  operational_sha="$(git -C "$operational_source_dir" rev-parse HEAD 2>/dev/null || true)"
+  if [[ "$operational_sha" != "$release_sha" ]]; then
+    GIT_TERMINAL_PROMPT=0 git -C "$operational_source_dir" fetch origin main
+    [[ "$(git -C "$operational_source_dir" rev-parse origin/main 2>/dev/null || true)" == "$release_sha" ]] \
+      || die 'origin/main do checkout operacional diverge da release verificada.'
+    git -C "$operational_source_dir" merge-base --is-ancestor "$operational_sha" "$release_sha" \
+      || die 'Retomada recusada: o checkout operacional não permite fast-forward seguro.'
+    git -C "$operational_source_dir" merge --ff-only "$release_sha"
+    [[ -z "$(git -C "$operational_source_dir" status --porcelain)" ]] \
+      || die 'Checkout operacional ficou inconsistente após a retomada.'
+  fi
 fi
 chown -R root:root "$operational_source_dir"
 chmod -R go-w "$operational_source_dir"
