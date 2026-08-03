@@ -12,6 +12,11 @@ const targets = [
   'scripts/uninstall.sh',
   'scripts/health.sh',
   'scripts/diagnose.sh',
+  'scripts/migrate-proxy-to-host-nginx.sh',
+  'scripts/providers/provider-contract.sh',
+  'scripts/providers/host-nginx.sh',
+  'scripts/providers/isolated-nginx.sh',
+  'scripts/providers/legacy-docker-nginx.sh',
 ];
 const criticalDiscoveryVariables = [
   'FULLPASSWORD_COMPOSE_FILE',
@@ -23,20 +28,25 @@ const criticalDiscoveryVariables = [
 const failures = [];
 const dependencies = {
   'scripts/detect-shared-proxy.sh': ['scripts/lib/common.sh'],
-  'scripts/install.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh'],
+  'scripts/install.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
   'scripts/bootstrap.sh': [],
   'scripts/lib/fullpassword-proxy.sh': ['scripts/lib/common.sh'],
-  'scripts/update.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh'],
-  'scripts/uninstall.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh'],
-  'scripts/health.sh': ['scripts/lib/common.sh', 'scripts/lib/fullpassword-proxy.sh'],
+  'scripts/update.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
+  'scripts/uninstall.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
+  'scripts/health.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
   'scripts/diagnose.sh': ['scripts/lib/common.sh', 'scripts/lib/fullpassword-proxy.sh'],
+  'scripts/migrate-proxy-to-host-nginx.sh': ['scripts/lib/common.sh'],
+  'scripts/providers/provider-contract.sh': ['scripts/lib/common.sh'],
+  'scripts/providers/host-nginx.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh'],
+  'scripts/providers/isolated-nginx.sh': ['scripts/lib/common.sh'],
+  'scripts/providers/legacy-docker-nginx.sh': ['scripts/lib/common.sh', 'scripts/lib/fullpassword-proxy.sh'],
 };
 const externalContract = new Set([
-  'BASH_SOURCE', 'BASHPID', 'EUID', 'FUNCNAME', 'HOME', 'ID', 'LINENO', 'PATH', 'PRETTY_NAME',
+  'BASH_SOURCE', 'BASH_REMATCH', 'BASHPID', 'EUID', 'FUNCNAME', 'HOME', 'ID', 'LINENO', 'PATH', 'PRETTY_NAME',
   'PWD', 'RANDOM', 'TMPDIR', 'UBUNTU_CODENAME', 'UID', 'VERSION_CODENAME',
   'POSTGRES_DB', 'POSTGRES_USER', 'DEVFLOW_API_PORT', 'DEVFLOW_DOMAIN', 'DEVFLOW_EXPECTED_VERSION',
   'DEVFLOW_HEALTH_ALLOW_PENDING_VERSION', 'DEVFLOW_HTTP_PORT', 'DEVFLOW_PROXY_MODE',
-  'DEVFLOW_SHARED_PROXY_ADAPTER', 'DEVFLOW_SOURCE_DIR',
+  'DEVFLOW_SHARED_PROXY_ADAPTER', 'DEVFLOW_SOURCE_DIR', 'DEVFLOW_INFRASTRUCTURE_PROVIDER',
 ]);
 
 function initializedBeforeFunctions(source, variable) {
@@ -100,7 +110,7 @@ function unguardedReferences(source) {
 
 for (const path of targets) {
   const source = readFileSync(resolve(root, path), 'utf8');
-  const sourcedLibrary = path === 'scripts/lib/fullpassword-proxy.sh';
+  const sourcedLibrary = path === 'scripts/lib/fullpassword-proxy.sh' || path.startsWith('scripts/providers/');
   if (!sourcedLibrary && !/^set -[^\n]*u[^\n]*pipefail/mu.test(source)) {
     failures.push(`${path}: modo estrito com set -u e pipefail ausente`);
   }
@@ -152,4 +162,4 @@ for (const path of targets) {
 if (failures.length) {
   throw new Error(`Bash initialization audit failed:\n- ${failures.join('\n- ')}`);
 }
-console.log('Bash initialization audit passed: 7 strict-mode entrypoints and 1 inherited-strictness library inspected.');
+console.log('Bash initialization audit passed: entrypoints and inherited-strictness provider libraries inspected.');

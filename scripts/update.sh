@@ -10,6 +10,8 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/proxy-config.sh"
 # shellcheck source=lib/fullpassword-proxy.sh
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 CHECK_ONLY=false
 while [[ $# -gt 0 ]]; do
@@ -43,6 +45,14 @@ flock -n 9 || die 'Outra atualização DevFlow está em andamento.'
 
 load_devflow_env
 validate_runtime_paths
+provider_resolve_installed
+provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
+if [[ -r "$DEVFLOW_PROVIDER_STATE_FILE" ]]; then
+  [[ "$DEVFLOW_STATE_DOMAIN" == "$DEVFLOW_DOMAIN" \
+    && "$DEVFLOW_STATE_FRONTEND_PORT" == "${DEVFLOW_HTTP_PORT:-18080}" \
+    && "$DEVFLOW_STATE_BACKEND_PORT" == "${DEVFLOW_API_PORT:-13000}" ]] \
+    || die 'Estado do provider diverge da configuracao privada.'
+fi
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Diretório instalado inesperado.'
 [[ "$DEVFLOW_PROXY_MODE" == isolated || "$DEVFLOW_PROXY_MODE" == shared ]] || die 'Modo de proxy inválido.'
 validate_domain "$DEVFLOW_DOMAIN"
@@ -98,6 +108,7 @@ if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
     nginx -t >/dev/null 2>&1 || die 'A configuração Nginx atual é inválida.'
   fi
 fi
+provider_validate || die 'Validacao do provider instalado falhou.'
 
 TEMP_REMOTE_REPO=
 if [[ "$CHECK_ONLY" == true ]]; then
@@ -231,13 +242,11 @@ enter_maintenance() {
   local root="$1" candidate
   log INFO 'Ativando modo de manutenção.'
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
-      promote_fullpassword_proxy_config "$root" fullpassword-maintenance.conf.template "$DEVFLOW_DOMAIN" maintenance
-    else
-      candidate="$(mktemp /tmp/devflow-host-maintenance.XXXXXX)"
-      render_host_proxy "$root" host-maintenance.conf.template "$candidate"
-      promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
-    fi
+    case "$DEVFLOW_INFRASTRUCTURE_PROVIDER" in
+      host-nginx) provider_update "$root" host-maintenance.conf.template ;;
+      legacy-docker-nginx) promote_fullpassword_proxy_config "$root" fullpassword-maintenance.conf.template "$DEVFLOW_DOMAIN" maintenance ;;
+      *) return 1 ;;
+    esac
   else
     set_compose_for "$OLD_RELEASE_DIR"
     "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
@@ -256,13 +265,11 @@ enter_maintenance() {
 restore_proxy_for() {
   local root="$1" candidate
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
-      promote_fullpassword_proxy_config "$root" fullpassword-shared.conf.template "$DEVFLOW_DOMAIN" healthy
-    else
-      candidate="$(mktemp /tmp/devflow-host-proxy.XXXXXX)"
-      render_host_proxy "$root" host-shared.conf.template "$candidate"
-      promote_host_nginx_config "$candidate" "$NGINX_CONFIG" "$NGINX_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
-    fi
+    case "$DEVFLOW_INFRASTRUCTURE_PROVIDER" in
+      host-nginx) provider_update "$root" host-shared.conf.template ;;
+      legacy-docker-nginx) promote_fullpassword_proxy_config "$root" fullpassword-shared.conf.template "$DEVFLOW_DOMAIN" healthy ;;
+      *) return 1 ;;
+    esac
   else
     maintenance_compose_for "$CANDIDATE_DIR"
     "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" down --remove-orphans
@@ -316,7 +323,11 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-proxy
-  restore_proxy_for "$OLD_RELEASE_DIR"
+  if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx ]]; then
+    provider_rollback "$OLD_RELEASE_DIR" host-shared.conf.template
+  else
+    restore_proxy_for "$OLD_RELEASE_DIR"
+  fi
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
@@ -481,6 +492,8 @@ systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
 BACKUP_TIMER_PAUSED=false
 write_version_state "$NEW_SHA"
+provider_state_write "$DEVFLOW_INFRASTRUCTURE_PROVIDER" "$DEVFLOW_DOMAIN" \
+  "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}"
 ROLLBACK_RESULT=not-required
 write_update_report success
 ROLLBACK_ARMED=false

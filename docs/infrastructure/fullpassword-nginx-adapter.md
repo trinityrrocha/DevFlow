@@ -1,5 +1,7 @@
 # Adaptador persistente para `fullpassword_nginx`
 
+> **Legado e descontinuado desde `0.4.0-alpha`.** Mantido temporariamente para diagnóstico, compatibilidade e rollback. Não é o provider padrão, não é selecionado automaticamente e não deve ser usado em novas instalações. A transição para Nginx no host está em [migração de proxy](proxy-migration.md).
+
 > Corrigido em `0.3.3-alpha` para homologação. Ainda não aprovado para produção nem homologado na VPS real.
 
 > O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.

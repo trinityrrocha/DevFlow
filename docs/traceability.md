@@ -1,5 +1,18 @@
 # Rastreabilidade — Documento 001
 
+## Provider padrão `0.4.0-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Provider comum e padrão host | `scripts/providers/*.sh` | `scripts/validate-providers.mjs` |
+| Estado persistente | `provider-contract.sh` | install/update/health/uninstall |
+| Loopback e banco fechado | `docker-compose.shared.yml`, `docker-compose.yml` | validadores Compose/provider |
+| Vhost/TLS atômicos | `host-nginx.sh`, templates Nginx | rollback estrutural e `nginx -t` |
+| Migração separada | `migrate-proxy-to-host-nginx.sh` | check/dry-run, confirmações, rollback |
+| Full Password somente leitura | override neutro em `/etc/devflow` | auditorias de repositório/Full Password |
+
+Gates VPS pendentes: check/dry-run reais, instalação do Nginx, Certbot, health público, migração controlada e rollback induzido. Nenhum desses gates é declarado homologado nesta versão.
+
 | Requisito | Evidência |
 |---|---|
 | Clonar Full Password | Cópia local isolada, fora do repositório DevFlow |

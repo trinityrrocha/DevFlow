@@ -1,5 +1,15 @@
 # Roadmap inicial
 
+## Marco `0.4.0-alpha` — provider Nginx no host
+
+- [x] contrato e três providers;
+- [x] estado operacional e integração nos scripts;
+- [x] loopback, virtual host, Certbot e rollback de configuração;
+- [x] utilitário separado de migração com check/dry-run;
+- [ ] homologar provider em VPS;
+- [ ] executar migração em janela aprovada e validar rollback real;
+- [ ] somente depois avaliar remoção do adaptador legado.
+
 ## Fase 0 — Fundação documental
 
 Estado: concluída nesta entrega.

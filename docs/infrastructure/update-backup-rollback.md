@@ -1,5 +1,7 @@
 # Atualização, backup, restauração e rollback
 
+Desde `0.4.0-alpha`, o atualizador carrega `/opt/devflow/state/infrastructure-provider.json` antes de qualquer mutação. Manutenção, promoção, health e rollback do proxy são delegados ao provider registrado; divergência entre estado e ambiente protegido bloqueia o update. O provider Nginx do host restaura atomicamente o virtual host anterior, sem reiniciar ou remover serviços de terceiros.
+
 > O mecanismo abaixo é destinado exclusivamente à VPS de homologação. Ele ainda precisa de ensaios de falha em Linux antes de qualquer avaliação para produção.
 
 ## Separção de responsabilidades

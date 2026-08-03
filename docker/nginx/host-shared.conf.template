@@ -1,10 +1,13 @@
 # Managed by DevFlow installer. Do not merge with another application.
+limit_req_zone $binary_remote_addr zone=devflow_api:10m rate=20r/s;
+
 server {
     listen 80;
+    listen [::]:80;
     server_name __DEVFLOW_DOMAIN__;
 
     location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
+        root /opt/devflow/storage/acme;
     }
 
     location / {
@@ -14,6 +17,7 @@ server {
 
 server {
     listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name __DEVFLOW_DOMAIN__;
 
     ssl_certificate /etc/letsencrypt/live/__DEVFLOW_DOMAIN__/fullchain.pem;
@@ -28,17 +32,33 @@ server {
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
     location /api/ {
+        limit_req zone=devflow_api burst=40 nodelay;
         client_max_body_size 26m;
         proxy_pass http://127.0.0.1:__DEVFLOW_API_PORT__;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 90s;
+    }
+
+    location = /healthz {
+        access_log off;
+        proxy_pass http://127.0.0.1:__DEVFLOW_HTTP_PORT__/healthz;
     }
 
     location / {
         proxy_pass http://127.0.0.1:__DEVFLOW_HTTP_PORT__;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 90s;
     }
 }

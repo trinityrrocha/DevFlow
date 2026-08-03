@@ -11,6 +11,7 @@ base.services.nginx.environment = { FP_VALIDATOR_SECRET: 'validator-secret-must-
 base.volumes = { fullpassword_data: { name: 'fullpassword_data' } };
 const override = YAML.parse(read('docker/fullpassword/fullpassword-nginx.override.yml.template'));
 const adapter = read('scripts/lib/fullpassword-proxy.sh');
+const legacyProvider = read('scripts/providers/legacy-docker-nginx.sh');
 const install = read('scripts/install.sh');
 const update = read('scripts/update.sh');
 const uninstall = read('scripts/uninstall.sh');
@@ -121,10 +122,12 @@ for (const [label, source, fragment] of [
   ['health Full Password', adapter, 'fullpassword_public_health'],
   ['health DevFlow', adapter, 'devflow_public_health'],
   ['recriação sem dependências', adapter, 'up -d --no-deps "$FULLPASSWORD_SERVICE"'],
-  ['instalação', install, 'install_fullpassword_proxy_adapter'],
+  ['delegação da instalação', install, 'provider_activate'],
+  ['instalação legada', legacyProvider, 'install_fullpassword_proxy_adapter'],
   ['atualização', update, 'promote_fullpassword_proxy_config'],
   ['rede transacional no update', update, 'EDGE_NETWORK_PREEXISTED'],
-  ['desinstalação', uninstall, 'uninstall_fullpassword_proxy_adapter'],
+  ['delegação da desinstalação', uninstall, 'provider_uninstall'],
+  ['desinstalação legada', legacyProvider, 'uninstall_fullpassword_proxy_adapter'],
   ['health operacional', health, 'fullpassword_public_health'],
 ]) {
   if (!source.includes(fragment)) throw new Error(`Gate ausente (${label}): ${fragment}`);

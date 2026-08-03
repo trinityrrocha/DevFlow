@@ -1,5 +1,11 @@
 # Baseline de segurança
 
+## Limite do provider `host-nginx`
+
+Frontend e API publicam somente em `127.0.0.1`; PostgreSQL não possui `ports`. O provider altera exclusivamente o virtual host, a cópia auditável, o certificado e o hook de renovação marcados como DevFlow. Arquivos sem marcador, links divergentes, domínio duplicado, upstream inválido, porta ocupada ou `nginx -t` inválido bloqueiam a operação.
+
+O provider legado nunca é selecionado automaticamente. A migração do proxy requer snapshot, dupla confirmação, override fora do repositório Full Password, validação antes da troca e rollback armado. Check/dry-run não fazem writes, reloads, instalação de pacote ou mudanças Docker.
+
 ## 1. Autenticação
 
 - Argon2id com parâmetros versionados e benchmarkados no hardware alvo.

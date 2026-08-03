@@ -8,3 +8,6 @@ onlyBuiltDependencies:
 allowBuilds:
   argon2: true
   esbuild: true
+
+overrides:
+  'brace-expansion@<1.1.17': 1.1.17

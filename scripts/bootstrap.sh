@@ -4,11 +4,12 @@ umask 077
 
 REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'
 RAW_VERSION_URL='https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/VERSION'
-EXPECTED_VERSION='0.3.3-alpha'
+EXPECTED_VERSION='0.4.0-alpha'
 SELECTED_REF=main
 MODE=
 MODE_EXPLICIT=false
-PROXY_MODE=
+INFRASTRUCTURE_PROVIDER=host-nginx
+PROVIDER_EXPLICIT=false
 DOMAIN=
 LETSENCRYPT_EMAIL=
 SUPER_ADMIN_EMAIL=
@@ -21,7 +22,7 @@ die() { log "ERRO: $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-DevFlow 0.3.3-alpha — bootstrap público para homologação
+DevFlow 0.4.0-alpha — bootstrap público para homologação
 
 Uso:
   ./install.sh --check
@@ -32,7 +33,8 @@ Uso:
 Sem argumentos, coleta a configuração de forma interativa e solicita confirmação.
 
 Opções:
-  --proxy-mode isolated|shared
+  --provider host-nginx|isolated-nginx
+  --proxy-mode isolated|shared (alias legado)
   --domain HOST
   --letsencrypt-email EMAIL
   --super-admin-email EMAIL
@@ -58,7 +60,13 @@ while [[ $# -gt 0 ]]; do
     --check) set_mode check; shift ;;
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
-    --proxy-mode) require_value "$1" "${2:-}"; PROXY_MODE="$2"; shift 2 ;;
+    --provider) require_value "$1" "${2:-}"; INFRASTRUCTURE_PROVIDER="$2"; PROVIDER_EXPLICIT=true; shift 2 ;;
+    --proxy-mode)
+      require_value "$1" "${2:-}"
+      case "$2" in shared) INFRASTRUCTURE_PROVIDER=host-nginx ;; isolated) INFRASTRUCTURE_PROVIDER=isolated-nginx ;; *) die 'Modo legado invalido.' ;; esac
+      PROVIDER_EXPLICIT=true
+      shift 2
+      ;;
     --domain) require_value "$1" "${2:-}"; DOMAIN="$2"; shift 2 ;;
     --letsencrypt-email|--email) require_value "$1" "${2:-}"; LETSENCRYPT_EMAIL="$2"; shift 2 ;;
     --super-admin-email|--super-admin) require_value "$1" "${2:-}"; SUPER_ADMIN_EMAIL="$2"; shift 2 ;;
@@ -104,43 +112,23 @@ prompt_value() {
 }
 
 prompt_proxy_mode() {
-  [[ -n "$PROXY_MODE" ]] && return 0
-  [[ -t 0 ]] || die 'Informe --proxy-mode em execução não interativa.'
+  [[ "$PROVIDER_EXPLICIT" == false ]] || return 0
+  [[ -t 0 ]] || return 0
   cat <<'EOF'
-Modo de proxy:
+Provider de infraestrutura:
 
-  1 - Isolado
-      Instalação independente, recomendada para servidor limpo
-      ou quando o DevFlow não deve compartilhar proxy.
+  1 - Nginx no host — Recomendado
+      Proxy central instalado diretamente no Linux. Cada projeto mantém
+      containers, redes, volumes e banco próprios.
 
-      Serão utilizados:
-      - proxy próprio;
-      - containers próprios;
-      - rede Docker própria;
-      - volumes próprios;
-      - banco próprio;
-      - certificados HTTPS próprios.
-
-  2 - Compartilhado
-      Instalação em servidor que já possui proxy Nginx ou Caddy.
-
-      O DevFlow continuará utilizando:
-      - containers próprios;
-      - volumes próprios;
-      - banco próprio;
-      - storage próprio.
-
-      Somente o proxy e, quando necessário, uma rede Docker
-      compatível poderão ser compartilhados.
-
-      Nenhuma configuração existente será sobrescrita.
-      A integração automática aceita Nginx do host ou o contrato estrito do fullpassword_nginx.
+  2 - Proxy isolado
+      Indicado apenas para VPS exclusiva do DevFlow; ocupa 80 e 443.
 EOF
-  read -r -p 'Escolha [1/2]: ' proxy_choice
+  read -r -p 'Escolha [1/2] (padrão 1): ' proxy_choice
   case "$proxy_choice" in
-    1) PROXY_MODE=isolated ;;
-    2) PROXY_MODE=shared ;;
-    *) die 'Modo de proxy inválido.' ;;
+    ''|1) INFRASTRUCTURE_PROVIDER=host-nginx ;;
+    2) INFRASTRUCTURE_PROVIDER=isolated-nginx ;;
+    *) die 'Provider inválido.' ;;
   esac
 }
 
@@ -149,7 +137,7 @@ if [[ "$MODE" != check ]]; then
   prompt_value LETSENCRYPT_EMAIL 'E-mail para o certificado HTTPS'
   prompt_value SUPER_ADMIN_EMAIL 'E-mail do Super Administrador'
   prompt_proxy_mode
-  [[ "$PROXY_MODE" == isolated || "$PROXY_MODE" == shared ]] || die 'Modo de proxy inválido.'
+  [[ "$INFRASTRUCTURE_PROVIDER" == host-nginx || "$INFRASTRUCTURE_PROVIDER" == isolated-nginx ]] || die 'Provider inválido.'
   [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$DOMAIN" == *.* ]] \
     || die 'Domínio inválido.'
   for email in "$LETSENCRYPT_EMAIL" "$SUPER_ADMIN_EMAIL"; do
@@ -185,7 +173,7 @@ Resumo da instalação pública:
   referência: $SELECTED_REF
   versão esperada: $EXPECTED_VERSION
   domínio: $DOMAIN
-  proxy: $PROXY_MODE
+  provider: $INFRASTRUCTURE_PROVIDER
   e-mail TLS: $LETSENCRYPT_EMAIL
   Super Admin: $SUPER_ADMIN_EMAIL
 EOF
@@ -231,7 +219,7 @@ fi
 
 INSTALL_ARGS=("--$MODE")
 if [[ "$MODE" != check ]]; then
-  INSTALL_ARGS+=(--proxy-mode "$PROXY_MODE" --domain "$DOMAIN" \
+  INSTALL_ARGS+=(--provider "$INFRASTRUCTURE_PROVIDER" --domain "$DOMAIN" \
     --letsencrypt-email "$LETSENCRYPT_EMAIL" --super-admin-email "$SUPER_ADMIN_EMAIL" \
     --http-port "$HTTP_PORT" --api-port "$API_PORT")
 fi

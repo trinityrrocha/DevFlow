@@ -1,5 +1,7 @@
 # Arquitetura de instalação e coexistência
 
+> Atualização `0.4.0-alpha`: `host-nginx` é o provider padrão. O instalador delega proxy/TLS ao contrato em [providers](providers.md), publica a aplicação em loopback e registra o provider em `/opt/devflow/state/infrastructure-provider.json`. O adaptador do `fullpassword_nginx` é legado e nunca é escolhido automaticamente.
+
 ## Contrato do instalador
 
 O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrito (`set -Eeuo pipefail`) e são somente leitura por padrão.
@@ -24,7 +26,7 @@ O fluxo é `detectar → validar → resumir → confirmar → aplicar → verif
 - `amd64` e `arm64`;
 - Docker Engine 24+ e Compose v2 2.20+;
 - 2 GiB de RAM e 5 GiB livres;
-- domínio, e-mail TLS, e-mail do Super Admin e modo de proxy explícitos.
+- domínio, e-mail TLS e e-mail do Super Admin; o provider padrão é `host-nginx` e `--provider isolated-nginx` é uma opção explícita para VPS exclusiva.
 
 Outras plataformas falham de forma segura. A matriz ainda precisa de ensaio automatizado antes de produção.
 
@@ -36,7 +38,7 @@ Docker é instalado somente se ausente e exclusivamente pelo repositório oficia
 
 Docker e Compose compatíveis são reutilizados. O instalador verifica nomes, labels de propriedade, redes, volumes e portas. Recursos com namespace DevFlow mas sem a label esperada causam parada. Nenhum container de terceiros é parado ou reiniciado.
 
-No modo compartilhado, um diagnóstico read-only precisa comprovar o contrato inteiro antes de qualquer mutação. Um Nginx do host compatível recebe um único arquivo gerenciado e usa portas loopback. O inventário exato aprovado do `fullpassword_nginx` usa o adaptador por Compose override e rede externa; outras topologias permanecem bloqueadas. No modo isolado, 80/443 precisam estar livres.
+O Nginx do host recebe somente o virtual host DevFlow e usa upstreams loopback. Se `fullpassword_nginx` ocupar 80/443, o instalador interrompe e aponta para a [migração separada](proxy-migration.md); não lê nem reconcilia o Compose do outro projeto. No provider isolado, 80/443 precisam estar livres.
 
 `--check` não executa a composição completa: ele identifica inputs protegidos e pode retornar `check_status=passed-with-privileged-dry-run-required`. `--dry-run` executa a validação completa somente se o processo puder ler todos os inputs. Quando isso exigir root, o modo comum encerra sem alterações e fornece o comando com `sudo`. Mesmo como root, o dry-run termina antes de qualquer código de instalação e usa somente temporários sob `/tmp`.
 
@@ -59,9 +61,9 @@ O Docker Compose pode precisar de `/opt/fullpassword/.env` e de `env_file` adici
 - configuração: `/opt/devflow/config/devflow.env`;
 - checkout operacional: `/opt/devflow/source`;
 - backups: `/opt/devflow/backups`;
-- proxy do host: `/etc/nginx/conf.d/devflow.conf`;
+- proxy do host: `/etc/nginx/sites-available/devflow.conf` e link em `sites-enabled` (fallback `/etc/nginx/conf.d/devflow.conf`);
 - proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`;
-- estado operacional: `/opt/devflow/state/installation.json`, `version.json` e `proxy-adapter.json`;
+- estado operacional: `/opt/devflow/state/installation.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado;
 - relatório de proxy compartilhado: `/opt/devflow/logs/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.

@@ -1,5 +1,15 @@
 # Troubleshooting operacional
 
+## Provider e proxy central
+
+- `reason=controlled-proxy-migration-required`: não repita com o provider legado; execute somente `sudo ./scripts/migrate-proxy-to-host-nginx.sh --check` e depois `--dry-run`.
+- `invalid-host-nginx`: execute `sudo nginx -t` e corrija a configuração que ele indicar; o DevFlow não sobrescreve arquivos sem seu marcador.
+- porta loopback 18080/13000 ocupada: identifique o proprietário com `sudo ss -lntp`; não encerre processos automaticamente.
+- `infrastructure-provider.json` divergente: não edite o JSON manualmente; compare com `/opt/devflow/config/devflow.env` e restaure o estado validado da instalação.
+- reload revertido: consulte `/opt/devflow/backups/proxy` e o log sanitizado; a configuração anterior já terá sido restaurada quando possível.
+
+O health diferencia Nginx ativo, sintaxe, certificado/Certbot, upstreams locais e endpoints públicos. O Nginx global nunca é removido pelo uninstall.
+
 ## Diagnóstico seguro
 
 ```bash

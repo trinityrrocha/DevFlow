@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.3.3-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O mecanismo operacional de atualização e o adaptador de proxy compartilhado ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.4.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -20,7 +20,7 @@ Nenhum código do Full Password foi reutilizado. A referência técnica permanec
 - domínio exclusivo apontado para a VPS;
 - pelo menos 2 GiB de RAM e 5 GiB livres;
 - acesso `root` por `sudo`;
-- portas 80/443 livres para o modo isolado; no compartilhado, Nginx do host com portas loopback livres ou o ambiente `fullpassword_nginx` estritamente compatível descrito abaixo;
+- portas 80/443 disponíveis ao Nginx do host; se `fullpassword_nginx` as ocupar, a migração separada deve ser diagnosticada antes;
 - `python3` e `openssl` previamente disponíveis quando o diagnóstico read-only do `fullpassword_nginx` for utilizado;
 - acesso HTTPS ao repositório público `trinityrrocha/DevFlow`.
 
@@ -43,12 +43,12 @@ O fluxo explícito em três etapas também está disponível:
 ```bash
 ./install.sh --check
 ./install.sh --dry-run \
-  --proxy-mode isolated \
+  --provider host-nginx \
   --domain devflow.exemplo.com \
   --letsencrypt-email tls@exemplo.com \
   --super-admin-email admin@exemplo.com
 sudo ./install.sh --install \
-  --proxy-mode isolated \
+  --provider host-nginx \
   --domain devflow.exemplo.com \
   --letsencrypt-email tls@exemplo.com \
   --super-admin-email admin@exemplo.com
@@ -58,7 +58,7 @@ Parâmetros de configuração podem ser fornecidos ao bootstrap sem clone prévi
 
 ```bash
 sudo ./install.sh \
-  --proxy-mode isolated \
+  --provider host-nginx \
   --domain devflow.exemplo.com \
   --letsencrypt-email tls@exemplo.com \
   --super-admin-email admin@exemplo.com
@@ -70,22 +70,21 @@ O instalador cria `/opt/devflow/source` como checkout operacional root-only, sem
 
 O guia completo está em [instalação na VPS](docs/infrastructure/vps-installation.md).
 
-## Modos de infraestrutura
+## Providers de infraestrutura
 
-- `DEVFLOW_PROXY_MODE=isolated`: instalação independente, recomendada para servidor limpo. Proxy, containers, redes, volumes, banco e certificados pertencem somente ao DevFlow.
-- `DEVFLOW_PROXY_MODE=shared`: containers, volumes, banco e storage continuam exclusivos do DevFlow. Pode compartilhar um Nginx do host comprovadamente persistente ou, somente no contrato aprovado, o `fullpassword_nginx` por Compose override independente.
+O provider padrão é `host-nginx`: um proxy central no Linux atende múltiplos domínios, enquanto cada aplicação mantém containers, redes, volumes, banco e diretórios próprios. Frontend e API DevFlow ficam somente em `127.0.0.1`; PostgreSQL não publica porta. Consulte [providers](docs/infrastructure/providers.md) e [Host Nginx Provider](docs/infrastructure/host-nginx-provider.md).
+
+- `DEVFLOW_INFRASTRUCTURE_PROVIDER=host-nginx`: padrão recomendado; Nginx e certificados no host.
+- `DEVFLOW_INFRASTRUCTURE_PROVIDER=isolated-nginx`: somente VPS exclusiva; proxy DevFlow ocupa 80/443.
+- `DEVFLOW_INFRASTRUCTURE_PROVIDER=legacy-docker-nginx`: legado, descontinuado e somente explícito para transição/rollback.
+
+Se `fullpassword_nginx` ocupar 80/443, o instalador comum interrompe sem alterar nada. A futura transição usa o [procedimento separado de migração](docs/infrastructure/proxy-migration.md); nesta fase, execute somente `--check` e `--dry-run`.
 
 A rede `devflow_edge` contém somente frontend, backend e edge; `devflow_internal` é interna e contém somente PostgreSQL e backend. O proxy nunca recebe acesso à rede do banco.
 
-A escolha é sempre explícita. No modo compartilhado, `scripts/detect-shared-proxy.sh` inventaria proxy, configuração, includes, mounts, redes, certificados e estratégia de aplicação sem alterá-los. Um `fullpassword_nginx` só recebe `compatibility=compatible-with-compose-override` quando coincide integralmente com o contrato aprovado de `/opt/fullpassword`; outros Nginx containerizados e Caddy continuam bloqueados. O relatório sanitizado fica em `/opt/devflow/logs/shared-proxy-diagnostic.log`.
+O adaptador anterior de `fullpassword_nginx` permanece no código apenas como provider legado, para diagnóstico e rollback durante a transição. Ele nunca é selecionado automaticamente para uma nova instalação. Seu contrato histórico está documentado em [adaptador legado](docs/infrastructure/fullpassword-nginx-adapter.md).
 
-Para o contrato aprovado, o instalador cria a rede externa `devflow_edge`, mantém o PostgreSQL apenas em `devflow_internal`, instala `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` e monta somente `/opt/devflow/config/nginx/devflow.conf` no proxy. O Compose e a configuração originais do Full Password são apenas lidos. Certificado, arquivos e recriação exclusiva do serviço `nginx` fazem parte de uma transação com backup e rollback. Consulte o [adaptador persistente](docs/infrastructure/fullpassword-nginx-adapter.md).
-
-Na VPS, `--check` da versão `0.3.2-alpha`, commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, identificou corretamente o `.env` protegido. O dry-run seguinte revelou que `FULLPASSWORD_COMPOSE_FILE` não era inicializada antes do inventário. A versão `0.3.3-alpha` corrige a descoberta e transforma ausência, caminho inválido ou falta de leitura em bloqueios controlados. O novo dry-run privilegiado ainda não foi executado; portanto, o modo compartilhado não está homologado.
-
-> O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` é utilizado somente para leitura do Compose original durante a integração opcional com o proxy compartilhado.
-
-No modo compartilhado, `--check` realiza somente o diagnóstico básico. Se um `.env` ou `env_file` necessário ao Compose estiver protegido, o dry-run comum encerra com `reason=privileged-compose-validation-required` e mostra o comando completo para nova execução. `sudo ./install.sh --dry-run ...` não instala, não reinicia serviços e não altera permissões: root serve apenas para permitir que o próprio Docker Compose consuma seus inputs protegidos. O DevFlow nunca abre, copia, exibe ou registra os valores desses arquivos.
+O DevFlow é integralmente instalado em `/opt/devflow`. O diretório `/opt/fullpassword` continua somente leitura; qualquer override futuro que controle o proxy fica no diretório neutro `/etc/devflow/proxy-migrations`, fora dos dois repositórios.
 
 ## Configuração
 

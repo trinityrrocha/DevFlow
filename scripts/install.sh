@@ -10,13 +10,17 @@ SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/proxy-config.sh"
 # shellcheck source=lib/fullpassword-proxy.sh
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 MODE=check
 MODE_EXPLICIT=false
 DOMAIN=
 LETSENCRYPT_EMAIL=
 SUPER_ADMIN_EMAIL=
-PROXY_MODE=
+INFRASTRUCTURE_PROVIDER=host-nginx
+PROVIDER_EXPLICIT=false
+PROXY_MODE=shared
 HTTP_PORT=18080
 API_PORT=13000
 SHARED_PROXY_ADAPTER=none
@@ -30,9 +34,9 @@ usage() {
   cat <<'EOF'
 Uso:
   ./install.sh --check
-  ./install.sh --dry-run --proxy-mode isolated|shared --domain HOST \
+  ./install.sh --dry-run [--provider host-nginx|isolated-nginx] --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
-  sudo ./install.sh --install --proxy-mode isolated|shared --domain HOST \
+  sudo ./install.sh --install [--provider host-nginx|isolated-nginx] --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
 
 Modos:
@@ -41,7 +45,8 @@ Modos:
   --install     primeira instalação, com confirmação explícita
 
 Opções:
-  --proxy-mode MODE         obrigatório na primeira instalação: isolated ou shared
+  --provider PROVIDER       host-nginx (padrão), isolated-nginx ou legado explícito
+  --proxy-mode MODE         alias legado: shared=host-nginx, isolated=isolated-nginx
   --domain HOST             domínio exclusivo do DevFlow
   --letsencrypt-email EMAIL contato do Let's Encrypt
   --super-admin-email EMAIL identidade permitida no bootstrap
@@ -49,17 +54,18 @@ Opções:
   --api-port PORT           backend em loopback no modo shared (padrão 13000)
   --help                    mostra esta ajuda
 
-Modo de proxy:
+Provider de infraestrutura:
 
-  isolated
-    Instalação independente com proxy, containers, redes, volumes, banco e
-    certificados próprios. Recomendada para servidor limpo.
+  host-nginx — recomendado e padrão
+    Proxy central instalado diretamente no Linux. Cada aplicação mantém
+    containers, redes, volumes, storage e banco próprios.
 
-  shared
-    Mantém containers, volumes, banco e storage próprios. Somente o proxy e,
-    quando comprovadamente segura, uma rede de borda podem ser compartilhados.
-    Nenhuma configuração existente é sobrescrita. A integração automática atual
-    é limitada ao Nginx do host; Nginx containerizado e Caddy permanecem bloqueados.
+  isolated-nginx
+    Proxy Docker exclusivo; indicado apenas para VPS exclusiva do DevFlow.
+
+  legacy-docker-nginx
+    Adaptador descontinuado do fullpassword_nginx, disponível somente por seleção
+    explícita para transição, diagnóstico e rollback.
 EOF
 }
 
@@ -74,7 +80,16 @@ while [[ $# -gt 0 ]]; do
     --check) set_mode check; shift ;;
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
-    --proxy-mode) PROXY_MODE="${2:-}"; shift 2 ;;
+    --provider) INFRASTRUCTURE_PROVIDER="${2:-}"; PROVIDER_EXPLICIT=true; shift 2 ;;
+    --proxy-mode)
+      case "${2:-}" in
+        shared) INFRASTRUCTURE_PROVIDER=host-nginx ;;
+        isolated) INFRASTRUCTURE_PROVIDER=isolated-nginx ;;
+        *) die 'Informe --proxy-mode isolated ou shared.' ;;
+      esac
+      PROVIDER_EXPLICIT=true
+      shift 2
+      ;;
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --letsencrypt-email|--email) LETSENCRYPT_EMAIL="${2:-}"; shift 2 ;;
     --super-admin-email|--super-admin) SUPER_ADMIN_EMAIL="${2:-}"; shift 2 ;;
@@ -148,7 +163,17 @@ if [[ "$MODE" == check && -e "$DEVFLOW_ENV_FILE" ]]; then
     load_devflow_env
     validate_runtime_paths
     DOMAIN="${DEVFLOW_DOMAIN:-}"
-    PROXY_MODE="${DEVFLOW_PROXY_MODE:-}"
+    if [[ -n "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-}" ]]; then
+      INFRASTRUCTURE_PROVIDER="$DEVFLOW_INFRASTRUCTURE_PROVIDER"
+      derive_legacy_proxy_settings "$INFRASTRUCTURE_PROVIDER"
+    else
+      provider_resolve_installed
+      INFRASTRUCTURE_PROVIDER="$DEVFLOW_INFRASTRUCTURE_PROVIDER"
+    fi
+    PROXY_MODE="$DEVFLOW_PROXY_MODE"
+    SHARED_PROXY_ADAPTER="$DEVFLOW_SHARED_PROXY_ADAPTER"
+    HTTP_PORT="${DEVFLOW_HTTP_PORT:-18080}"
+    API_PORT="${DEVFLOW_API_PORT:-13000}"
     [[ "$PROXY_MODE" == isolated || "$PROXY_MODE" == shared ]] || die 'DEVFLOW_PROXY_MODE inválido na configuração.'
     validate_domain "$DOMAIN"
     validate_email "${LETSENCRYPT_EMAIL:-}"
@@ -169,9 +194,57 @@ if [[ "$MODE" != check ]]; then
     die 'Docker CLI ausente, mas uma configuração de repositório Docker já existe. Revise a instalação parcial manualmente.'
   fi
   [[ "$PROXY_MODE" == isolated || "$PROXY_MODE" == shared ]] || die 'Informe --proxy-mode isolated ou shared.'
+  provider_validate_name "$INFRASTRUCTURE_PROVIDER" || die 'Provider de infraestrutura invalido.'
+  derive_legacy_proxy_settings "$INFRASTRUCTURE_PROVIDER"
+  PROXY_MODE="$DEVFLOW_PROXY_MODE"
+  SHARED_PROXY_ADAPTER="$DEVFLOW_SHARED_PROXY_ADAPTER"
   validate_domain "$DOMAIN"
   validate_email "$LETSENCRYPT_EMAIL"
   validate_email "$SUPER_ADMIN_EMAIL"
+fi
+
+provider_load "$INFRASTRUCTURE_PROVIDER" || die 'Nao foi possivel carregar o provider solicitado.'
+
+provider_status=0
+if [[ "$MODE" == check ]]; then
+  provider_check || provider_status=$?
+  if [[ "$provider_status" -eq 4 ]]; then
+    cat <<'EOF'
+Um proxy Docker existente esta ocupando as portas 80 e 443.
+O Nginx central exige uma migracao controlada separada; o instalador comum
+nao alterara o proxy existente.
+
+Execute primeiro:
+  sudo ./scripts/migrate-proxy-to-host-nginx.sh --check
+EOF
+  elif [[ "$provider_status" -eq 3 ]]; then
+    CHECK_STATUS=passed-with-privileged-dry-run-required
+  elif [[ "$provider_status" -ne 0 ]]; then
+    CHECK_STATUS=failed
+  fi
+elif [[ "$INFRASTRUCTURE_PROVIDER" != legacy-docker-nginx ]]; then
+  provider_dry_run || provider_status=$?
+  if [[ "$provider_status" -eq 4 ]]; then
+    cat <<'EOF'
+dry_run_status=blocked
+reason=controlled-proxy-migration-required
+changes_applied=false
+
+Execute somente:
+  sudo ./scripts/migrate-proxy-to-host-nginx.sh --check
+EOF
+    exit 4
+  elif [[ "$provider_status" -eq 3 && "$MODE" == dry-run ]]; then
+    cat <<EOF
+dry_run_status=blocked
+reason=privileged-port-owner-check-required
+changes_applied=false
+
+Repita somente o dry-run com sudo e os mesmos parametros.
+EOF
+    exit 3
+  fi
+  [[ "$provider_status" -eq 0 ]] || die 'O provider bloqueou a operacao por seguranca.'
 fi
 
 if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_ROOT/app" ]]; then
@@ -276,11 +349,11 @@ check_protected_compose_inputs() {
   fi
 }
 
-if [[ "$MODE" == check ]]; then
+if [[ "$MODE" == check && "$INFRASTRUCTURE_PROVIDER" == legacy-docker-nginx ]]; then
   check_protected_compose_inputs
 fi
 
-if [[ "$MODE" != check && "$PROXY_MODE" == shared ]]; then
+if [[ "$MODE" != check && "$INFRASTRUCTURE_PROVIDER" == legacy-docker-nginx ]]; then
   shared_diagnostic_status=0
   run_shared_proxy_diagnostic || shared_diagnostic_status=$?
   if [[ "$shared_diagnostic_status" -eq 3 && "$MODE" == dry-run ]]; then
@@ -348,6 +421,8 @@ Resumo DevFlow $DEVFLOW_VERSION
   containers DevFlow existentes: $devflow_containers
   fullpassword_nginx: ${fullpassword_container:-não detectado}
   proxy existente: $proxy_detected
+  provider: $INFRASTRUCTURE_PROVIDER
+  estado do provider: $DEVFLOW_PROVIDER_STATUS
   proxy solicitado: ${PROXY_MODE:-não definido}
   adaptador compartilhado: $SHARED_PROXY_ADAPTER
   domínio: ${DOMAIN:-não definido}
@@ -384,15 +459,14 @@ fi
 cat <<EOF
 Ações planejadas:
   - instalar Docker Engine pelo repositório oficial apenas se estiver ausente;
-  - instalar Certbot e Python 3; o modo shared exige adaptador aprovado pelo diagnóstico;
+  - delegar proxy, Nginx, Certbot, validação e rollback ao provider $INFRASTRUCTURE_PROVIDER;
   - criar somente diretórios e recursos do projeto Compose devflow;
   - manter segredos em $DEVFLOW_ENV_FILE com permissão 600;
   - iniciar o banco, executar migrations reais e então subir a aplicação;
   - validar healthchecks HTTP e HTTPS;
-  - preservar Compose, configuração, rede, certificados e rotas originais do Full Password;
-  - armazenar todos os artefatos do adaptador exclusivamente sob $DEVFLOW_INSTALL_ROOT;
-  - ler /opt/fullpassword/docker-compose.yml sem criar, alterar ou remover nada em /opt/fullpassword;
-  - no adaptador aprovado, recriar somente fullpassword_nginx com override transacional em $DEVFLOW_CONFIG_ROOT/proxy.
+  - publicar frontend/API somente em loopback no provider host-nginx;
+  - preservar Compose, configuração, redes, certificados e containers de terceiros;
+  - modificar somente estes recursos do provider: $(provider_resources).
 EOF
 [[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
 
@@ -412,18 +486,18 @@ INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
 log INFO "Log sanitizado: $INSTALL_LOG" | tee -a "$INSTALL_LOG"
-ADAPTER_APPLIED=false
+PROVIDER_APPLIED=false
 
 installation_failed() {
   local exit_code=$?
   trap - ERR
-  if [[ "$SHARED_PROXY_ADAPTER" == fullpassword-nginx && -r "$DEVFLOW_ENV_FILE" ]]; then
+  if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
     DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
     load_devflow_env || true
     compose_files
     "${DEVFLOW_COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
-    if [[ "$ADAPTER_APPLIED" == true ]]; then
-      uninstall_fullpassword_proxy_adapter >/dev/null 2>&1 || true
+    if [[ "$PROVIDER_APPLIED" == true ]]; then
+      provider_uninstall >/dev/null 2>&1 || true
       if [[ "${CERTIFICATE_EXISTED_BEFORE:-true}" == false ]]; then
         certbot delete --cert-name "$DOMAIN" --non-interactive >/dev/null 2>&1 || true
       fi
@@ -482,8 +556,8 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
   apt-get update
   apt-get install -y "${missing_packages[@]}"
 fi
-[[ "$SHARED_PROXY_ADAPTER" != host-nginx ]] || { command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; } \
-  || die 'O Nginx do host deixou de estar disponível após o diagnóstico.'
+provider_prepare "$DOMAIN" "$HTTP_PORT" "$API_PORT"
+provider_install
 
 if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
   [[ -r "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die 'Certificado existente sem chave privada correspondente.'
@@ -568,6 +642,7 @@ TZ=America/Sao_Paulo
 APP_ORIGIN=https://$DOMAIN
 VITE_API_URL=/api
 DEVFLOW_DOMAIN=$DOMAIN
+DEVFLOW_INFRASTRUCTURE_PROVIDER=$INFRASTRUCTURE_PROVIDER
 DEVFLOW_PROXY_MODE=$PROXY_MODE
 DEVFLOW_SHARED_PROXY_ADAPTER=$SHARED_PROXY_ADAPTER
 LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
@@ -643,37 +718,10 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
 CERTIFICATE_EXISTED_BEFORE=false
 [[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && CERTIFICATE_EXISTED_BEFORE=true
 
-if [[ "$SHARED_PROXY_ADAPTER" != fullpassword-nginx && ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
-  if [[ "$PROXY_MODE" == isolated ]]; then
-    certbot certonly --standalone -d "$DOMAIN" --email "$LETSENCRYPT_EMAIL" \
-      --agree-tos --non-interactive
-  else
-    install -d -m 0755 /var/www/letsencrypt
-    temp_config="$(mktemp /tmp/devflow-acme.XXXXXX)"
-    sed -e "s/__DEVFLOW_DOMAIN__/$DOMAIN/g" \
-      -e "s/__DEVFLOW_HTTP_PORT__/$HTTP_PORT/g" \
-      -e "s/__DEVFLOW_API_PORT__/$API_PORT/g" \
-      "$release_dir/docker/nginx/host-acme.conf.template" > "$temp_config"
-    promote_host_nginx_config "$temp_config" "$NGINX_CONFIG" "$MANAGED_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
-    certbot certonly --webroot -w /var/www/letsencrypt -d "$DOMAIN" \
-      --email "$LETSENCRYPT_EMAIL" --agree-tos --non-interactive
-  fi
-fi
-
 "${DEVFLOW_COMPOSE[@]}" up -d backend frontend --wait
-if [[ "$PROXY_MODE" == isolated ]]; then
-  "${DEVFLOW_COMPOSE[@]}" up -d edge --wait
-elif [[ "$SHARED_PROXY_ADAPTER" == fullpassword-nginx ]]; then
-  install_fullpassword_proxy_adapter "$release_dir" "$DOMAIN" "$LETSENCRYPT_EMAIL"
-  ADAPTER_APPLIED=true
-else
-  temp_config="$(mktemp /tmp/devflow-nginx.XXXXXX)"
-  sed -e "s/__DEVFLOW_DOMAIN__/$DOMAIN/g" \
-    -e "s/__DEVFLOW_HTTP_PORT__/$HTTP_PORT/g" \
-    -e "s/__DEVFLOW_API_PORT__/$API_PORT/g" \
-    "$release_dir/docker/nginx/host-shared.conf.template" > "$temp_config"
-  promote_host_nginx_config "$temp_config" "$NGINX_CONFIG" "$MANAGED_MARKER" "$DEVFLOW_INSTALL_ROOT/backups/proxy"
-fi
+PROVIDER_APPLIED=true
+provider_activate "$release_dir" "$DOMAIN" "$LETSENCRYPT_EMAIL" "$HTTP_PORT" "$API_PORT"
+provider_validate
 
 curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/api/health" >/dev/null
 curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/" >/dev/null
@@ -685,6 +733,7 @@ install -m 0644 "$release_dir/scripts/systemd/devflow-backup.service" /etc/syste
 install -m 0644 "$release_dir/scripts/systemd/devflow-backup.timer" /etc/systemd/system/devflow-backup.timer
 systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
+provider_state_write "$INFRASTRUCTURE_PROVIDER" "$DOMAIN" "$HTTP_PORT" "$API_PORT"
 write_install_report success
 trap - ERR
 

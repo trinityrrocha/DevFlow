@@ -2,6 +2,32 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.0-alpha] - 2026-08-02
+
+### Adicionado
+
+- contrato versionado de providers e estado persistente em `/opt/devflow/state/infrastructure-provider.json`;
+- provider padrão `host-nginx`, provider isolado e adaptador Docker legado explícito;
+- virtual host atômico em `sites-available/sites-enabled`, fallback `conf.d`, TLS, health e renovação Certbot;
+- utilitário separado de migração do proxy com check, dry-run, dupla confirmação, override neutro e rollback;
+- validações automatizadas para provider, loopback, isolamento do banco, migração e preservação de terceiros.
+
+### Alterado
+
+- frontend e API do provider padrão são publicados somente em `127.0.0.1`; PostgreSQL continua sem porta no host;
+- install, update, health e uninstall resolvem o provider pelo estado persistente;
+- `legacy-docker-nginx` foi classificado como descontinuado e nunca é selecionado automaticamente.
+
+### Segurança
+
+- resolução transitiva de `brace-expansion` fixada em `1.1.17`; a auditoria local não reporta vulnerabilidades conhecidas;
+
+### Homologação
+
+- nenhuma instalação ou migração real foi executada nesta etapa;
+- `--check`, `--dry-run`, emissão/renovação TLS, troca de portas e rollback induzido permanecem pendentes na VPS;
+- esta versão alpha não está aprovada para produção.
+
 ## [0.3.3-alpha] - 2026-08-02
 
 ### Corrigido

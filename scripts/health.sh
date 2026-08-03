@@ -7,6 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/fullpassword-proxy.sh
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
+# shellcheck source=lib/proxy-config.sh
+. "$SCRIPT_DIR/lib/proxy-config.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 INTERNAL_ONLY=false
 QUIET=false
@@ -29,6 +33,8 @@ require_linux
 require_root
 load_devflow_env
 validate_runtime_paths
+provider_resolve_installed
+provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
 CONFIGURED_VERSION="${DEVFLOW_VERSION:-unknown}"
 DEVFLOW_APP_ROOT="${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}"
 [[ -r "$DEVFLOW_APP_ROOT/docker-compose.yml" ]] || die 'Release DevFlow não encontrada.'
@@ -106,7 +112,7 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
     report FAIL public_frontend 'indisponível'
   fi
   if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+    if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == legacy-docker-nginx ]]; then
       docker exec "$FULLPASSWORD_CONTAINER" nginx -t >/dev/null 2>&1 \
         && report PASS proxy 'fullpassword_nginx nginx -t' || report FAIL proxy 'fullpassword_nginx nginx -t falhou'
       docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{println}}{{end}}' "$FULLPASSWORD_CONTAINER" \
@@ -116,7 +122,9 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
         && report PASS fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN" \
         || report FAIL fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN indisponível"
     else
-      nginx -t >/dev/null 2>&1 && report PASS proxy 'nginx -t' || report FAIL proxy 'nginx -t falhou'
+      provider_health "$DEVFLOW_DOMAIN" "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}" \
+        && report PASS provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER" \
+        || report FAIL provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER"
     fi
   else
     edge_id="$("${DEVFLOW_COMPOSE[@]}" ps -q edge 2>/dev/null || true)"

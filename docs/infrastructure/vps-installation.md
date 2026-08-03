@@ -1,6 +1,16 @@
 # Instalação em VPS Linux para homologação
 
-> O DevFlow 0.3.3-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> Versão `0.4.0-alpha`: o provider padrão é `host-nginx`. Antes de instalar, use `./install.sh --check` e o dry-run com `--provider host-nginx`. Se `fullpassword_nginx` ocupar 80/443, a instalação será bloqueada; execute somente os diagnósticos descritos em [migração de proxy](proxy-migration.md). Nenhuma instalação ou migração desta versão foi homologada na VPS.
+
+```bash
+./install.sh --check
+./install.sh --dry-run --provider host-nginx --domain devflow.example.com \
+  --letsencrypt-email tls@example.com --super-admin-email admin@example.com
+sudo ./install.sh --install --provider host-nginx --domain devflow.example.com \
+  --letsencrypt-email tls@example.com --super-admin-email admin@example.com
+```
+
+> O DevFlow 0.4.0-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 ## 1. Pré-requisitos
 

@@ -1,5 +1,7 @@
 # Arquitetura de infraestrutura
 
+Desde `0.4.0-alpha`, o caminho padrão é `Internet → Nginx do host → upstreams DevFlow em loopback`. O provider é independente de qualquer aplicação e está detalhado em [Host Nginx Provider](host-nginx-provider.md). Os ramos `shared adapter` abaixo são mantidos apenas como arquitetura legada durante a transição.
+
 ## Topologias suportadas
 
 ```mermaid
@@ -18,7 +20,7 @@ flowchart LR
     B --> S[(storage)]
 ```
 
-No modo isolado, o edge pertence ao Compose DevFlow. No compartilhado por host, o Nginx mantém 80/443 e os serviços DevFlow publicam somente em loopback. No contrato aprovado do `fullpassword_nginx`, o proxy participa de `devflow_edge` por override persistente; outros Nginx containerizados e Caddy são inventariados, mas bloqueados.
+No provider padrão, o Nginx do host mantém 80/443 e os serviços DevFlow publicam somente em loopback. No isolado, o edge pertence ao Compose DevFlow. O ramo `fullpassword_nginx` existe somente para compatibilidade/rollback e não é escolhido automaticamente.
 
 ## Serviços
 

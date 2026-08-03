@@ -1,5 +1,7 @@
 # Primeiro deployment de homologação
 
+> Em `0.4.0-alpha`, selecione `host-nginx` (padrão). O bootstrap apresenta primeiro o Nginx central no host; `isolated-nginx` é apenas para VPS exclusiva. A detecção de `fullpassword_nginx` não autoriza integração: o instalador interrompe e exige a [migração separada](../infrastructure/proxy-migration.md).
+
 ## Gate antes da VPS
 
 - repositório público `trinityrrocha/DevFlow` e bootstrap baixado por HTTPS;
@@ -29,7 +31,7 @@ sudo ./install.sh --install \
   --super-admin-email admin@exemplo.com
 ```
 
-Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.3.3-alpha`.
+Alternativamente, `sudo ./install.sh` coleta os dados interativamente. Antes de executar, revise o arquivo baixado. O bootstrap valida que a cópia clonada pertence a `trinityrrocha/DevFlow`, que `main` corresponde ao commit remoto e que `VERSION` contém `0.4.0-alpha`.
 
 Para Nginx do host, substitua por `--proxy-mode shared` e confirme as portas loopback planejadas. O instalador pedirá autorização separada para o diagnóstico read-only. Só prossiga se o resultado for `Integração automática compatível.`
 
@@ -51,7 +53,7 @@ sudo /opt/devflow/app/scripts/backup.sh
 Verifique:
 
 - todos os serviços necessários estão `healthy`;
-- `/api/health` informa `0.3.3-alpha` e migration `001_initial_schema.sql`;
+- `/api/health` informa `0.4.0-alpha` e migration `001_initial_schema.sql`;
 - em coexistência, `health.sh` confirma `nginx -t`, `dev.sti1.com.br`, `pw.sti1.com.br` e ausência do PostgreSQL na rede de borda;
 - o certificado corresponde ao domínio;
 - o Super Admin troca a senha e configura MFA;

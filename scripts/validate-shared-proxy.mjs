@@ -13,12 +13,11 @@ const compose = read('docker-compose.yml');
 const acmeProxy = read('docker/nginx/host-acme.conf.template');
 
 for (const fragment of [
-  'Instalação independente, recomendada para servidor limpo',
-  'containers próprios;',
-  'volumes próprios;',
-  'banco próprio;',
-  'Nenhuma configuração existente será sobrescrita.',
-  'Escolha [1/2]:',
+  'Nginx no host',
+  'Recomendado',
+  'containers, redes, volumes e banco',
+  'Proxy isolado',
+  'Escolha [1/2]',
 ]) {
   if (!bootstrap.includes(fragment)) throw new Error(`Descrição de modo ausente: ${fragment}`);
 }
@@ -80,7 +79,7 @@ if (!diagnostic.includes('trap cleanup_diagnostic_temps EXIT') || !diagnostic.in
 if (!proxyConfig.includes('proxy_restore_transaction') || !proxyConfig.includes('systemctl reload nginx')) {
   throw new Error('Rollback atômico do proxy não está implementado.');
 }
-if (!uninstall.includes('remove_host_nginx_config')) {
+if (!uninstall.includes('provider_uninstall')) {
   throw new Error('Desinstalação não remove exclusivamente a rota DevFlow.');
 }
 if (!compose.includes('devflow_edge:') || !compose.includes('internal: true')) {

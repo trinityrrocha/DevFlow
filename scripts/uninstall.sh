@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/proxy-config.sh"
 # shellcheck source=lib/fullpassword-proxy.sh
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 MODE=
 ASSUME_YES=false
@@ -34,6 +36,8 @@ validate_safe_absolute_path "$DEVFLOW_INSTALL_ROOT" 'Diretório de instalação'
 [[ -r "$DEVFLOW_ENV_FILE" ]] || die 'Configuração DevFlow não encontrada; nenhuma remoção foi realizada.'
 load_devflow_env
 validate_runtime_paths
+provider_resolve_installed
+provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"
 [[ -e "$DEVFLOW_APP_ROOT/docker-compose.yml" ]] || die 'Compose instalado não encontrado.'
 compose_files
@@ -49,8 +53,9 @@ if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
     || die 'Rota DevFlow do proxy compartilhado ausente ou não reconhecida.'
 fi
 
-if [[ -f /etc/nginx/conf.d/devflow.conf ]]; then
-  [[ "$(head -n1 /etc/nginx/conf.d/devflow.conf)" == '# Managed by DevFlow installer. Do not merge with another application.' ]] \
+if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx ]]; then
+  host_nginx_select_layout
+  managed_file "$HOST_NGINX_AVAILABLE" "$HOST_NGINX_MARKER" \
     || die 'Configuração Nginx não reconhecida; nenhuma remoção foi iniciada.'
 fi
 for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer; do
@@ -68,10 +73,14 @@ if [[ "$MODE" == keep-data ]]; then
 else
   echo 'ATENÇÃO: serão removidos exatamente:'
   purge_targets=("$DEVFLOW_INSTALL_ROOT" /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer)
-  if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
+  if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == legacy-docker-nginx ]]; then
     purge_targets+=("$FULLPASSWORD_OVERRIDE_FILE" "$DEVFLOW_PROXY_CONFIG")
+  elif [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx ]]; then
+    host_nginx_select_layout
+    purge_targets+=("$HOST_NGINX_AVAILABLE")
+    [[ "$HOST_NGINX_ENABLED" == "$HOST_NGINX_AVAILABLE" ]] || purge_targets+=("$HOST_NGINX_ENABLED")
   else
-    purge_targets+=(/etc/nginx/conf.d/devflow.conf)
+    purge_targets+=('provider isolated-nginx: nenhum arquivo Nginx no host')
   fi
   printf '  %s\n' "${purge_targets[@]}"
   latest_backup="$(find "$DEVFLOW_INSTALL_ROOT/backups" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -size +0c -print -quit 2>/dev/null || true)"
@@ -83,13 +92,7 @@ else
   "${DEVFLOW_COMPOSE[@]}" down --volumes --remove-orphans
 fi
 
-if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == fullpassword-nginx ]]; then
-  uninstall_fullpassword_proxy_adapter
-else
-  remove_host_nginx_config /etc/nginx/conf.d/devflow.conf \
-    '# Managed by DevFlow installer. Do not merge with another application.' \
-    "$DEVFLOW_INSTALL_ROOT/backups/proxy"
-fi
+provider_uninstall
 remove_devflow_edge_network_if_unused || log WARN 'A rede devflow_edge foi preservada porque ainda está em uso ou sua propriedade não foi comprovada.'
 
 if [[ "$REMOVE_DEVFLOW_CERTIFICATE" == true ]]; then
