@@ -43,9 +43,12 @@ for (const [label, fragment] of [
   ['referência dinâmica', '--ref'],
   ['limpeza', 'trap cleanup EXIT'],
   ['instalador interno', 'scripts/install.sh'],
-  ['confirmação', 'Deseja iniciar a instalação? [s/N]'],
 ]) {
   if (!bootstrap.includes(fragment)) throw new Error(`Gate ausente no bootstrap: ${label}.`);
+}
+if (bootstrap.includes('DEVFLOW_BOOTSTRAP_CONFIRMED')
+  || !install.includes('require_numeric_confirmation initial-installation')) {
+  throw new Error('Bootstrap não delega a confirmação numérica ao instalador validado.');
 }
 if (/EXPECTED_VERSION=['"][0-9]/.test(bootstrap) || bootstrap.includes('RAW_VERSION_URL')) {
   throw new Error('Bootstrap público ainda contém versão fixa ou leitura remota não validada.');
@@ -145,13 +148,13 @@ const updaterGates = [
   ['backup', 'backup.sh'],
   ['verificação do backup', 'verify-backup.sh'],
   ['manutenção', 'enter_maintenance'],
-  ['migration', 'scripts/migrate.js'],
+  ['migration', 'run_devflow_migrations'],
   ['health interno', 'health.sh" --internal'],
   ['health público', 'health.sh"'],
   ['rollback', 'rollback_update'],
   ['restauração', 'restore.sh'],
   ['log', 'UPDATE_LOG'],
-  ['confirmação', "confirm_exact 'ATUALIZAR DEVFLOW'"],
+  ['confirmação', 'require_numeric_confirmation application-update'],
   ['estado de versão', 'write_version_state "$NEW_SHA"'],
 ];
 for (const [label, fragment] of updaterGates) {
@@ -166,7 +169,7 @@ const rollbackArm = update.lastIndexOf('ROLLBACK_ARMED=true');
 const sourceAdvance = update.indexOf('git -C "$SOURCE_DIR" merge --ff-only');
 const maintenance = update.lastIndexOf('enter_maintenance "$CANDIDATE_DIR"');
 const servicesStop = update.indexOf('stop backend frontend', maintenance);
-const migration = update.indexOf('scripts/migrate.js', servicesStop);
+const migration = update.indexOf('run_devflow_migrations', servicesStop);
 if (!(backupGate < candidateGate && candidateGate < rollbackArm && rollbackArm < sourceAdvance)) {
   throw new Error('Ordem dos gates backup/release/rollback/source está insegura.');
 }

@@ -338,11 +338,77 @@ derive_legacy_proxy_settings() {
   export DEVFLOW_INFRASTRUCTURE_PROVIDER="$provider" DEVFLOW_PROXY_MODE DEVFLOW_SHARED_PROXY_ADAPTER
 }
 
-confirm_exact() {
-  local expected="$1" prompt="$2" answer
-  [[ "${DEVFLOW_ASSUME_YES:-false}" != true ]] || return 0
-  read -r -p "$prompt Digite '$expected': " answer
-  [[ "$answer" == "$expected" ]] || die 'Confirmação não recebida; nenhuma alteração foi aplicada.'
+is_interactive_terminal() { [[ -t 0 && -t 1 ]]; }
+
+prompt_numeric_confirmation() {
+  local prompt_id="$1" heading="$2" primary_action="$3" cancel_action="${4:-CANCELAR}"
+  local choice read_status
+
+  if ! is_interactive_terminal; then
+    [[ -z "${OUTPUT_EMITTED+x}" ]] || OUTPUT_EMITTED=true
+    printf '%s\n' \
+      'interactive_confirmation_required=true' \
+      'operation_cancelled=true' \
+      'changes_applied=false'
+    return 11
+  fi
+
+  while true; do
+    printf '\n%s\n\n1 - %s\n2 - %s\n\n' "$heading" "$primary_action" "$cancel_action"
+    printf 'Escolha [1/2]: '
+    read_status=0
+    IFS= read -r choice || read_status=$?
+    if [[ "$read_status" -ge 128 ]]; then
+      return 130
+    elif [[ "$read_status" -ne 0 ]]; then
+      return 10
+    fi
+    case "$choice" in
+      1|2)
+        log INFO "confirmation_prompt=$prompt_id confirmation_choice=$choice"
+        [[ "$choice" == 1 ]] && return 0
+        return 10
+        ;;
+      *) printf '%s\n' 'Opção inválida. Escolha 1 ou 2.' ;;
+    esac
+  done
+}
+
+require_numeric_confirmation() {
+  local status=0
+  prompt_numeric_confirmation "$@" || status=$?
+  case "$status" in
+    0) return 0 ;;
+    10|130)
+      printf '%s\n' \
+        'Operação cancelada pelo usuário.' \
+        'Nenhuma alteração foi aplicada.'
+      exit 0
+      ;;
+    11) exit 11 ;;
+    *) die "Falha interna ao processar confirmação numérica (código $status)." ;;
+  esac
+}
+
+validate_backend_migration_image() {
+  local status=0
+  "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --entrypoint sh backend -c \
+    'test -d /database/migrations && test -f /database/migrations/001_initial_schema.sql' \
+    >/dev/null 2>&1 || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    printf '%s\n' 'migration_directory_present=true' 'initial_migration_present=true'
+    return 0
+  fi
+  printf '%s\n' 'migration_directory_present=false' 'initial_migration_present=false'
+  return "$status"
+}
+
+run_devflow_migrations() {
+  local migration_exit_code=0
+  "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps backend node scripts/migrate.js \
+    || migration_exit_code=$?
+  log INFO "migration_exit_code=$migration_exit_code"
+  return "$migration_exit_code"
 }
 
 redact_stream() {

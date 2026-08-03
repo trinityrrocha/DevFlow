@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.6-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O Compose runtime usa explicitamente `/opt/devflow/config/devflow.env`; a retomada real ainda deve ser homologada na VPS.
+> Versão `0.4.7-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O Compose runtime usa explicitamente `/opt/devflow/config/devflow.env`; a retomada real ainda deve ser homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.6-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.7-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -87,6 +87,31 @@ sudo ./install.sh --resume \
   --super-admin-email contato@sti1.com.br
 ```
 
+Para a tentativa interrompida em `09-run-migrations`, o dry-run esperado inclui:
+
+```text
+database_container_ready=true
+database_healthy=true
+migrations_ready=false
+backend_build_required=true
+frontend_build_required=false
+resume_from_stage=09-run-migrations
+can_resume=true
+```
+
+O `--resume` exibe o menu numérico abaixo e não aceita frases livres:
+
+```text
+Instalação incompleta encontrada.
+
+1 - RETOMAR INSTALAÇÃO DO DEVFLOW
+2 - CANCELAR
+
+Escolha [1/2]:
+```
+
+Após a escolha `1`, a imagem do backend precisa comprovar `/database/migrations/001_initial_schema.sql`; o PostgreSQL saudável e seu volume são preservados. Não execute `publish.sh` nem a migração de proxy neste ensaio.
+
 Antes do dry-run, o diagnóstico sanitizado pode confirmar imports, argumentos e dependências sem abrir o `.env`:
 
 ```bash
@@ -159,7 +184,7 @@ sudo ./install.sh --install \
   --super-admin-email admin@exemplo.com
 ```
 
-Após a confirmação literal, o instalador:
+Após a confirmação numérica, o instalador:
 
 1. instala Docker/Compose pelo repositório oficial apenas se ausentes;
 2. instala Certbot se necessário;

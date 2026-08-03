@@ -22,7 +22,7 @@ for (const fragment of [
   if (!bootstrap.includes(fragment)) throw new Error(`Descrição de modo ausente: ${fragment}`);
 }
 for (const fragment of [
-  'Deseja executar o diagnóstico? [s/N]',
+  'require_numeric_confirmation shared-proxy-diagnostic',
   'detect-shared-proxy.sh',
   'Integração automática não comprovada.',
   '/opt/devflow/logs/shared-proxy-diagnostic.log',

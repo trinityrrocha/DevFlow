@@ -54,10 +54,11 @@ check('provider recognized by health', health.includes('provider_resolve_install
 check('provider recognized by uninstall', uninstall.includes('provider_resolve_installed') && uninstall.includes('provider_uninstall'));
 check('uninstall never removes global nginx', !/apt-get remove[^\n]*nginx|systemctl disable[^\n]*nginx/.test(uninstall + host));
 check('migration modes', ['--check', '--dry-run', '--migrate', '--rollback'].every((v) => migration.includes(v)));
-check('migration diagnostics exit before infrastructure writes', migration.indexOf('if [[ "$MODE" == check || "$MODE" == dry-run ]]') < migration.indexOf("confirm_exact 'SNAPSHOT CONFIRMADO'"));
+check('migration diagnostics exit before infrastructure writes', migration.indexOf('if [[ "$MODE" == check || "$MODE" == dry-run ]]') < migration.indexOf('require_numeric_confirmation proxy-snapshot'));
 check('migration uses neutral override', migration.includes('/etc/devflow/proxy-migrations') && migrationOverride.includes('127.0.0.1:18081:80'));
 check('migration preserves Full Password source', !/rm -rf -- "?\$FULLPASSWORD_ROOT|> "?\$FULLPASSWORD_COMPOSE_FILE/.test(migration));
-check('migration reinforced confirmation', migration.includes("confirm_exact 'SNAPSHOT CONFIRMADO'") && migration.includes("confirm_exact 'MIGRAR PROXY PUBLICO'"));
+check('migration reinforced confirmation', migration.includes('require_numeric_confirmation proxy-snapshot')
+  && migration.includes('require_numeric_confirmation proxy-migration'));
 check('migration rollback', migration.includes('rollback_transaction') && migration.includes('original_public_mappings_present'));
 check('migration failure trap', migration.includes('trap on_failure ERR'));
 check('migration checks Full Password health', migration.includes('https://$FULLPASSWORD_DOMAIN/'));

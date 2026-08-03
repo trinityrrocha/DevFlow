@@ -99,6 +99,23 @@ determine_resume_stage() {
   [[ "$PARTIAL_INSTALLATION_DETECTED" == true ]] || return 0
   if [[ "$CONFIGURATION_READY" != true ]]; then
     RESUME_FROM_STAGE=04-configuration
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$DATABASE_HEALTHY" != true ]]; then
+    RESUME_FROM_STAGE=08-start-database
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$DATABASE_HEALTHY" == true \
+    && "$MIGRATIONS_READY" != true ]]; then
+    RESUME_FROM_STAGE=09-run-migrations
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$MIGRATIONS_READY" == true \
+    && "$BACKEND_READY" != true ]]; then
+    RESUME_FROM_STAGE=10-start-backend
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$MIGRATIONS_READY" == true \
+    && "$FRONTEND_READY" != true ]]; then
+    RESUME_FROM_STAGE=11-start-frontend
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$MIGRATIONS_READY" == true \
+    && "$SUPER_ADMIN_READY" != true ]]; then
+    RESUME_FROM_STAGE=12-bootstrap-super-admin
+  elif [[ "$DATABASE_CONTAINER_READY" == true && "$MIGRATIONS_READY" == true \
+    && "$INSTALLATION_STATE_READY" != true ]]; then
+    RESUME_FROM_STAGE=14-write-final-state
   elif [[ "$BACKEND_BUILD_REQUIRED" == true || "$FRONTEND_BUILD_REQUIRED" == true \
     || "$POSTGRES_PULL_REQUIRED" == true ]]; then
     RESUME_FROM_STAGE=05-build-images
@@ -106,18 +123,6 @@ determine_resume_stage() {
     RESUME_FROM_STAGE=06-validate-images
   elif [[ "$DATABASE_CONTAINER_READY" != true ]]; then
     RESUME_FROM_STAGE=07-create-networks
-  elif [[ "$DATABASE_HEALTHY" != true ]]; then
-    RESUME_FROM_STAGE=08-start-database
-  elif [[ "$MIGRATIONS_READY" != true ]]; then
-    RESUME_FROM_STAGE=09-run-migrations
-  elif [[ "$BACKEND_READY" != true ]]; then
-    RESUME_FROM_STAGE=10-start-backend
-  elif [[ "$FRONTEND_READY" != true ]]; then
-    RESUME_FROM_STAGE=11-start-frontend
-  elif [[ "$SUPER_ADMIN_READY" != true ]]; then
-    RESUME_FROM_STAGE=12-bootstrap-super-admin
-  elif [[ "$INSTALLATION_STATE_READY" != true ]]; then
-    RESUME_FROM_STAGE=14-write-final-state
   fi
   return 0
 }

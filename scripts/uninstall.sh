@@ -13,13 +13,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/providers/provider-contract.sh"
 
 MODE=
-ASSUME_YES=false
 REMOVE_DEVFLOW_CERTIFICATE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --keep-data) MODE=keep-data; shift ;;
     --purge) MODE=purge; shift ;;
-    --yes) ASSUME_YES=true; shift ;;
     --remove-devflow-certificate) REMOVE_DEVFLOW_CERTIFICATE=true; shift ;;
     --help|-h)
       echo 'Uso: sudo scripts/uninstall.sh --keep-data | --purge [--remove-devflow-certificate]'
@@ -67,8 +65,9 @@ done
 
 if [[ "$MODE" == keep-data ]]; then
   echo 'Serão preservados: banco, storage, configuração privada, backups e releases.'
-  DEVFLOW_ASSUME_YES="$ASSUME_YES"
-  confirm_exact 'REMOVER APLICACAO' 'Confirma a remoção dos serviços DevFlow?'
+  require_numeric_confirmation uninstall-keep-data \
+    'A remoção dos serviços DevFlow está pronta; os dados serão preservados.' \
+    'REMOVER SERVIÇOS DEVFLOW'
   "${DEVFLOW_COMPOSE[@]}" down --remove-orphans
 else
   echo 'ATENÇÃO: serão removidos exatamente:'
@@ -86,9 +85,12 @@ else
   latest_backup="$(find "$DEVFLOW_INSTALL_ROOT/backups" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -size +0c -print -quit 2>/dev/null || true)"
   [[ -n "$latest_backup" ]] || die 'Nenhum backup DevFlow válido foi encontrado. Execute scripts/backup.sh antes do purge.'
   echo 'Copie o backup para outro host antes de prosseguir; o diretório local de backups também será removido.'
-  DEVFLOW_ASSUME_YES=false
-  confirm_exact 'PURGE DEVFLOW' 'Primeira confirmação destrutiva.'
-  confirm_exact "$(hostname)" 'Segunda confirmação: confirme o hostname alvo.'
+  require_numeric_confirmation uninstall-purge-first \
+    'A remoção definitiva dos dados DevFlow foi solicitada.' \
+    'CONTINUAR PARA A CONFIRMAÇÃO FINAL'
+  require_numeric_confirmation uninstall-purge-final \
+    "Confirmação final para remover os dados DevFlow no host $(hostname)." \
+    'REMOVER DEFINITIVAMENTE OS DADOS DEVFLOW'
   "${DEVFLOW_COMPOSE[@]}" down --volumes --remove-orphans
 fi
 
@@ -96,8 +98,9 @@ provider_uninstall
 remove_devflow_edge_network_if_unused || log WARN 'A rede devflow_edge foi preservada porque ainda está em uso ou sua propriedade não foi comprovada.'
 
 if [[ "$REMOVE_DEVFLOW_CERTIFICATE" == true ]]; then
-  DEVFLOW_ASSUME_YES=false
-  confirm_exact 'REMOVER CERTIFICADO DEVFLOW' "Confirma remover somente o certificado de $DEVFLOW_DOMAIN?"
+  require_numeric_confirmation uninstall-certificate \
+    "A remoção do certificado exclusivo de $DEVFLOW_DOMAIN foi solicitada." \
+    'REMOVER CERTIFICADO DEVFLOW'
   certbot delete --cert-name "$DEVFLOW_DOMAIN" --non-interactive
 fi
 

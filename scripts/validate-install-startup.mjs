@@ -44,7 +44,7 @@ const createInstrumentedInstaller = (name, { failingImport = false } = {}) => {
   mkdirSync(resolve(fixtureRoot, 'scripts'), { recursive: true });
   cpSync(resolve(root, 'scripts/lib'), resolve(fixtureRoot, 'scripts/lib'), { recursive: true });
   cpSync(resolve(root, 'scripts/providers'), resolve(fixtureRoot, 'scripts/providers'), { recursive: true });
-  writeFileSync(resolve(fixtureRoot, 'VERSION'), '0.4.6-alpha\n');
+  writeFileSync(resolve(fixtureRoot, 'VERSION'), '0.4.7-alpha\n');
   let source = install.replace(
     'STARTUP_STAGE=04-platform\nrequire_linux',
     "STARTUP_STAGE=04-platform\nbootstrap_emit ERROR 'fixture-stop'; exit 97\nrequire_linux",

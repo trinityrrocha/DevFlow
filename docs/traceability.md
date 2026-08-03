@@ -1,5 +1,16 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.7-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Diretório de migrations | `ENV` no Dockerfile e `environment` no Compose | `/database/migrations` também em `compose run` |
+| Imagem íntegra | `validate_backend_migration_image` | diretório e `001_initial_schema.sql` antes do schema |
+| Comando único | `run_devflow_migrations` | install/resume/update registram `migration_exit_code` |
+| Retomada da etapa 09 | `determine_resume_stage` | banco saudável preservado, backend rebuild, frontend comprovado reutilizado |
+| Confirmações | `prompt_numeric_confirmation` | somente opções numéricas, repetição, TTY e cancelamento controlado |
+| Regressões | `validate-migrations.mjs` e `validate-interactive-menus.mjs` | 20 + 16 cenários |
+
 ## Instalação interna `0.4.6-alpha`
 
 | Requisito | Implementação | Evidência |
@@ -19,7 +30,7 @@
 | Logger inicial | arquivo 0600 sob `/tmp` e promoção controlada | `--diagnose-startup` e teste de import falível |
 | Booleanos sob `set -e` | `if install_transaction_has_stage` e retorno explícito | regressão do retorno `1` anterior |
 | Legado sem transação | `install-startup.sh` | reconstrução planejada no dry-run e atômica após confirmação |
-| Confirmação de resume | `RETOMAR DEVFLOW` | nenhuma mutação anterior à confirmação |
+| Confirmação de resume | menu numérico de retomada | nenhuma mutação anterior à confirmação |
 | Clone read-only | `GIT_OPTIONAL_LOCKS=0` e assinatura do index | `source_clone_preserved=true` |
 | Testes | `validate-install-startup.mjs` | 26 cenários automatizados |
 

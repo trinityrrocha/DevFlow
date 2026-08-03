@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.6-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.7-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -37,12 +37,12 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mails e proxy, cria um diretório temporário seguro, clona e valida a `main`, detecta dinamicamente o SemVer consistente do checkout, confere o commit remoto e somente então exige confirmação para chamar `scripts/install.sh`. Não existe versão alpha fixa no bootstrap.
+O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mails e proxy, cria um diretório temporário seguro, clona e valida a `main`, detecta dinamicamente o SemVer consistente do checkout, confere o commit remoto e delega a confirmação numérica ao `scripts/install.sh` validado. Não existe versão alpha fixa no bootstrap.
 
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.6-alpha
+./install.sh --check --ref main --expected-version 0.4.7-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -87,7 +87,16 @@ sudo ./install.sh --resume \
 
 A retomada aceita somente checkout canônico, limpo e compatível por fast-forward. Imagens são resolvidas pelo Compose e verificadas com `docker image inspect`; uma imagem só é reutilizada sem build quando seus rótulos de versão e commit correspondem à release.
 
-O Compose runtime recebe sempre `--env-file /opt/devflow/config/devflow.env`. O dry-run informa apenas presença, permissões e nomes de chaves obrigatórias. Se uma configuração parcial estiver incompleta e não existir banco, volume ou migration, `--resume` pode preservá-la e regenerá-la somente após a confirmação literal `REGERAR CONFIGURAÇÃO DEVFLOW`. Com qualquer evidência de dados, a recuperação automática é bloqueada.
+O Compose runtime recebe sempre `--env-file /opt/devflow/config/devflow.env`. O dry-run informa apenas presença, permissões e nomes de chaves obrigatórias. Se uma configuração parcial estiver incompleta e não existir banco, volume ou migration, `--resume` pode preservá-la e regenerá-la após a escolha `1` no menu numérico. Com qualquer evidência de dados, a recuperação automática é bloqueada.
+
+O backend usa permanentemente `MIGRATIONS_DIR=/database/migrations`. O comando operacional único é:
+
+```bash
+docker compose --env-file /opt/devflow/config/devflow.env \
+  run --rm --no-deps backend node scripts/migrate.js
+```
+
+Use-o somente por meio dos scripts operacionais, que validam a imagem e registram o código de saída.
 
 Para investigar somente a inicialização, sem exibir valores de configuração ou aplicar mudanças:
 

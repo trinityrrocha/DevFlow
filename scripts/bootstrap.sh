@@ -256,10 +256,6 @@ Resumo da instalação pública:
   e-mail TLS: $LETSENCRYPT_EMAIL
   Super Admin: $SUPER_ADMIN_EMAIL
 EOF
-  [[ -t 0 ]] || die 'A instalação exige confirmação em um terminal interativo.'
-  read -r -p 'Deseja iniciar a instalação? [s/N] ' confirmation
-  [[ "$confirmation" == s || "$confirmation" == S ]] \
-    || die 'Instalação cancelada sem alterações permanentes.'
 fi
 
 INSTALL_ARGS=("--$MODE")
@@ -272,10 +268,5 @@ if [[ "$MODE" != check ]]; then
   fi
 fi
 
-if [[ "$MODE" == install || "$MODE" == resume ]]; then
-  DEVFLOW_BOOTSTRAP_CONFIRMED=true DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" \
-    "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
-else
-  DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
-fi
+DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
 log "Bootstrap concluído no modo $MODE; versão=$DETECTED_VERSION commit=$COMMIT; temporários serão removidos."

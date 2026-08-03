@@ -31,7 +31,7 @@ Uso:
 
 --check  consulta versão e changelog, sem backup ou alterações
 
-Sem argumentos, exibe o plano e exige a confirmação literal ATUALIZAR DEVFLOW.
+Sem argumentos, exibe o plano e exige a escolha numérica explícita ATUALIZAR DEVFLOW.
 EOF
       exit 0
       ;;
@@ -191,8 +191,9 @@ Plano de atualização:
 
 Log sanitizado: $UPDATE_LOG
 EOF
-DEVFLOW_ASSUME_YES=false
-confirm_exact 'ATUALIZAR DEVFLOW' "Confirma a atualização de $OLD_VERSION para $NEW_VERSION?"
+require_numeric_confirmation application-update \
+  "A atualização do DevFlow de $OLD_VERSION para $NEW_VERSION está pronta." \
+  'ATUALIZAR DEVFLOW'
 
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 NGINX_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
@@ -469,6 +470,8 @@ export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 "${DEVFLOW_COMPOSE[@]}" build backend frontend
+validate_backend_migration_image \
+  || die 'A imagem candidata do backend não contém as migrations esperadas.'
 
 UPDATE_PHASE=maintenance
 enter_maintenance "$CANDIDATE_DIR"
@@ -478,7 +481,7 @@ set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" stop backend frontend
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-"${DEVFLOW_COMPOSE[@]}" run --rm --no-deps backend node scripts/migrate.js
+run_devflow_migrations
 DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration após atualização.'

@@ -37,7 +37,7 @@ Depois, execute a atualização interativa:
 sudo /opt/devflow/app/scripts/update.sh
 ```
 
-O operador precisa digitar `ATUALIZAR DEVFLOW`. O fluxo mantém um lock exclusivo e:
+O operador escolhe `1 - ATUALIZAR DEVFLOW` no menu numérico. Sem TTY, o updater interrompe antes de qualquer alteração. O fluxo mantém um lock exclusivo e:
 
 1. valida SO, recursos, Docker, Compose, configuração, proxy e propriedade do checkout;
 2. consulta `origin/main`, mostra versões, commits e a seção correspondente do `CHANGELOG.md`;
@@ -51,6 +51,15 @@ O operador precisa digitar `ATUALIZAR DEVFLOW`. O fluxo mantém um lock exclusiv
 10. recria somente backend e frontend DevFlow e executa health checks internos;
 11. promove o link `/opt/devflow/app`, restaura o proxy e executa health checks públicos;
 12. atualiza o timer de backup e grava o relatório final.
+
+Install, resume e update executam migrations exclusivamente pelo contrato comum equivalente a:
+
+```bash
+docker compose --env-file /opt/devflow/config/devflow.env \
+  run --rm --no-deps backend node scripts/migrate.js
+```
+
+O restore não inventa um segundo executor de migrations: durante rollback, a release anterior volta a ser a fonte do mesmo contrato operacional.
 
 Nenhuma etapa executa force pull, prune global, remoção de volumes ou restart de aplicação vizinha.
 

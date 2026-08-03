@@ -112,8 +112,9 @@ EOF
   exit 0
 }
 
-DEVFLOW_ASSUME_YES=false
-confirm_exact 'PUBLICAR DEVFLOW' "Autoriza publicar https://$DOMAIN?"
+require_numeric_confirmation external-publication \
+  "A publicação externa do DevFlow em https://$DOMAIN está pronta." \
+  'PUBLICAR DEVFLOW'
 exec 9>/run/lock/devflow-publish.lock
 flock -n 9 || die 'Outra publicação DevFlow está em andamento.'
 install -d -m 0750 "$DEVFLOW_LOG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_CONFIG_ROOT/nginx" \

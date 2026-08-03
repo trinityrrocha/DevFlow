@@ -120,6 +120,15 @@ resolve_compose_image_or_die() {
   printf -v "$target_name" '%s' "$image"
 }
 
+frontend_image_reusable_from_failed_migration() {
+  [[ "$RESUME_REQUESTED" == true && "$RESUME_TRANSACTION_VALID" == true \
+    && "$INSTALL_TRANSACTION_FAILED_STAGE" == 09-run-migrations \
+    && "$PARTIAL_INSTALLATION_VERSION" != unknown \
+    && "$PARTIAL_INSTALLATION_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 1
+  compose_image_matches_release "$FRONTEND_IMAGE_RESOLVED" \
+    "$PARTIAL_INSTALLATION_COMMIT" "$PARTIAL_INSTALLATION_VERSION"
+}
+
 STARTUP_STAGE=03-parse-arguments
 
 MODE=check
@@ -560,19 +569,24 @@ O DevFlow pode ser instalado internamente sem alterar esse proxy.
 Opções:
 
   1 - Instalar internamente para homologação
-  2 - Cancelar
-  3 - Exibir instruções da futura migração de proxy
+  2 - Exibir instruções da futura migração de proxy
+  3 - Cancelar
 EOF
-      read -r -p 'Escolha [1/2/3]: ' scope_choice
-      case "$scope_choice" in
-        1) INSTALL_SCOPE=internal; DEVFLOW_PROVIDER_STATUS=planned-internal-only ;;
-        2) die 'Instalação cancelada sem alterações.' ;;
-        3)
-          printf '%s\n' 'Execute somente: sudo ./scripts/migrate-proxy-to-host-nginx.sh --check'
-          exit 0
-          ;;
-        *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
-      esac
+      while true; do
+        read -r -p 'Escolha [1/2/3]: ' scope_choice
+        case "$scope_choice" in
+          1) INSTALL_SCOPE=internal; DEVFLOW_PROVIDER_STATUS=planned-internal-only; break ;;
+          2)
+            printf '%s\n' 'Execute somente: sudo ./scripts/migrate-proxy-to-host-nginx.sh --check'
+            exit 0
+            ;;
+          3)
+            printf '%s\n' 'Operação cancelada pelo usuário.' 'Nenhuma alteração foi aplicada.'
+            exit 0
+            ;;
+          *) printf '%s\n' 'Opção inválida. Escolha 1, 2 ou 3.' ;;
+        esac
+      done
     fi
   elif [[ "$provider_status" -eq 3 && "$MODE" == dry-run ]]; then
     cat <<EOF
@@ -616,16 +630,21 @@ Opções:
   2 - Reexecutar somente as validações
   3 - Cancelar
 EOF
-    read -r -p 'Escolha [1/2/3]: ' resume_choice
-    case "$resume_choice" in
-      1) RESUME_REQUESTED=true ;;
-      2)
-        printf '%s\n' 'Execute: sudo ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL'
-        exit 0
-        ;;
-      3) die 'Retomada cancelada sem alterações.' ;;
-      *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
-    esac
+    while true; do
+      read -r -p 'Escolha [1/2/3]: ' resume_choice
+      case "$resume_choice" in
+        1) RESUME_REQUESTED=true; break ;;
+        2)
+          printf '%s\n' 'Execute: sudo ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL'
+          exit 0
+          ;;
+        3)
+          printf '%s\n' 'Operação cancelada pelo usuário.' 'Nenhuma alteração foi aplicada.'
+          exit 0
+          ;;
+        *) printf '%s\n' 'Opção inválida. Escolha 1, 2 ou 3.' ;;
+      esac
+    done
   fi
 elif [[ "$RESUME_REQUESTED" == true ]]; then
   die 'Nenhuma instalação incompleta compatível foi encontrada para retomada.'
@@ -725,8 +744,10 @@ if [[ "$MODE" != check ]]; then
             FRONTEND_IMAGE_EXPECTED="$expected"; FRONTEND_IMAGE_RESOLVED="$resolved"
             if docker image inspect "$resolved" >/dev/null 2>&1; then
               FRONTEND_IMAGE_PRESENT=true
-              compose_image_matches_release "$resolved" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
-                && FRONTEND_BUILD_REQUIRED=false
+              if compose_image_matches_release "$resolved" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
+                || frontend_image_reusable_from_failed_migration; then
+                FRONTEND_BUILD_REQUIRED=false
+              fi
             fi
             ;;
           db)
@@ -761,7 +782,7 @@ run_shared_proxy_diagnostic() {
     --api-port "$API_PORT"
     --operation-mode "$MODE"
   )
-  local diagnostic_status=0 report=/opt/devflow/logs/shared-proxy-diagnostic.log answer
+  local diagnostic_status=0 report=/opt/devflow/logs/shared-proxy-diagnostic.log
   [[ -z "$shared_proxy_container" ]] || diagnostic_args+=(--container "$shared_proxy_container")
 
   cat <<'EOF'
@@ -771,9 +792,9 @@ Nenhum container, arquivo, certificado ou serviço será alterado
 até que uma integração persistente e reversível seja comprovada.
 EOF
   if [[ "$MODE" == install ]]; then
-    [[ -t 0 ]] || die 'O diagnóstico compartilhado exige confirmação em terminal interativo.'
-    read -r -p 'Deseja executar o diagnóstico? [s/N] ' answer
-    [[ "$answer" == s || "$answer" == S ]] || die 'Diagnóstico cancelado. Nenhuma alteração foi realizada.'
+    require_numeric_confirmation shared-proxy-diagnostic \
+      'O diagnóstico somente leitura do proxy está pronto.' \
+      'EXECUTAR DIAGNÓSTICO'
     require_root
     diagnostic_args+=(--output "$report")
   fi
@@ -1128,22 +1149,10 @@ if [[ "$RESUME_REQUESTED" == true ]]; then
   if [[ "$PARTIAL_CONFIGURATION_INVALID" == true ]]; then
     [[ "$CONFIGURATION_RECOVERY_AVAILABLE" == true ]] \
       || die 'A configuração parcial inválida não pode ser recuperada automaticamente.'
-    [[ -t 0 ]] || die 'A recuperação da configuração exige terminal interativo e confirmação explícita.'
-    cat <<'EOF'
-Configuração parcial inválida detectada.
-Uma ou mais chaves privadas obrigatórias estão ausentes ou vazias.
-Nenhum container PostgreSQL, volume persistente ou migration foi encontrado.
-
-Opções:
-  1 - Preservar a configuração anterior, regenerar a configuração privada e continuar
-  2 - Cancelar
-EOF
-    read -r -p 'Escolha [1/2]: ' configuration_choice
-    case "$configuration_choice" in
-      1) REGENERATE_CONFIGURATION_REQUESTED=true ;;
-      2) die 'Recuperação cancelada sem alterações.' ;;
-      *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
-    esac
+    require_numeric_confirmation configuration-recovery \
+      'Configuração parcial inválida detectada.' \
+      'REGERAR CONFIGURAÇÃO DEVFLOW'
+    REGENERATE_CONFIGURATION_REQUESTED=true
   fi
   cat <<EOF
 Instalação incompleta encontrada.
@@ -1174,16 +1183,13 @@ fi
 
 require_root
 if [[ "$RESUME_REQUESTED" == true ]]; then
-  DEVFLOW_ASSUME_YES=false
-  confirm_exact 'RETOMAR DEVFLOW' 'Autoriza retomar a instalação interna incompleta?'
-  if [[ "$REGENERATE_CONFIGURATION_REQUESTED" == true ]]; then
-    confirm_exact 'REGERAR CONFIGURAÇÃO DEVFLOW' 'Autoriza preservar a configuração anterior e gerar novos segredos?'
-  fi
-elif [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
-  log INFO 'Confirmação explícita recebida pelo bootstrap público.'
+  require_numeric_confirmation installation-resume \
+    'Instalação incompleta encontrada.' \
+    'RETOMAR INSTALAÇÃO DO DEVFLOW'
 else
-  DEVFLOW_ASSUME_YES=false
-  confirm_exact 'INSTALAR DEVFLOW' "Autoriza a instalação inicial ($INSTALL_SCOPE) no host de homologação?"
+  require_numeric_confirmation initial-installation \
+    'A instalação interna do DevFlow está pronta.' \
+    'INSTALAR DEVFLOW'
 fi
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
@@ -1509,6 +1515,9 @@ compose_image_matches_release "$BACKEND_IMAGE_RESOLVED" "$release_sha" "$DEVFLOW
   && BACKEND_BUILD_REQUIRED=false
 compose_image_matches_release "$FRONTEND_IMAGE_RESOLVED" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
   && FRONTEND_BUILD_REQUIRED=false
+if [[ "$FRONTEND_BUILD_REQUIRED" == true ]] && frontend_image_reusable_from_failed_migration; then
+  FRONTEND_BUILD_REQUIRED=false
+fi
 docker image inspect "$POSTGRES_IMAGE_RESOLVED" >/dev/null 2>&1 && POSTGRES_PULL_REQUIRED=false
 
 build_services=()
@@ -1528,6 +1537,8 @@ CURRENT_INSTALL_STAGE=06-validate-images
 resolve_compose_image_or_die backend backend "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED" backend_image
 resolve_compose_image_or_die frontend frontend "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED" frontend_image
 resolve_compose_image_or_die db PostgreSQL "$POSTGRES_IMAGE_EXPECTED" "$POSTGRES_IMAGE_RESOLVED" postgres_image
+validate_backend_migration_image | tee -a "$INSTALL_LOG" \
+  || die 'A imagem do backend não contém o diretório e a migration inicial esperados.'
 BACKEND_IMAGE_PRESENT=true
 FRONTEND_IMAGE_PRESENT=true
 POSTGRES_IMAGE_PRESENT=true
@@ -1558,12 +1569,16 @@ ensure_devflow_edge_network
 install_transaction_complete_stage 07-create-networks | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=08-start-database
-"${DEVFLOW_COMPOSE[@]}" up -d db --wait
+if [[ "$DATABASE_CONTAINER_READY" == true && "$DATABASE_HEALTHY" == true ]]; then
+  log INFO 'database_container_reused=true database_data_preserved=true' | tee -a "$INSTALL_LOG"
+else
+  "${DEVFLOW_COMPOSE[@]}" up -d db --wait
+fi
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 install_transaction_complete_stage 08-start-database | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=09-run-migrations
-"${DEVFLOW_COMPOSE[@]}" run --rm --no-deps backend node scripts/migrate.js
+run_devflow_migrations
 DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration aplicada.'

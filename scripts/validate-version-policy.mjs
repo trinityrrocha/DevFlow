@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(import.meta.dirname, '..');
 const library = resolve(root, 'scripts/lib/version.sh');
 const bootstrap = readFileSync(resolve(root, 'scripts/bootstrap.sh'), 'utf8');
+const install = readFileSync(resolve(root, 'scripts/install.sh'), 'utf8');
 const bash = process.env.DEVFLOW_TEST_BASH || (process.platform === 'win32' ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-version-policy-'));
 const checks = [];
@@ -80,10 +81,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.6-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.7-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.7-alpha');
+  writeFixture(patchFixture, '0.4.8-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
@@ -147,8 +148,8 @@ try {
   validateDirectory(divergentFixture);
   check('validation failure makes no changes', digestTree(divergentFixture) === beforeDigest
     && !bootstrap.includes('apt-get')
-    && bootstrap.indexOf('Deseja iniciar a instalação? [s/N]')
-      > bootstrap.indexOf('devflow_validate_checkout_version_consistency'));
+    && !bootstrap.includes('DEVFLOW_BOOTSTRAP_CONFIRMED')
+    && install.includes('require_numeric_confirmation initial-installation'));
 
   const futureFixture = resolve(temporary, 'future');
   writeFixture(futureFixture, '0.9.0-alpha');

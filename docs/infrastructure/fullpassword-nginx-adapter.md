@@ -126,7 +126,7 @@ sudo /opt/devflow/app/scripts/uninstall.sh \
   --remove-devflow-certificate
 ```
 
-A opção pede a confirmação literal `REMOVER CERTIFICADO DEVFLOW`. O certificado do Full Password nunca é alvo.
+A opção pede a escolha numérica `1 - REMOVER CERTIFICADO DEVFLOW`. O certificado do Full Password nunca é alvo.
 
 ## Homologação pendente
 

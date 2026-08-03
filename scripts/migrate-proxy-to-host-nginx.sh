@@ -733,7 +733,9 @@ main() {
     load_state || die 'Estado de migracao ausente ou invalido; rollback recusado.'
     [[ ! -e /etc/nginx/sites-available/devflow.conf && ! -e /etc/nginx/conf.d/devflow.conf ]] \
       || die 'DevFlow utiliza o Nginx do host; remova-o de forma controlada antes deste rollback global.'
-    confirm_exact 'REVERTER PROXY DO HOST' 'Confirma restaurar fullpassword_nginx em 80/443?'
+    require_numeric_confirmation proxy-migration-rollback \
+      'A reversão restaurará o fullpassword_nginx nas portas 80/443.' \
+      'REVERTER PROXY DO HOST'
     rollback_transaction || die 'Rollback falhou; consulte o log e os servicos manualmente.'
     rm -f -- "$STATE_FILE" "$OVERRIDE_FILE"
     log INFO 'Rollback concluido; o repositorio Full Password permaneceu inalterado.'
@@ -758,8 +760,12 @@ main() {
 
   [[ "$migration_ready" == true && "$rollback_ready" == true ]] \
     || die 'Gates incompletos; migracao bloqueada.'
-  confirm_exact 'SNAPSHOT CONFIRMADO' 'Confirme que existe snapshot externo recente da VPS.'
-  confirm_exact 'MIGRAR PROXY PUBLICO' 'Confirma a troca controlada das portas publicas?'
+  require_numeric_confirmation proxy-snapshot \
+    'Confirme que existe um snapshot externo recente da VPS.' \
+    'CONFIRMAR SNAPSHOT DA VPS'
+  require_numeric_confirmation proxy-migration \
+    'A migração do proxy poderá causar indisponibilidade temporária.' \
+    'INICIAR MIGRAÇÃO'
   [[ ! -e "$STATE_FILE" ]] || die 'Uma migracao ja esta registrada.'
   systemctl is-active --quiet nginx 2>/dev/null && ORIGINAL_NGINX_ACTIVE=true
 

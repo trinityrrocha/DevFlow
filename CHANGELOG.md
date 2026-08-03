@@ -2,6 +2,22 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.7-alpha] - 2026-08-03
+
+### Corrigido
+
+- `MIGRATIONS_DIR=/database/migrations` agora é permanente na imagem e explícito no serviço backend do Compose, inclusive quando `docker compose run` substitui o `CMD`;
+- o executor valida diretório e arquivos antes de conectar ao PostgreSQL, bloqueia diretório vazio e registra somente caminho, quantidade, estado e código de saída sanitizados;
+- install e update usam um único comando de migration, e a imagem candidata comprova a presença de `001_initial_schema.sql` antes de alterar o schema;
+- a retomada com PostgreSQL saudável preserva container e dados, mantém `resume_from_stage=09-run-migrations`, reconstrói o backend alterado e reutiliza o frontend anterior somente com proveniência comprovada;
+- confirmações interativas deixaram de aceitar frases livres e usam menus numéricos fail-closed, com cancelamento controlado e rejeição de execução sem TTY.
+
+### Testes e homologação
+
+- 20 cenários automatizados cobrem migrations, transação, lock, retomada ARM64, PostgreSQL 16 Alpine, preservação do banco e Full Password;
+- 16 cenários cobrem escolhas, entradas inválidas, ausência de TTY, interrupção, sigilo e os três menus de instalação;
+- Docker/Compose e PostgreSQL reais não foram executados no Windows; a retomada da etapa 09 permanece pendente na VPS ARM64.
+
 ## [0.4.6-alpha] - 2026-08-03
 
 ### Corrigido
