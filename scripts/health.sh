@@ -33,6 +33,13 @@ require_linux
 require_root
 load_devflow_env
 validate_runtime_paths
+EXTERNAL_PUBLICATION_ENABLED=true
+INSTALLATION_SCOPE=complete
+if load_installation_state; then
+  EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
+  INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
+  [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] || INTERNAL_ONLY=true
+fi
 provider_resolve_installed
 provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
 CONFIGURED_VERSION="${DEVFLOW_VERSION:-unknown}"
@@ -44,6 +51,10 @@ export DEVFLOW_VERSION="$EXPECTED_VERSION"
 compose_files
 
 failures=0
+INTERNAL_FRONTEND_HEALTHY=true
+INTERNAL_BACKEND_HEALTHY=true
+DATABASE_HEALTHY=true
+MIGRATIONS_CURRENT=true
 report() {
   local state="$1" item="$2" detail="${3:-}"
   [[ "$state" == PASS ]] || failures=$((failures + 1))
@@ -62,10 +73,20 @@ for service in db backend frontend; do
   container_id="$("${DEVFLOW_COMPOSE[@]}" ps -q "$service" 2>/dev/null || true)"
   if [[ -z "$container_id" ]]; then
     report FAIL "$service" 'container ausente'
+    [[ "$service" == frontend ]] && INTERNAL_FRONTEND_HEALTHY=false
+    [[ "$service" == backend ]] && INTERNAL_BACKEND_HEALTHY=false
+    [[ "$service" == db ]] && DATABASE_HEALTHY=false
     continue
   fi
   health_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)"
-  [[ "$health_state" == healthy ]] && report PASS "$service" healthy || report FAIL "$service" "$health_state"
+  if [[ "$health_state" == healthy ]]; then
+    report PASS "$service" healthy
+  else
+    report FAIL "$service" "$health_state"
+    [[ "$service" == frontend ]] && INTERNAL_FRONTEND_HEALTHY=false
+    [[ "$service" == backend ]] && INTERNAL_BACKEND_HEALTHY=false
+    [[ "$service" == db ]] && DATABASE_HEALTHY=false
+  fi
 done
 
 db_networks="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{println}}{{end}}' \
@@ -80,24 +101,32 @@ if "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "
   report PASS database 'accepting connections'
 else
   report FAIL database 'pg_isready falhou'
+  DATABASE_HEALTHY=false
 fi
 
 migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
   2>/dev/null || true)"
-[[ -n "$migration" ]] && report PASS migration "$migration" || report FAIL migration 'não confirmada'
+if [[ -n "$migration" ]]; then
+  report PASS migration "$migration"
+else
+  report FAIL migration 'não confirmada'
+  MIGRATIONS_CURRENT=false
+fi
 
 if "${DEVFLOW_COMPOSE[@]}" exec -T -e "DEVFLOW_EXPECTED_VERSION=$EXPECTED_VERSION" backend node -e \
   "fetch('http://127.0.0.1:3000/api/health').then(async r=>{const d=await r.json();if(!r.ok||d.version!==process.env.DEVFLOW_EXPECTED_VERSION)process.exit(1)}).catch(()=>process.exit(1))"; then
   report PASS backend_api "$EXPECTED_VERSION"
 else
   report FAIL backend_api 'versão ou resposta inválida'
+  INTERNAL_BACKEND_HEALTHY=false
 fi
 
 if "${DEVFLOW_COMPOSE[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/healthz; then
   report PASS frontend_http '/healthz'
 else
   report FAIL frontend_http '/healthz indisponível'
+  INTERNAL_FRONTEND_HEALTHY=false
 fi
 
 if [[ "$INTERNAL_ONLY" == false ]]; then
@@ -134,7 +163,27 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
 fi
 
 if [[ "$failures" -gt 0 ]]; then
-  [[ "$QUIET" == true ]] || printf 'health_status=unhealthy failures=%s\n' "$failures"
+  if [[ "$QUIET" == false ]]; then
+    printf 'internal_frontend_healthy=%s\n' "$INTERNAL_FRONTEND_HEALTHY"
+    printf 'internal_backend_healthy=%s\n' "$INTERNAL_BACKEND_HEALTHY"
+    printf 'database_healthy=%s\n' "$DATABASE_HEALTHY"
+    printf 'migrations_current=%s\n' "$MIGRATIONS_CURRENT"
+    printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+    [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
+      && printf 'external_https_status=failed\n' || printf 'external_https_status=not-configured\n'
+    printf 'overall_internal_health=unhealthy\n'
+    printf 'health_status=unhealthy failures=%s\n' "$failures"
+  fi
   exit 1
 fi
-[[ "$QUIET" == true ]] || printf 'health_status=healthy version=%s migration=%s\n' "$EXPECTED_VERSION" "$migration"
+if [[ "$QUIET" == false ]]; then
+  printf 'internal_frontend_healthy=true\n'
+  printf 'internal_backend_healthy=true\n'
+  printf 'database_healthy=true\n'
+  printf 'migrations_current=true\n'
+  printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+  [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
+    && printf 'external_https_status=healthy\n' || printf 'external_https_status=not-configured\n'
+  printf 'overall_internal_health=healthy\n'
+  printf 'health_status=healthy version=%s migration=%s scope=%s\n' "$EXPECTED_VERSION" "$migration" "$INSTALLATION_SCOPE"
+fi

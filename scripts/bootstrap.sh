@@ -7,6 +7,8 @@ SELECTED_REF=main
 REQUESTED_VERSION=
 MODE=
 MODE_EXPLICIT=false
+INSTALL_SCOPE=complete
+INSTALL_SCOPE_EXPLICIT=false
 INFRASTRUCTURE_PROVIDER=host-nginx
 PROVIDER_EXPLICIT=false
 DOMAIN=
@@ -27,7 +29,9 @@ DevFlow — bootstrap público para homologação
 Uso:
   ./install.sh --check [--ref main|vSEMVER] [--expected-version SEMVER]
   ./install.sh --dry-run [opções]
+  ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL
   sudo ./install.sh --install [opções]
+  sudo ./install.sh --install-internal --super-admin-email EMAIL
   sudo ./install.sh [opções]
 
 Sem argumentos, coleta a configuração de forma interativa e solicita confirmação.
@@ -43,6 +47,7 @@ Opções:
   --api-port PORT
   --ref main|vSEMVER
   --expected-version SEMVER
+  --install-scope complete|internal
   --help
 EOF
 }
@@ -51,6 +56,12 @@ set_mode() {
   [[ "$MODE_EXPLICIT" == false ]] || die 'Informe somente um modo.'
   MODE="$1"
   MODE_EXPLICIT=true
+}
+
+set_install_scope() {
+  [[ "$INSTALL_SCOPE_EXPLICIT" == false ]] || die 'Informe --install-scope somente uma vez.'
+  case "$1" in internal|complete) INSTALL_SCOPE="$1" ;; *) die 'Escopo inválido.' ;; esac
+  INSTALL_SCOPE_EXPLICIT=true
 }
 
 require_value() {
@@ -62,6 +73,8 @@ while [[ $# -gt 0 ]]; do
     --check) set_mode check; shift ;;
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
+    --install-internal) set_mode install; set_install_scope internal; shift ;;
+    --install-scope) require_value "$1" "${2:-}"; set_install_scope "$2"; shift 2 ;;
     --provider) require_value "$1" "${2:-}"; INFRASTRUCTURE_PROVIDER="$2"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
       require_value "$1" "${2:-}"
@@ -129,15 +142,18 @@ EOF
 }
 
 if [[ "$MODE" != check ]]; then
-  prompt_value DOMAIN 'Domínio do DevFlow'
-  prompt_value LETSENCRYPT_EMAIL 'E-mail para o certificado HTTPS'
   prompt_value SUPER_ADMIN_EMAIL 'E-mail do Super Administrador'
-  prompt_proxy_mode
-  [[ "$INFRASTRUCTURE_PROVIDER" == host-nginx || "$INFRASTRUCTURE_PROVIDER" == isolated-nginx ]] || die 'Provider inválido.'
-  [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$DOMAIN" == *.* ]] || die 'Domínio inválido.'
-  for email in "$LETSENCRYPT_EMAIL" "$SUPER_ADMIN_EMAIL"; do
-    [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "E-mail inválido: $email"
-  done
+  if [[ "$INSTALL_SCOPE" == complete ]]; then
+    prompt_value DOMAIN 'Domínio do DevFlow'
+    prompt_value LETSENCRYPT_EMAIL 'E-mail para o certificado HTTPS'
+    prompt_proxy_mode
+    [[ "$INFRASTRUCTURE_PROVIDER" == host-nginx || "$INFRASTRUCTURE_PROVIDER" == isolated-nginx ]] || die 'Provider inválido.'
+    [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$DOMAIN" == *.* ]] || die 'Domínio inválido.'
+    [[ "$LETSENCRYPT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die 'E-mail TLS inválido.'
+  else
+    INFRASTRUCTURE_PROVIDER=host-nginx
+  fi
+  [[ "$SUPER_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die 'E-mail do Super Admin inválido.'
   for port in "$HTTP_PORT" "$API_PORT"; do
     [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || die "Porta inválida: $port"
   done
@@ -232,6 +248,7 @@ Resumo da instalação pública:
   referência: $SELECTED_REF
   versão validada: $DETECTED_VERSION
   commit validado: $COMMIT
+  escopo: $INSTALL_SCOPE
   domínio: $DOMAIN
   provider: $INFRASTRUCTURE_PROVIDER
   e-mail TLS: $LETSENCRYPT_EMAIL
@@ -245,9 +262,12 @@ fi
 
 INSTALL_ARGS=("--$MODE")
 if [[ "$MODE" != check ]]; then
-  INSTALL_ARGS+=(--provider "$INFRASTRUCTURE_PROVIDER" --domain "$DOMAIN" \
-    --letsencrypt-email "$LETSENCRYPT_EMAIL" --super-admin-email "$SUPER_ADMIN_EMAIL" \
+  INSTALL_ARGS+=(--install-scope "$INSTALL_SCOPE" --provider "$INFRASTRUCTURE_PROVIDER" \
+    --super-admin-email "$SUPER_ADMIN_EMAIL" \
     --http-port "$HTTP_PORT" --api-port "$API_PORT")
+  if [[ "$INSTALL_SCOPE" == complete ]]; then
+    INSTALL_ARGS+=(--domain "$DOMAIN" --letsencrypt-email "$LETSENCRYPT_EMAIL")
+  fi
 fi
 
 if [[ "$MODE" == install ]]; then

@@ -11,6 +11,8 @@ const install = read('scripts/install.sh');
 const bootstrap = read('scripts/bootstrap.sh');
 const versionLibrary = read('scripts/lib/version.sh');
 const update = read('scripts/update.sh');
+const publish = read('scripts/publish.sh');
+const portOwnership = read('scripts/lib/port-ownership.sh');
 const restore = read('scripts/restore.sh');
 const diagnostic = read('scripts/detect-shared-proxy.sh');
 const composeInputDiscovery = read('scripts/discover-compose-inputs.py');
@@ -73,6 +75,18 @@ for (const fragment of [
 if (!install.includes('DEVFLOW_BOOTSTRAP_REF') || !install.includes('merge-base --is-ancestor "$release_sha" origin/main')) {
   throw new Error('Instalação por tag não prepara checkout operacional atualizável com segurança.');
 }
+for (const fragment of ['--install-internal', '--install-scope', 'planned-internal-only', 'POSTGRES_PUBLIC_PORT_EXPOSED=false']) {
+  if (!install.includes(fragment)) throw new Error(`Separação de instalação ausente: ${fragment}.`);
+}
+for (const fragment of ['docker ps', 'docker inspect', 'docker port', 'ss -H -ltnp', 'owner-unproven']) {
+  if (!portOwnership.includes(fragment)) throw new Error(`Evidência de propriedade incompleta: ${fragment}.`);
+}
+for (const fragment of ['health.sh" --internal --quiet', 'provider_dry_run', 'provider_activate', 'write_install_report published']) {
+  if (!publish.includes(fragment)) throw new Error(`Publicador posterior incompleto: ${fragment}.`);
+}
+if (publish.includes('scripts/migrate.js') || !rootPackage.scripts['validate:installation-scopes']) {
+  throw new Error('Publicação reinstala schema ou testes de escopo não estão integrados.');
+}
 if (!install.includes('run_shared_proxy_diagnostic') || !install.includes('detect-shared-proxy.sh')) {
   throw new Error('Instalador não exige diagnóstico antes do modo compartilhado.');
 }
@@ -85,7 +99,7 @@ for (const fragment of [
 ]) {
   if (!install.includes(fragment)) throw new Error(`Estrutura centralizada ausente no instalador: ${fragment}`);
 }
-const dryRunExit = install.indexOf('[[ "$MODE" == dry-run ]] && {');
+const dryRunExit = install.indexOf('if [[ "$MODE" == dry-run ]]');
 const directoryCreation = install.indexOf('install -d -m 0750 "$DEVFLOW_INSTALL_ROOT"');
 if (!(dryRunExit >= 0 && directoryCreation > dryRunExit)) {
   throw new Error('Dry-run deve encerrar antes de criar a estrutura persistente.');

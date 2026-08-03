@@ -6,6 +6,7 @@ const root = resolve(import.meta.dirname, '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const contract = read('scripts/providers/provider-contract.sh');
 const host = read('scripts/providers/host-nginx.sh');
+const portOwnership = read('scripts/lib/port-ownership.sh');
 const isolated = read('scripts/providers/isolated-nginx.sh');
 const legacy = read('scripts/providers/legacy-docker-nginx.sh');
 const install = read('scripts/install.sh');
@@ -35,7 +36,8 @@ check('contract: atomic state', contract.includes('mv -f -- "$temporary" "$DEVFL
 check('default provider', /INFRASTRUCTURE_PROVIDER=host-nginx/.test(install));
 check('legacy is explicit', install.includes('legacy-docker-nginx') && !install.includes('INFRASTRUCTURE_PROVIDER=legacy-docker-nginx\n'));
 check('installer blocks migration', install.includes('controlled-proxy-migration-required'));
-check('host detection', ['command -v nginx', 'systemctl is-active nginx', 'nginx -t', 'ss -H -ltnp', 'command -v certbot'].every((v) => host.includes(v)));
+check('host detection', ['command -v nginx', 'systemctl is-active nginx', 'nginx -t', 'command -v certbot'].every((v) => host.includes(v))
+  && ['ss -H -ltnp', 'docker ps', 'docker inspect', 'docker port'].every((v) => portOwnership.includes(v)));
 check('nginx absent installation', host.includes('apt-get install -y nginx certbot python3-certbot-nginx'));
 check('nginx invalid fails closed', host.includes('invalid-host-nginx'));
 check('sites preferred', host.indexOf('/etc/nginx/sites-available') < host.indexOf('/etc/nginx/conf.d'));

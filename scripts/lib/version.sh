@@ -106,9 +106,9 @@ devflow_validate_directory_version_consistency() {
   grep -Fq "Versão: \`$version\`" "$root/docs/implementation-status.md" || return 1
   grep -Fq "Versão \`$version\`" "$root/docs/infrastructure/vps-installation.md" || return 1
   grep -Fq "## Marco \`$version\`" "$root/docs/roadmap.md" || return 1
-  grep -Fq "## Bootstrap dinâmico \`$version\`" "$root/docs/traceability.md" || return 1
+  grep -Fq "## Instalação interna \`$version\`" "$root/docs/traceability.md" || return 1
   grep -Fq 'scripts/lib/version.sh' "$root/scripts/bootstrap.sh" || return 1
-  for package_file in scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh; do
+  for package_file in scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh scripts/publish.sh; do
     grep -Fq 'lib/common.sh' "$root/$package_file" || return 1
   done
   grep -Eq "EXPECTED_VERSION=['\"][0-9]" "$root/scripts/bootstrap.sh" && return 1
@@ -123,7 +123,7 @@ devflow_validate_checkout_version_consistency() {
     docker-compose.maintenance.yml README.md CHANGELOG.md docs/implementation-status.md \
     docs/infrastructure/vps-installation.md docs/roadmap.md docs/traceability.md \
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
-    scripts/lib/common.sh scripts/lib/version.sh; do
+    scripts/publish.sh scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh; do
     git -C "$root" ls-files --error-unmatch "$tracked_file" >/dev/null 2>&1 || return 1
     expected_mode=100644
     [[ "$tracked_file" != scripts/*.sh || "$tracked_file" == scripts/lib/* ]] || expected_mode=100755
@@ -144,7 +144,8 @@ devflow_validate_git_tree_version_consistency() {
     backend/src/app.js .env.example docker-compose.yml docker-compose.maintenance.yml README.md \
     CHANGELOG.md docs/implementation-status.md docs/infrastructure/vps-installation.md \
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
-    scripts/version.sh scripts/health.sh scripts/lib/common.sh scripts/lib/version.sh \
+    scripts/version.sh scripts/health.sh scripts/publish.sh scripts/lib/common.sh scripts/lib/version.sh \
+    scripts/lib/port-ownership.sh \
     | tar -x -C "$temporary"; then
     rm -rf -- "$temporary"
     return 1

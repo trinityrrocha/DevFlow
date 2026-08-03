@@ -6,6 +6,14 @@
 
 O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrito (`set -Eeuo pipefail`) e são somente leitura por padrão.
 
+## Estágios independentes
+
+`--install-internal` instala código, configuração privada, PostgreSQL, migrations, backend, frontend, Super Admin, backup e health local. Frontend e backend usam somente `127.0.0.1`; esse estágio não chama funções mutáveis do provider.
+
+`scripts/publish.sh` é o estágio externo posterior. Ele exige estado interno saudável, valida DNS e propriedade de 80/443, configura o provider, emite TLS e confirma HTTPS. Não reinstala a release e não executa migrations.
+
+`--install` continua significando instalação completa. Se um proxy Docker conhecido ocupar 80/443, o instalador apresenta explicitamente instalar internamente, cancelar ou consultar a migração; nenhuma opção é escolhida automaticamente.
+
 Para instalação pública sem clone prévio, `scripts/bootstrap.sh` é o entrypoint standalone. Ele baixa `main` ou uma tag `vSEMVER` em diretório temporário, valida origem, referência, commit, arquivos rastreados e consistência da versão, e então chama o mesmo instalador interno. Em `main`, não existe constante de versão; `--expected-version` é opcional e explícito.
 
 | Modo | Efeito |

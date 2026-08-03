@@ -48,11 +48,12 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'docs/implementation-status.md'), `Versão: \`${version}\`.\n`);
   writeFileSync(resolve(directory, 'docs/infrastructure/vps-installation.md'), `Versão \`${version}\`.\n`);
   writeFileSync(resolve(directory, 'docs/roadmap.md'), `## Marco \`${version}\`\n`);
-  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Bootstrap dinâmico \`${version}\`\n`);
+  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Instalação interna \`${version}\`\n`);
   writeFileSync(resolve(directory, 'scripts/bootstrap.sh'), '#!/usr/bin/env bash\nsource scripts/lib/version.sh\nDETECTED_VERSION=dynamic\n');
   writeFileSync(resolve(directory, 'scripts/lib/common.sh'), 'source scripts/lib/version.sh\n');
   writeFileSync(resolve(directory, 'scripts/lib/version.sh'), '# fixture uses the tested library externally\n');
-  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh']) {
+  writeFileSync(resolve(directory, 'scripts/lib/port-ownership.sh'), '# port ownership fixture\n');
+  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
   }
@@ -71,10 +72,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.2-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.3-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.3-alpha');
+  writeFixture(patchFixture, '0.4.4-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
@@ -82,24 +83,24 @@ try {
   check('main after minor increment', validateDirectory(minorFixture).status === 0);
 
   const repositoryFixture = resolve(temporary, 'repository');
-  writeFixture(repositoryFixture, '0.4.2-alpha');
+  writeFixture(repositoryFixture, '0.4.3-alpha');
   runGit(repositoryFixture, ['init', '-b', 'main']);
   runGit(repositoryFixture, ['config', 'user.name', 'trinityrrocha']);
   runGit(repositoryFixture, ['config', 'user.email', 'trinityrocha@sti1.com.br']);
   runGit(repositoryFixture, ['add', '-A']);
-  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh']) {
+  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh']) {
     runGit(repositoryFixture, ['update-index', '--chmod=+x', `scripts/${script}`]);
   }
   runGit(repositoryFixture, ['commit', '-m', 'test: version policy fixture']);
   runGit(repositoryFixture, ['remote', 'add', 'origin', 'https://github.com/trinityrrocha/DevFlow.git']);
   const fixtureCommit = runGit(repositoryFixture, ['rev-parse', 'HEAD']);
-  runGit(repositoryFixture, ['tag', 'v0.4.2-alpha']);
-  runGit(repositoryFixture, ['checkout', '--detach', 'v0.4.2-alpha']);
-  check('tag with corresponding version', validateIdentity(repositoryFixture, 'v0.4.2-alpha', fixtureCommit).status === 0
+  runGit(repositoryFixture, ['tag', 'v0.4.3-alpha']);
+  runGit(repositoryFixture, ['checkout', '--detach', 'v0.4.3-alpha']);
+  check('tag with corresponding version', validateIdentity(repositoryFixture, 'v0.4.3-alpha', fixtureCommit).status === 0
     && validateCheckout(repositoryFixture).status === 0
     && bootstrap.includes('"v$DETECTED_VERSION"'));
 
-  check('matching expected version', validateSemver('0.4.2-alpha').status === 0 && bootstrap.includes('version_match=true'));
+  check('matching expected version', validateSemver('0.4.3-alpha').status === 0 && bootstrap.includes('version_match=true'));
   const mismatch = runBash('devflow_version_mismatch_message main 0.4.1-alpha 0.4.2-alpha 0123456789012345678901234567890123456789', []);
   check('divergent expected version', mismatch.status === 0 && mismatch.stdout.includes('Versão esperada: 0.4.1-alpha') && mismatch.stdout.includes('Nenhuma alteração foi realizada.'));
 
@@ -110,17 +111,17 @@ try {
   writeFileSync(multiline, '0.4.2-alpha\n0.4.3-alpha\n');
   check('multiline VERSION is rejected', readVersion(multiline).status !== 0);
   check('invalid SemVer is rejected', ['01.0.0', '1.0', '1.0.0-alpha..1', '1.0.0;id', '../1.0.0'].every((value) => validateSemver(value).status !== 0));
-  check('alpha prerelease is accepted', validateSemver('0.4.2-alpha.1').status === 0);
+  check('alpha prerelease is accepted', validateSemver('0.4.3-alpha.1').status === 0);
   check('beta prerelease is accepted', validateSemver('0.5.0-beta').status === 0);
   check('stable version is accepted', validateSemver('1.0.0').status === 0
     && validateSemver('1.0.0+build.1').status === 0);
 
   const divergentFixture = resolve(temporary, 'divergent');
-  writeFixture(divergentFixture, '0.4.2-alpha', { frontendVersion: '0.4.1-alpha' });
+  writeFixture(divergentFixture, '0.4.3-alpha', { frontendVersion: '0.4.2-alpha' });
   check('frontend and backend divergence is rejected', validateDirectory(divergentFixture).status !== 0);
 
   runGit(repositoryFixture, ['remote', 'set-url', 'origin', 'https://github.com/example/DevFlow.git']);
-  check('incorrect repository is rejected', validateIdentity(repositoryFixture, 'v0.4.2-alpha', fixtureCommit).status !== 0);
+  check('incorrect repository is rejected', validateIdentity(repositoryFixture, 'v0.4.3-alpha', fixtureCommit).status !== 0);
   runGit(repositoryFixture, ['remote', 'set-url', 'origin', 'https://github.com/trinityrrocha/DevFlow.git']);
   runGit(repositoryFixture, ['checkout', '-B', 'unexpected']);
   check('incorrect branch is rejected', validateIdentity(repositoryFixture, 'main', fixtureCommit).status !== 0);
@@ -143,7 +144,7 @@ try {
 
   const futureFixture = resolve(temporary, 'future');
   writeFixture(futureFixture, '0.9.0-alpha');
-  check('future VERSION needs no bootstrap edit', validateDirectory(futureFixture).status === 0 && !/EXPECTED_VERSION=['"][0-9]/.test(bootstrap) && !bootstrap.includes('0.4.2-alpha'));
+  check('future VERSION needs no bootstrap edit', validateDirectory(futureFixture).status === 0 && !/EXPECTED_VERSION=['"][0-9]/.test(bootstrap) && !bootstrap.includes('0.4.3-alpha'));
 
   if (checks.length !== 19) throw new Error(`Expected 19 checks, got ${checks.length}`);
   process.stdout.write(`Política de versão validada em ${checks.length} cenários.\n`);

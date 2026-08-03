@@ -1,5 +1,13 @@
 # Roadmap inicial
 
+## Marco `0.4.3-alpha` — instalação interna independente
+
+- [x] separar instalação interna e publicação HTTPS;
+- [x] comprovar proprietário de 80/443 cruzando Docker e sockets;
+- [x] manter frontend e backend somente em loopback;
+- [x] registrar estado e health por escopo;
+- [ ] homologar check, dry-run e instalação interna na VPS ARM64.
+
 ## Marco `0.4.2-alpha` — versão pública dinâmica
 
 - [x] remover pin operacional do bootstrap em `main`;
@@ -82,7 +90,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.2-alpha` consistente;
+- versão `0.4.3-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

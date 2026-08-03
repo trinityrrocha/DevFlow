@@ -137,7 +137,7 @@ scenario '--check permanece diagnóstico básico'
 scenario '--dry-run sem root encerra controladamente'
 
 # 10. Execução --dry-run com root.
-dry_run_gate="$(grep -nF '[[ "$MODE" == dry-run ]] && {' "$ROOT/scripts/install.sh" | cut -d: -f1)"
+dry_run_gate="$(grep -nF 'if [[ "$MODE" == dry-run ]]; then' "$ROOT/scripts/install.sh" | cut -d: -f1 | tail -n1)"
 install_gate="$(grep -nF 'install -d -m 0750 "$DEVFLOW_INSTALL_ROOT"' "$ROOT/scripts/install.sh" | cut -d: -f1)"
 [[ "$dry_run_gate" -lt "$install_gate" ]]
 scenario '--dry-run com root termina antes da instalação'

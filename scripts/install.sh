@@ -15,6 +15,8 @@ SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MODE=check
 MODE_EXPLICIT=false
+INSTALL_SCOPE=complete
+INSTALL_SCOPE_EXPLICIT=false
 DOMAIN=
 LETSENCRYPT_EMAIL=
 SUPER_ADMIN_EMAIL=
@@ -26,6 +28,10 @@ API_PORT=13000
 SHARED_PROXY_ADAPTER=none
 CHECK_STATUS=passed
 CHECK_PRIVILEGED_DRY_RUN_REQUIRED=false
+FRONTEND_LOOPBACK_PORT_AVAILABLE=unknown
+BACKEND_LOOPBACK_PORT_AVAILABLE=unknown
+POSTGRES_PUBLIC_PORT_EXPOSED=false
+EXTERNAL_PUBLICATION_BLOCKED=false
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
@@ -36,13 +42,16 @@ Uso:
   ./install.sh --check
   ./install.sh --dry-run [--provider host-nginx|isolated-nginx] --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
+  ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL
   sudo ./install.sh --install [--provider host-nginx|isolated-nginx] --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
+  sudo ./install.sh --install-internal [--provider host-nginx] --super-admin-email EMAIL
 
 Modos:
   --check       diagnóstico somente leitura (padrão)
   --dry-run     valida e apresenta o plano; não altera o host
   --install     primeira instalação, com confirmação explícita
+  --install-internal instala somente aplicação e serviços em loopback
 
 Opções:
   --provider PROVIDER       host-nginx (padrão), isolated-nginx ou legado explícito
@@ -52,6 +61,7 @@ Opções:
   --super-admin-email EMAIL identidade permitida no bootstrap
   --http-port PORT          frontend em loopback no modo shared (padrão 18080)
   --api-port PORT           backend em loopback no modo shared (padrão 13000)
+  --install-scope SCOPE     complete (padrão) ou internal
   --help                    mostra esta ajuda
 
 Provider de infraestrutura:
@@ -75,11 +85,19 @@ set_mode() {
   MODE_EXPLICIT=true
 }
 
+set_install_scope() {
+  [[ "$INSTALL_SCOPE_EXPLICIT" == false ]] || die 'Informe --install-scope somente uma vez.'
+  case "$1" in internal|complete) INSTALL_SCOPE="$1" ;; *) die 'Informe --install-scope internal ou complete.' ;; esac
+  INSTALL_SCOPE_EXPLICIT=true
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) set_mode check; shift ;;
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
+    --install-internal) set_mode install; set_install_scope internal; shift ;;
+    --install-scope) set_install_scope "${2:-}"; shift 2 ;;
     --provider) INFRASTRUCTURE_PROVIDER="${2:-}"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
       case "${2:-}" in
@@ -102,6 +120,7 @@ done
 
 require_linux
 detect_platform
+command -v ss >/dev/null 2>&1 || die 'ss (iproute2) é obrigatório para comprovar a disponibilidade das portas.'
 validate_safe_absolute_path "$DEVFLOW_INSTALL_ROOT" 'Diretório de instalação'
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Esta versão suporta somente o diretório /opt/devflow.'
 validate_safe_absolute_path "$SOURCE_DIR" 'Checkout operacional'
@@ -199,9 +218,12 @@ if [[ "$MODE" == check && -e "$DEVFLOW_ENV_FILE" ]]; then
     SHARED_PROXY_ADAPTER="$DEVFLOW_SHARED_PROXY_ADAPTER"
     HTTP_PORT="${DEVFLOW_HTTP_PORT:-18080}"
     API_PORT="${DEVFLOW_API_PORT:-13000}"
+    if load_installation_state; then
+      INSTALL_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
+    fi
     [[ "$PROXY_MODE" == isolated || "$PROXY_MODE" == shared ]] || die 'DEVFLOW_PROXY_MODE inválido na configuração.'
-    validate_domain "$DOMAIN"
-    validate_email "${LETSENCRYPT_EMAIL:-}"
+    [[ -z "$DOMAIN" ]] || validate_domain "$DOMAIN"
+    [[ -z "${LETSENCRYPT_EMAIL:-}" ]] || validate_email "$LETSENCRYPT_EMAIL"
     validate_email "${SUPER_ADMIN_EMAIL:-}"
     validate_port "${DEVFLOW_HTTP_PORT:-18080}"
     validate_port "${DEVFLOW_API_PORT:-13000}"
@@ -220,11 +242,19 @@ if [[ "$MODE" != check ]]; then
   fi
   [[ "$PROXY_MODE" == isolated || "$PROXY_MODE" == shared ]] || die 'Informe --proxy-mode isolated ou shared.'
   provider_validate_name "$INFRASTRUCTURE_PROVIDER" || die 'Provider de infraestrutura invalido.'
+  if [[ "$INSTALL_SCOPE" == internal && "$INFRASTRUCTURE_PROVIDER" != host-nginx ]]; then
+    die 'A instalação interna utiliza somente o provider planejado host-nginx e portas loopback.'
+  fi
   derive_legacy_proxy_settings "$INFRASTRUCTURE_PROVIDER"
   PROXY_MODE="$DEVFLOW_PROXY_MODE"
   SHARED_PROXY_ADAPTER="$DEVFLOW_SHARED_PROXY_ADAPTER"
-  validate_domain "$DOMAIN"
-  validate_email "$LETSENCRYPT_EMAIL"
+  if [[ "$INSTALL_SCOPE" == complete ]]; then
+    validate_domain "$DOMAIN"
+    validate_email "$LETSENCRYPT_EMAIL"
+  else
+    [[ -z "$DOMAIN" ]] || validate_domain "$DOMAIN"
+    [[ -z "$LETSENCRYPT_EMAIL" ]] || validate_email "$LETSENCRYPT_EMAIL"
+  fi
   validate_email "$SUPER_ADMIN_EMAIL"
 fi
 
@@ -247,18 +277,56 @@ EOF
   elif [[ "$provider_status" -ne 0 ]]; then
     CHECK_STATUS=failed
   fi
+elif [[ "$INSTALL_SCOPE" == internal ]]; then
+  provider_detect
+  DEVFLOW_PROVIDER_STATUS=planned-internal-only
 elif [[ "$INFRASTRUCTURE_PROVIDER" != legacy-docker-nginx ]]; then
   provider_dry_run || provider_status=$?
   if [[ "$provider_status" -eq 4 ]]; then
-    cat <<'EOF'
-dry_run_status=blocked
+    if [[ "$MODE" == dry-run ]]; then
+      EXTERNAL_PUBLICATION_BLOCKED=true
+      cat <<'EOF'
+dry_run_status=internal-ready-external-blocked
 reason=controlled-proxy-migration-required
 changes_applied=false
+internal_installation_ready=true
+external_publication_ready=false
 
-Execute somente:
+Instalação interna: pronta.
+Publicação externa: bloqueada até migração ou liberação das portas 80/443.
+
+Para instalar somente em loopback, execute:
+  sudo ./install.sh --install-internal --super-admin-email EMAIL
+
+Para diagnosticar a futura migração, execute somente:
   sudo ./scripts/migrate-proxy-to-host-nginx.sh --check
 EOF
-    exit 4
+    else
+      [[ -t 0 ]] || die 'A publicação está bloqueada. Use explicitamente --install-internal ou cancele.'
+      cat <<EOF
+As portas 80 e 443 estão ocupadas pelo proxy conhecido:
+
+  ${DEVFLOW_PUBLIC_PROXY_CONTAINER:-fullpassword_nginx}
+
+O DevFlow pode ser instalado internamente sem alterar esse proxy.
+
+Opções:
+
+  1 - Instalar internamente para homologação
+  2 - Cancelar
+  3 - Exibir instruções da futura migração de proxy
+EOF
+      read -r -p 'Escolha [1/2/3]: ' scope_choice
+      case "$scope_choice" in
+        1) INSTALL_SCOPE=internal; DEVFLOW_PROVIDER_STATUS=planned-internal-only ;;
+        2) die 'Instalação cancelada sem alterações.' ;;
+        3)
+          printf '%s\n' 'Execute somente: sudo ./scripts/migrate-proxy-to-host-nginx.sh --check'
+          exit 0
+          ;;
+        *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
+      esac
+    fi
   elif [[ "$provider_status" -eq 3 && "$MODE" == dry-run ]]; then
     cat <<EOF
 dry_run_status=blocked
@@ -269,7 +337,9 @@ Repita somente o dry-run com sudo e os mesmos parametros.
 EOF
     exit 3
   fi
-  [[ "$provider_status" -eq 0 ]] || die 'O provider bloqueou a operacao por seguranca.'
+  if [[ "$provider_status" -ne 0 && "$provider_status" -ne 4 ]]; then
+    die 'A publicação externa foi bloqueada por segurança. A instalação interna exige --install-scope internal.'
+  fi
 fi
 
 if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_ROOT/app" ]]; then
@@ -285,6 +355,32 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
 fi
 if [[ "$compose_state" == present ]]; then
   version_at_least "$compose_version" 2.20 || die "Docker Compose $compose_version é incompatível; mínimo 2.20."
+fi
+
+IMAGE_ARCHITECTURE_STATUS=pending-docker-install
+COMPOSE_STRUCTURE_STATUS=pending-docker-install
+if [[ "$MODE" != check ]]; then
+  for required_file in database/migrations/001_initial_schema.sql backend/scripts/migrate.js \
+    scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh; do
+    [[ -f "$SOURCE_DIR/$required_file" && ! -L "$SOURCE_DIR/$required_file" ]] \
+      || die "Componente interno obrigatório ausente ou inválido: $required_file"
+  done
+  if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable && "$compose_state" == present ]]; then
+    for image in postgres:16-alpine node:22-alpine nginx:1.27-alpine; do
+      docker manifest inspect "$image" 2>/dev/null \
+        | grep -Fq "\"architecture\": \"$DEVFLOW_ARCH\"" \
+        || die "A imagem $image não comprovou suporte a $DEVFLOW_ARCH."
+    done
+    IMAGE_ARCHITECTURE_STATUS=compatible
+    DB_PASSWORD=validation-only JWT_SECRET=validation-only CONFIG_ENCRYPTION_KEY=validation-only \
+      ADMIN_BOOTSTRAP_TOKEN=validation-only BACKUP_PASSPHRASE_FILE=/tmp/validation-only \
+      DEVFLOW_DOMAIN="${DOMAIN:-internal.local}" DEVFLOW_ENV_FILE="$SOURCE_DIR/.env.example" \
+      DEVFLOW_DB_DATA_PATH="$DEVFLOW_DATA_ROOT/postgres" \
+      DEVFLOW_UPLOADS_PATH="$DEVFLOW_INSTALL_ROOT/storage/uploads" \
+      docker compose -p devflow-validation --project-directory "$SOURCE_DIR" \
+        -f "$SOURCE_DIR/docker-compose.yml" -f "$SOURCE_DIR/docker-compose.shared.yml" config --quiet
+    COMPOSE_STRUCTURE_STATUS=valid
+  fi
 fi
 
 run_shared_proxy_diagnostic() {
@@ -388,21 +484,32 @@ if [[ "$MODE" != check && "$INFRASTRUCTURE_PROVIDER" == legacy-docker-nginx ]]; 
   fi
 fi
 
+if [[ "$INSTALL_SCOPE" == internal || "$PROXY_MODE" == shared ]]; then
+  FRONTEND_LOOPBACK_PORT_AVAILABLE=true
+  BACKEND_LOOPBACK_PORT_AVAILABLE=true
+  for tuple in "frontend:$HTTP_PORT" "backend:$API_PORT"; do
+    service="${tuple%%:*}"
+    port="${tuple##*:}"
+    if port_is_listening "$port" && ! devflow_container_running "$service"; then
+      [[ "$service" == frontend ]] && FRONTEND_LOOPBACK_PORT_AVAILABLE=false \
+        || BACKEND_LOOPBACK_PORT_AVAILABLE=false
+      if [[ "$MODE" == check ]]; then
+        CHECK_STATUS=failed
+      else
+        die "Porta loopback $port ocupada por outro serviço."
+      fi
+    fi
+  done
+fi
+
 if [[ "$MODE" != check ]]; then
-  if [[ "$PROXY_MODE" == isolated ]]; then
+  if [[ "$INSTALL_SCOPE" == complete && "$PROXY_MODE" == isolated ]]; then
     for port in 80 443; do
       if port_is_listening "$port" && ! devflow_container_running edge; then
         die "Porta $port ocupada. O modo isolated não interrompe o proprietário atual."
       fi
     done
-  elif [[ "$SHARED_PROXY_ADAPTER" == host-nginx ]]; then
-    for tuple in "frontend:$HTTP_PORT" "backend:$API_PORT"; do
-      service="${tuple%%:*}"
-      port="${tuple##*:}"
-      if port_is_listening "$port" && ! devflow_container_running "$service"; then
-        die "Porta loopback $port ocupada por outro serviço."
-      fi
-    done
+  elif [[ "$INSTALL_SCOPE" == complete && "$SHARED_PROXY_ADAPTER" == host-nginx ]]; then
     managed_file "$NGINX_CONFIG" "$MANAGED_MARKER" || die "$NGINX_CONFIG pertence a outro sistema."
     if [[ -d /etc/nginx ]]; then
       while IFS= read -r nginx_file; do
@@ -413,7 +520,9 @@ if [[ "$MODE" != check ]]; then
       done < <(find /etc/nginx -type f -name '*.conf' -print 2>/dev/null)
     fi
   fi
-  getent ahosts "$DOMAIN" >/dev/null 2>&1 || die "O domínio $DOMAIN não resolve no DNS."
+  if [[ "$INSTALL_SCOPE" == complete ]]; then
+    getent ahosts "$DOMAIN" >/dev/null 2>&1 || die "O domínio $DOMAIN não resolve no DNS."
+  fi
 fi
 
 if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; then
@@ -435,14 +544,29 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
     owner="$(docker network inspect devflow_edge --format '{{index .Labels "devflow.managed"}}')"
     [[ "$owner" == true ]] || die 'Rede externa devflow_edge não possui propriedade DevFlow comprovada.'
   fi
+  db_container_id="$(docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
+    --filter 'label=com.docker.compose.service=db' --format '{{.ID}}' | head -n1)"
+  if [[ -n "$db_container_id" && -n "$(docker port "$db_container_id" 2>/dev/null || true)" ]]; then
+    POSTGRES_PUBLIC_PORT_EXPOSED=true
+    die 'O PostgreSQL DevFlow não pode publicar portas no host.'
+  fi
+fi
+
+devflow_detect_public_port_ownership
+if [[ "$FRONTEND_LOOPBACK_PORT_AVAILABLE" == false || "$BACKEND_LOOPBACK_PORT_AVAILABLE" == false \
+  || "$POSTGRES_PUBLIC_PORT_EXPOSED" == true ]]; then
+  DEVFLOW_INTERNAL_INSTALLATION_READY=false
 fi
 
 cat <<EOF
 Resumo DevFlow $DEVFLOW_VERSION
   modo: $MODE
+  escopo de instalação: $INSTALL_SCOPE
   sistema: ${PRETTY_NAME:-$DEVFLOW_DISTRO} ($DEVFLOW_ARCH)
   Docker: $docker_state ($docker_version)
   Compose v2: $compose_state ($compose_version)
+  imagens para $DEVFLOW_ARCH: $IMAGE_ARCHITECTURE_STATUS
+  estrutura Compose interna: $COMPOSE_STRUCTURE_STATUS
   containers DevFlow existentes: $devflow_containers
   fullpassword_nginx: ${fullpassword_container:-não detectado}
   proxy existente: $proxy_detected
@@ -458,6 +582,16 @@ Resumo DevFlow $DEVFLOW_VERSION
   backups do proxy: $DEVFLOW_INSTALL_ROOT/backups/proxy
   estado operacional: $DEVFLOW_STATE_ROOT
   estado da configuração: $config_state
+EOF
+devflow_print_port_evidence 80
+devflow_print_port_evidence 443
+cat <<EOF
+public_proxy_status=$DEVFLOW_PUBLIC_PROXY_STATUS
+internal_installation_ready=$DEVFLOW_INTERNAL_INSTALLATION_READY
+external_publication_ready=$DEVFLOW_EXTERNAL_PUBLICATION_READY
+frontend_loopback_port_available=$FRONTEND_LOOPBACK_PORT_AVAILABLE
+backend_loopback_port_available=$BACKEND_LOOPBACK_PORT_AVAILABLE
+postgres_public_port_exposed=$POSTGRES_PUBLIC_PORT_EXPOSED
 EOF
 
 if [[ "$MODE" == check ]]; then
@@ -481,41 +615,74 @@ EOF
   exit 0
 fi
 
-cat <<EOF
-Ações planejadas:
+if [[ "$INSTALL_SCOPE" == internal ]]; then
+  cat <<EOF
+Ações planejadas para instalação interna:
   - instalar Docker Engine pelo repositório oficial apenas se estiver ausente;
-  - delegar proxy, Nginx, Certbot, validação e rollback ao provider $INFRASTRUCTURE_PROVIDER;
+  - criar somente diretórios, containers, redes e dados do projeto Compose devflow;
+  - publicar frontend em 127.0.0.1:$HTTP_PORT e backend em 127.0.0.1:$API_PORT;
+  - iniciar PostgreSQL sem porta no host, aplicar migrations e validar health local;
+  - criar o Super Admin e manter segredos em $DEVFLOW_ENV_FILE com permissão 600;
+  - registrar $INFRASTRUCTURE_PROVIDER apenas como provider planejado;
+  - não alterar Nginx, 80/443, certificados, Full Password ou migração de proxy.
+EOF
+else
+  cat <<EOF
+Ações planejadas para instalação completa:
+  - instalar Docker Engine pelo repositório oficial apenas se estiver ausente;
   - criar somente diretórios e recursos do projeto Compose devflow;
-  - manter segredos em $DEVFLOW_ENV_FILE com permissão 600;
   - iniciar o banco, executar migrations reais e então subir a aplicação;
-  - validar healthchecks HTTP e HTTPS;
-  - publicar frontend/API somente em loopback no provider host-nginx;
-  - preservar Compose, configuração, redes, certificados e containers de terceiros;
+  - publicar frontend/API em loopback e delegar HTTPS ao provider $INFRASTRUCTURE_PROVIDER;
+  - preservar configuração, redes, certificados e containers de terceiros;
   - modificar somente estes recursos do provider: $(provider_resources).
 EOF
-[[ "$MODE" == dry-run ]] && { log INFO 'Dry-run concluído sem alterações.'; exit 0; }
+fi
+if [[ "$MODE" == dry-run ]]; then
+  if [[ "$INSTALL_SCOPE" == complete && "$EXTERNAL_PUBLICATION_BLOCKED" == true ]]; then
+    log WARN 'Dry-run completo: instalação interna pronta, publicação externa bloqueada; nenhuma alteração foi realizada.'
+    exit 0
+  fi
+  log INFO 'Dry-run concluído sem alterações.'
+  exit 0
+fi
 
 require_root
 if [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
   log INFO 'Confirmação explícita recebida pelo bootstrap público.'
 else
   DEVFLOW_ASSUME_YES=false
-  confirm_exact 'INSTALAR DEVFLOW' 'Autoriza a instalação inicial no host de homologação?'
+  confirm_exact 'INSTALAR DEVFLOW' "Autoriza a instalação inicial ($INSTALL_SCOPE) no host de homologação?"
 fi
 
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_INSTALL_ROOT/releases" \
-  "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONFIG_ROOT/proxy" "$DEVFLOW_DATA_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
-  "$DEVFLOW_INSTALL_ROOT/backups/proxy" "$DEVFLOW_CONFIG_ROOT/nginx" \
-  "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_INSTALL_ROOT/storage/acme" "$DEVFLOW_DATA_ROOT/postgres"
+  "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_DATA_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" \
+  "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_DATA_ROOT/postgres"
+if [[ "$INSTALL_SCOPE" == complete ]]; then
+  install -d -m 0750 "$DEVFLOW_CONFIG_ROOT/proxy" "$DEVFLOW_INSTALL_ROOT/backups/proxy" \
+    "$DEVFLOW_CONFIG_ROOT/nginx" "$DEVFLOW_INSTALL_ROOT/storage/acme"
+fi
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
 log INFO "Log sanitizado: $INSTALL_LOG" | tee -a "$INSTALL_LOG"
 PROVIDER_APPLIED=false
+DEVFLOW_INSTALLATION_SCOPE="$INSTALL_SCOPE"
+DEVFLOW_APPLICATION_INSTALLED=false
+DEVFLOW_EXTERNAL_PUBLICATION_ENABLED=false
+DEVFLOW_FRONTEND_URL="http://127.0.0.1:$HTTP_PORT"
+DEVFLOW_BACKEND_URL="http://127.0.0.1:$API_PORT"
+DEVFLOW_FULLPASSWORD_MODIFIED=false
+DEVFLOW_PUBLIC_PROXY_MODIFIED=false
+DEVFLOW_PROXY_MIGRATION_EXECUTED=false
+DEVFLOW_CERTIFICATE_ISSUED=false
+export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
+  DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
+  DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED
 
 installation_failed() {
-  local exit_code=$?
-  trap - ERR
+  local exit_code="${1:-$?}"
+  trap - ERR INT TERM HUP
   if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
     DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
     load_devflow_env || true
@@ -536,6 +703,9 @@ installation_failed() {
   exit "$exit_code"
 }
 trap installation_failed ERR
+trap 'installation_failed 130' INT
+trap 'installation_failed 143' TERM
+trap 'installation_failed 129' HUP
 
 install_docker_official() {
   log INFO 'Instalando Docker Engine pelo repositório oficial.' | tee -a "$INSTALL_LOG"
@@ -572,7 +742,10 @@ version_at_least "$installed_docker_version" 24.0 || die "Docker instalado incom
 version_at_least "$installed_compose_version" 2.20 || die "Compose instalado incompatível: $installed_compose_version."
 
 export DEBIAN_FRONTEND=noninteractive
-packages=(certbot openssl python3)
+packages=(openssl)
+if [[ "$INSTALL_SCOPE" == complete ]]; then
+  packages+=(certbot python3)
+fi
 missing_packages=()
 for package in "${packages[@]}"; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing_packages+=("$package")
@@ -581,13 +754,14 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
   apt-get update
   apt-get install -y "${missing_packages[@]}"
 fi
-provider_prepare "$DOMAIN" "$HTTP_PORT" "$API_PORT"
-provider_install
-
-if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
-  [[ -r "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die 'Certificado existente sem chave privada correspondente.'
-  openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$DOMAIN" >/dev/null 2>&1 \
-    || die 'O certificado existente não corresponde ao domínio DevFlow.'
+if [[ "$INSTALL_SCOPE" == complete ]]; then
+  provider_prepare "$DOMAIN" "$HTTP_PORT" "$API_PORT"
+  provider_install
+  if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+    [[ -r "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die 'Certificado existente sem chave privada correspondente.'
+    openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$DOMAIN" >/dev/null 2>&1 \
+      || die 'O certificado existente não corresponde ao domínio DevFlow.'
+  fi
 fi
 
 release_dir="$DEVFLOW_INSTALL_ROOT/releases/$release_sha"
@@ -640,6 +814,12 @@ DEVFLOW_UPDATE_CHANNEL=main
 export DEVFLOW_RELEASE_COMMIT DEVFLOW_RELEASE_REF DEVFLOW_REPOSITORY_URL DEVFLOW_UPDATE_CHANNEL
 
 if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
+  runtime_domain="${DOMAIN:-internal.local}"
+  runtime_letsencrypt_email="$LETSENCRYPT_EMAIL"
+  runtime_app_origin="http://127.0.0.1:$HTTP_PORT"
+  if [[ "$INSTALL_SCOPE" == complete ]]; then
+    runtime_app_origin="https://$DOMAIN"
+  fi
   db_password="$(openssl rand -base64 48 | tr -d '\n')"
   jwt_secret="$(openssl rand -hex 48)"
   bootstrap_token="$(openssl rand -base64 48 | tr -d '\n')"
@@ -652,13 +832,13 @@ DEVFLOW_SOURCE_DIR=$operational_source_dir
 NODE_ENV=production
 PORT=3000
 TZ=America/Sao_Paulo
-APP_ORIGIN=https://$DOMAIN
+APP_ORIGIN=$runtime_app_origin
 VITE_API_URL=/api
-DEVFLOW_DOMAIN=$DOMAIN
+DEVFLOW_DOMAIN=$runtime_domain
 DEVFLOW_INFRASTRUCTURE_PROVIDER=$INFRASTRUCTURE_PROVIDER
 DEVFLOW_PROXY_MODE=$PROXY_MODE
 DEVFLOW_SHARED_PROXY_ADAPTER=$SHARED_PROXY_ADAPTER
-LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
+LETSENCRYPT_EMAIL=$runtime_letsencrypt_email
 DEVFLOW_ENV_FILE=$DEVFLOW_ENV_FILE
 DEVFLOW_BIND_ADDRESS=127.0.0.1
 DEVFLOW_HTTP_PORT=$HTTP_PORT
@@ -728,16 +908,31 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration aplicada.'
 
-CERTIFICATE_EXISTED_BEFORE=false
-[[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && CERTIFICATE_EXISTED_BEFORE=true
+CERTIFICATE_EXISTED_BEFORE=true
+if [[ "$INSTALL_SCOPE" == complete ]]; then
+  CERTIFICATE_EXISTED_BEFORE=false
+  [[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && CERTIFICATE_EXISTED_BEFORE=true
+fi
 
 "${DEVFLOW_COMPOSE[@]}" up -d backend frontend --wait
-PROVIDER_APPLIED=true
-provider_activate "$release_dir" "$DOMAIN" "$LETSENCRYPT_EMAIL" "$HTTP_PORT" "$API_PORT"
-provider_validate
+curl --fail --silent --show-error --max-time 20 "http://127.0.0.1:$API_PORT/api/health" >/dev/null
+curl --fail --silent --show-error --max-time 20 "http://127.0.0.1:$HTTP_PORT/healthz" >/dev/null
+db_runtime_id="$("${DEVFLOW_COMPOSE[@]}" ps -q db)"
+[[ -n "$db_runtime_id" && -z "$(docker port "$db_runtime_id" 2>/dev/null || true)" ]] \
+  || die 'postgres_public_port_exposed=true; instalação interna bloqueada.'
 
-curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/api/health" >/dev/null
-curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/" >/dev/null
+if [[ "$INSTALL_SCOPE" == complete ]]; then
+  PROVIDER_APPLIED=true
+  provider_activate "$release_dir" "$DOMAIN" "$LETSENCRYPT_EMAIL" "$HTTP_PORT" "$API_PORT"
+  provider_validate
+  curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/api/health" >/dev/null
+  curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/" >/dev/null
+  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED=true
+  DEVFLOW_PUBLIC_PROXY_MODIFIED=true
+  [[ "$CERTIFICATE_EXISTED_BEFORE" == true ]] || DEVFLOW_CERTIFICATE_ISSUED=true
+  DEVFLOW_FRONTEND_URL="https://$DOMAIN"
+  DEVFLOW_BACKEND_URL="https://$DOMAIN/api"
+fi
 set_managed_env_value DEVFLOW_VERSION "$DEVFLOW_RELEASE_VERSION"
 ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app"
 rm -f "$DEVFLOW_INSTALL_ROOT/app.candidate"
@@ -746,10 +941,23 @@ install -m 0644 "$release_dir/scripts/systemd/devflow-backup.service" /etc/syste
 install -m 0644 "$release_dir/scripts/systemd/devflow-backup.timer" /etc/systemd/system/devflow-backup.timer
 systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
-provider_state_write "$INFRASTRUCTURE_PROVIDER" "$DOMAIN" "$HTTP_PORT" "$API_PORT"
+provider_state_write "$INFRASTRUCTURE_PROVIDER" "${DOMAIN:-internal.local}" "$HTTP_PORT" "$API_PORT"
+DEVFLOW_APPLICATION_INSTALLED=true
+export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_EXTERNAL_PUBLICATION_ENABLED \
+  DEVFLOW_PUBLIC_PROXY_MODIFIED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL
 write_install_report success
-trap - ERR
+trap - ERR INT TERM HUP
 
-log INFO "DevFlow $DEVFLOW_VERSION instalado para homologação em https://$DOMAIN" | tee -a "$INSTALL_LOG"
+if [[ "$INSTALL_SCOPE" == internal ]]; then
+  log INFO "DevFlow $DEVFLOW_VERSION instalado internamente em http://127.0.0.1:$HTTP_PORT" | tee -a "$INSTALL_LOG"
+  printf '%s\n' \
+    'fullpassword_modified=false' \
+    'public_proxy_modified=false' \
+    'proxy_migration_executed=false' \
+    'certificate_issued=false' \
+    'external_publication_enabled=false' | tee -a "$INSTALL_LOG"
+else
+  log INFO "DevFlow $DEVFLOW_VERSION instalado para homologação em https://$DOMAIN" | tee -a "$INSTALL_LOG"
+fi
 log INFO "Bootstrap: use o e-mail configurado e o token protegido em $DEVFLOW_CONFIG_ROOT/bootstrap-token." | tee -a "$INSTALL_LOG"
 log WARN 'O DevFlow ainda não está aprovado para produção.' | tee -a "$INSTALL_LOG"

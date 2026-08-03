@@ -9,6 +9,9 @@ DEVFLOW_PROVIDER_STATE_FILE="${DEVFLOW_PROVIDER_STATE_FILE:-$DEVFLOW_STATE_ROOT/
 DEVFLOW_PROVIDER_NAME="${DEVFLOW_PROVIDER_NAME:-}"
 DEVFLOW_PROVIDER_STATUS=unknown
 
+# shellcheck source=../lib/port-ownership.sh
+. "$DEVFLOW_SOURCE_ROOT/scripts/lib/port-ownership.sh"
+
 provider_validate_name() {
   case "$1" in
     host-nginx|isolated-nginx|legacy-docker-nginx) return 0 ;;

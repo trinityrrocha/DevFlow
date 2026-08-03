@@ -201,6 +201,7 @@ port_is_listening() {
 
 devflow_container_running() {
   local service="$1"
+  command -v docker >/dev/null 2>&1 || return 1
   docker ps --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
     --filter "label=com.docker.compose.service=$service" --format '{{.ID}}' | grep -q .
 }
@@ -241,6 +242,17 @@ write_install_report() {
     printf '  "repository": "%s",\n' "${DEVFLOW_REPOSITORY_URL:-unknown}"
     printf '  "update_channel": "%s",\n' "${DEVFLOW_UPDATE_CHANNEL:-${UPDATE_CHANNEL:-unknown}}"
     printf '  "result": "%s",\n' "$result"
+    printf '  "installationScope": "%s",\n' "${DEVFLOW_INSTALLATION_SCOPE:-unknown}"
+    printf '  "applicationInstalled": %s,\n' "${DEVFLOW_APPLICATION_INSTALLED:-false}"
+    printf '  "externalPublicationEnabled": %s,\n' "${DEVFLOW_EXTERNAL_PUBLICATION_ENABLED:-false}"
+    printf '  "provider": "%s",\n' "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-unknown}"
+    printf '  "frontendUrl": "%s",\n' "${DEVFLOW_FRONTEND_URL:-http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}}"
+    printf '  "backendUrl": "%s",\n' "${DEVFLOW_BACKEND_URL:-http://127.0.0.1:${DEVFLOW_API_PORT:-13000}}"
+    printf '  "proxyMigrationRequired": %s,\n' "${DEVFLOW_PROXY_MIGRATION_REQUIRED:-false}"
+    printf '  "fullpasswordModified": %s,\n' "${DEVFLOW_FULLPASSWORD_MODIFIED:-false}"
+    printf '  "publicProxyModified": %s,\n' "${DEVFLOW_PUBLIC_PROXY_MODIFIED:-false}"
+    printf '  "proxyMigrationExecuted": %s,\n' "${DEVFLOW_PROXY_MIGRATION_EXECUTED:-false}"
+    printf '  "certificateIssued": %s,\n' "${DEVFLOW_CERTIFICATE_ISSUED:-false}"
     printf '  "infrastructure_provider": "%s",\n' "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-unknown}"
     printf '  "proxy_mode": "%s",\n' "${DEVFLOW_PROXY_MODE:-unknown}"
     printf '  "shared_proxy_adapter": "%s",\n' "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}"
@@ -251,4 +263,32 @@ write_install_report() {
   chmod 0640 "$temporary"
   mv -f -- "$temporary" "$report"
   write_version_state "${DEVFLOW_RELEASE_COMMIT:-unknown}"
+}
+
+installation_state_value() {
+  local key="$1" state_file="${2:-$DEVFLOW_STATE_ROOT/installation.json}"
+  [[ "$key" =~ ^[A-Za-z][A-Za-z0-9_]*$ && -r "$state_file" ]] || return 1
+  sed -nE "s/^[[:space:]]*\"$key\"[[:space:]]*:[[:space:]]*(\"([^\"]*)\"|(true|false)|[0-9]+),?[[:space:]]*$/\\2\\3/p" "$state_file"
+}
+
+load_installation_state() {
+  local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
+  [[ -r "$state_file" ]] || return 1
+  DEVFLOW_INSTALLATION_STATE_SCOPE="$(installation_state_value installationScope "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED="$(installation_state_value applicationInstalled "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED="$(installation_state_value externalPublicationEnabled "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_PROVIDER="$(installation_state_value provider "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_FRONTEND_URL="$(installation_state_value frontendUrl "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_BACKEND_URL="$(installation_state_value backendUrl "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_DOMAIN="$(installation_state_value domain "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED="$(installation_state_value proxyMigrationRequired "$state_file")"
+  [[ "$DEVFLOW_INSTALLATION_STATE_SCOPE" == internal || "$DEVFLOW_INSTALLATION_STATE_SCOPE" == complete ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == true || "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == false ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true || "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == false ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED" == true || "$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED" == false ]] || return 1
+  provider_validate_name "$DEVFLOW_INSTALLATION_STATE_PROVIDER" >/dev/null 2>&1 || return 1
+  export DEVFLOW_INSTALLATION_STATE_SCOPE DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED \
+    DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED DEVFLOW_INSTALLATION_STATE_PROVIDER \
+    DEVFLOW_INSTALLATION_STATE_FRONTEND_URL DEVFLOW_INSTALLATION_STATE_BACKEND_URL \
+    DEVFLOW_INSTALLATION_STATE_DOMAIN DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED
 }

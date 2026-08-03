@@ -1,28 +1,28 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.2-alpha`: o provider padrão é `host-nginx`. Antes de instalar, use `./install.sh --check` e o dry-run com `--provider host-nginx`. Se `fullpassword_nginx` ocupar 80/443, a instalação será bloqueada; execute somente os diagnósticos descritos em [migração de proxy](proxy-migration.md). Nenhuma instalação ou migração desta versão foi homologada na VPS.
+> Versão `0.4.3-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. Nenhuma instalação desta versão foi executada pelo desenvolvimento no Windows.
 
 ```bash
 ./install.sh --check
-./install.sh --dry-run --provider host-nginx --domain devflow.example.com \
-  --letsencrypt-email tls@example.com --super-admin-email admin@example.com
-sudo ./install.sh --install --provider host-nginx --domain devflow.example.com \
-  --letsencrypt-email tls@example.com --super-admin-email admin@example.com
+sudo ./install.sh --dry-run --install-scope internal \
+  --super-admin-email admin@example.com
+sudo ./install.sh --install-internal \
+  --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.2-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.3-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
-Quando o Full Password ocupa 80/443, a única atividade autorizada nesta etapa é coletar evidências com `sudo ./scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`. O segundo comando grava somente `/var/log/devflow/proxy-migration-dry-run.log`; não execute `--migrate` automaticamente.
+Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
 ## 1. Pré-requisitos
 
 - Ubuntu 22.04/24.04 ou Debian 12/13, `amd64` ou `arm64`;
 - 2 GiB de RAM e 5 GiB livres, no mínimo;
 - usuário com `sudo`;
-- domínio exclusivo resolvendo para a VPS;
+- domínio exclusivo resolvendo para a VPS somente antes da publicação externa;
 - conectividade HTTPS com `github.com` e `raw.githubusercontent.com`;
 - snapshot da VPS recomendado antes do primeiro ensaio.
-- no modo `fullpassword_nginx`, `python3` e `openssl` já disponíveis para as validações read-only de merge e certificado antes de qualquer instalação de pacotes;
+- para diagnósticos legados do `fullpassword_nginx`, `python3` e `openssl` disponíveis antes das validações read-only de merge e certificado;
 
 O instalador suporta Docker Engine 24+ e Compose v2 2.20+. Ele não altera firewall, não executa `docker system prune`, não reinicia containers de terceiros e não remove Docker globalmente.
 
@@ -60,7 +60,52 @@ Escolha explicitamente o proxy e valide o plano:
   --super-admin-email admin@exemplo.com
 ```
 
-Troque `isolated` por `shared` somente quando já existir um proxy. O modo compartilhado não é inferido automaticamente e não compartilha containers, volumes, banco ou storage. Esta versão aceita Nginx do host ou o contrato exato do `fullpassword_nginx`; Caddy e outros proxies containerizados são diagnosticados e bloqueados.
+Para coexistência com um proxy que ocupa 80/443, não informe domínio ou Let's Encrypt no estágio interno:
+
+```bash
+sudo ./install.sh --dry-run \
+  --install-scope internal \
+  --super-admin-email contato@sti1.com.br
+
+sudo ./install.sh --install-internal \
+  --super-admin-email contato@sti1.com.br
+```
+
+O dry-run deve informar `internal_installation_ready=true`, as duas portas loopback disponíveis e `postgres_public_port_exposed=false`. A ocupação comprovada por `fullpassword_nginx` resulta em `external_publication_ready=false`, sem falha global do estágio interno.
+
+Durante esse escopo não são permitidos Nginx no host, Certbot, `/etc/nginx`, certificados, override, reload, migração ou alteração em `/opt/fullpassword`.
+
+## 4. Homologação interna por túnel
+
+```bash
+ssh \
+  -L 18080:127.0.0.1:18080 \
+  -L 13000:127.0.0.1:13000 \
+  ubuntu@IP_DA_VPS
+```
+
+No computador local, acesse `http://127.0.0.1:18080`. As portas nunca devem ser alteradas para `0.0.0.0`.
+
+Confirme o estado sem exigir HTTPS:
+
+```bash
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+O resultado interno saudável apresenta `external_publication_enabled=false`, `external_https_status=not-configured` e `overall_internal_health=healthy`.
+
+## 5. Publicação externa posterior
+
+```bash
+sudo /opt/devflow/app/scripts/publish.sh --dry-run \
+  --provider host-nginx \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br
+```
+
+O publicador exige aplicação interna saudável, DNS, propriedade comprovada de 80/443 e provider pronto. Ele não reinstala a aplicação nem executa migrations. Enquanto `fullpassword_nginx` ocupar as portas, essa operação permanecerá bloqueada.
+
+Use instalação completa somente quando o provider puder publicar com segurança. Um `fullpassword_nginx` comprovado não é selecionado como adaptador: ele bloqueia o estágio externo e mantém o estágio interno disponível. Caddy, proprietários desconhecidos e evidências divergentes permanecem fail-closed para publicação.
 
 Se o dry-run comum encerrar com código `3` e `reason=privileged-compose-validation-required`, repita exatamente o mesmo plano com `sudo`:
 
@@ -72,11 +117,11 @@ sudo ./install.sh --dry-run \
   --super-admin-email ADMIN_AUTORIZADO
 ```
 
-Essa execução privilegiada continua sem mutações: não instala pacotes, não cria recursos Docker, não reinicia containers e não altera permissões. Root é usado somente para que `docker compose --project-directory /opt/fullpassword` possa consumir seus próprios inputs protegidos. Somente depois de um dry-run privilegiado aprovado deve ser considerada uma execução separada com `--install`.
+Essa execução privilegiada continua sem mutações: não instala pacotes, não cria recursos Docker, não reinicia containers e não altera permissões. Para a arquitetura atual, prefira o dry-run com `--install-scope internal`; diagnósticos privilegiados do Compose do Full Password são apenas evidência histórica da migração, não requisito da instalação interna.
 
 Também é possível executar `sudo ./install.sh` sem argumentos. Nesse caso, o bootstrap pergunta domínio, e-mails, modo de proxy e confirmação antes de qualquer mudança permanente.
 
-## 4. Cenário A — VPS limpa
+## 6. Cenário A — VPS limpa
 
 Confirme que 80/443 estão livres e execute:
 
@@ -108,7 +153,7 @@ O relatório registra data, versão, commit, branch, URL pública do repositóri
 
 O instalador não aceita checkout sujo nem origem sem commit Git. Isso impede uma release local não reproduzível.
 
-## 5. Cenário B — Docker e Nginx existentes
+## 7. Cenário B — Docker e Nginx existentes
 
 Use portas loopback exclusivas e o proxy compartilhado:
 
@@ -136,54 +181,32 @@ Um Nginx do host é aceito apenas quando `nginx -t`, include persistente de `/et
 
 Se o Nginx existente não inclui `/etc/nginx/conf.d/*.conf`, prepare um include persistente e documentado antes de executar o instalador. Não modifique arquivos de outra aplicação.
 
-## 6. Coexistência com Full Password
+## 8. Coexistência com Full Password
 
-Se existir `fullpassword_nginx`, o instalador oferece o diagnóstico read-only. Ele só prossegue quando o relatório retorna `compatibility=compatible-with-compose-override` e comprova o contrato exato de projeto, serviço, caminhos, mounts, rede, include, domínio e merge. Não use o adaptador com uma topologia apenas parecida.
+Se existir `fullpassword_nginx`, o instalador cruza `ss`, `docker ps`, `docker inspect` e `docker port`. Evidência coerente deve identificar o mesmo container em 80 e 443; divergência permanece fail-closed. A propriedade comprovada autoriza apenas o estágio interno e registra `proxyMigrationRequired=true`.
 
-O `--check` real da versão `0.3.2-alpha`, commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, comprovou que o Compose original depende de `/opt/fullpassword/.env` protegido. O dry-run revelou uma variável de caminho não inicializada antes de qualquer mutação. A versão `0.3.3-alpha` corrige esse fluxo; ainda precisa repetir check, dry-run comum e dry-run privilegiado na VPS. Isso não representa instalação aprovada nem homologação do modo compartilhado.
-
-Para repetir somente o inventário privilegiado a partir de um checkout confiável:
+Instale sem integrar redes, Compose, Nginx ou certificados do Full Password:
 
 ```bash
-sudo ./scripts/detect-shared-proxy.sh \
-  --container fullpassword_nginx \
-  --domain devflow.exemplo.com \
-  --output /opt/devflow/logs/shared-proxy-diagnostic.log
-```
-
-O código de saída `2` significa que a compatibilidade não foi comprovada; o código `3` solicita a repetição privilegiada porque um input protegido impediu a tentativa completa. Em ambos os casos, não desabilite o gate. Saída zero com `compatible-with-compose-override` comprova somente compatibilidade estrutural para iniciar a instalação transacional.
-
-O adaptador implementado usa:
-
-- `/opt/devflow/config/proxy/fullpassword-nginx.override.yml` como override independente;
-- `/opt/devflow/config/nginx/devflow.conf` como virtual host exclusivo;
-- `devflow_edge` como rede externa gerenciada;
-- `devflow-frontend:80` e `devflow-backend:3000` como upstreams;
-- `/opt/devflow/storage/acme` como origem persistente da prova de rota e do desafio ACME;
-- `/etc/letsencrypt/live/dev.sti1.com.br` para o certificado exclusivo;
-- snapshots em `/opt/devflow/backups/proxy` para rollback.
-
-O instalador não edita o Compose original nem `nginx.runtime.conf`, não usa `docker cp` e não modifica arquivos internos do container. Ele recria somente o serviço `nginx` com os dois Compose após validar a candidata. Leia integralmente o [adaptador persistente](fullpassword-nginx-adapter.md) antes do ensaio.
-
-Para o ambiente comprovado, use explicitamente `shared`, `dev.sti1.com.br` e o e-mail ACME autorizado. Revise primeiro o relatório e o dry-run; não force a compatibilidade:
-
-```bash
-./install.sh --dry-run \
-  --proxy-mode shared \
-  --domain dev.sti1.com.br \
-  --letsencrypt-email contato@sti1.com.br \
+sudo ./install.sh --dry-run --install-scope internal \
   --super-admin-email ADMIN_AUTORIZADO
-
-sudo ./install.sh --install \
-  --proxy-mode shared \
-  --domain dev.sti1.com.br \
-  --letsencrypt-email contato@sti1.com.br \
+sudo ./install.sh --install-internal \
   --super-admin-email ADMIN_AUTORIZADO
 ```
 
-Não coloque senha ou token na linha de comando. `ADMIN_AUTORIZADO` deve ser substituído pelo e-mail real do primeiro administrador.
+Depois da homologação interna, o publicador continuará bloqueado enquanto o proxy ocupar 80/443. Para coletar evidências da futura migração sem alterar o servidor:
 
-## 7. Diretórios e persistência
+```bash
+sudo ./scripts/publish.sh --dry-run \
+  --provider host-nginx \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br
+sudo ./scripts/migrate-proxy-to-host-nginx.sh --check
+```
+
+O [adaptador persistente legado](fullpassword-nginx-adapter.md) permanece documentado para rastreabilidade e rollback, mas não é selecionado automaticamente nem faz parte da instalação interna. Não edite `/opt/fullpassword`, não conecte redes e não recrie `fullpassword_nginx` por comandos manuais.
+
+## 9. Diretórios e persistência
 
 ```text
 /opt/devflow/
@@ -202,7 +225,7 @@ Não coloque senha ou token na linha de comando. `ADMIN_AUTORIZADO` deve ser sub
 
 Não use `chmod 777`. Os containers executam com os usuários definidos nas imagens; não é criado usuário Linux adicional nesta baseline.
 
-## 8. Primeiro acesso
+## 10. Primeiro acesso
 
 Leia o token sem copiá-lo para logs:
 
@@ -218,7 +241,7 @@ Use o e-mail informado na instalação, defina uma senha forte e configure MFA. 
 sudo rm -- /opt/devflow/config/bootstrap-token
 ```
 
-## 9. SMTP e domínio
+## 11. SMTP e domínio
 
 Edite somente o arquivo privado:
 
@@ -229,7 +252,7 @@ sudo chmod 600 /opt/devflow/config/devflow.env
 
 Defina `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM`. Nunca mostre o arquivo completo em ticket ou diagnóstico. O domínio não pode ser compartilhado com outro virtual host.
 
-## 10. Verificação
+## 12. Verificação
 
 ```bash
 sudo /opt/devflow/app/scripts/diagnose.sh --output /tmp/devflow-diagnostic.txt
@@ -239,7 +262,7 @@ curl --fail --silent https://devflow.exemplo.com/
 
 O relatório da instalação fica em `/opt/devflow/state/installation.json`; a versão instalada fica em `/opt/devflow/state/version.json`. A conclusão exige `healthy`, não apenas `running`.
 
-## 11. Atualização, remoção e recuperação
+## 13. Atualização, remoção e recuperação
 
 O checkout `/opt/devflow/source` usa exclusivamente `https://github.com/trinityrrocha/DevFlow.git`. Como o repositório é público, consultas e atualizações não dependem de credenciais. Não configure token, chave SSH, deploy key ou credential helper para o DevFlow na VPS.
 
@@ -256,7 +279,7 @@ O updater aceita apenas remote `trinityrrocha/DevFlow`, branch `main`, checkout 
 
 `--keep-data` preserva configuração, banco, storage, backups, releases e o checkout operacional. `--purge` exige backup existente, lista o alvo e pede duas confirmações literais. O certificado DevFlow só é removido com `--remove-devflow-certificate` e uma confirmação adicional. Docker e todos os certificados/arquivos do Full Password são sempre preservados.
 
-## 12. Limitações da alpha
+## 14. Limitações da alpha
 
 - sem interface web administrativa para o updater;
 - rollback automático implementado, mas ainda sem fault-injection e restore drill na VPS;

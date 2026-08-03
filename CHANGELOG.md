@@ -2,6 +2,33 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.3-alpha] - 2026-08-02
+
+### Adicionado
+
+- instalação interna explícita por `--install-internal` ou `--install-scope internal`, sem dependência de domínio, Nginx ou HTTPS;
+- publicação posterior transacional em `scripts/publish.sh`, sem reinstalar a aplicação ou executar migrations;
+- estado operacional por escopo em `/opt/devflow/state/installation.json` e health interno independente de HTTPS;
+- acesso de homologação por túnel SSH documentado.
+
+### Corrigido
+
+- propriedade de 80/443 agora cruza `ss`, `docker ps`, `docker inspect` e `docker port`, reconhecendo `fullpassword_nginx` somente com evidência coerente;
+- ocupação das portas públicas bloqueia somente publicação, ACME e migração, sem impedir containers e serviços locais;
+- frontend e backend permanecem vinculados a `127.0.0.1`; PostgreSQL continua sem porta publicada no host;
+- o frontend interno encaminha `/api/` diretamente ao backend pela rede Docker.
+
+### Segurança
+
+- o escopo interno não altera Full Password, `/etc/nginx`, certificados, portas 80/443 ou configurações de proxy;
+- falhas internas removem somente recursos incompletos do DevFlow e preservam dados e infraestrutura de terceiros.
+
+### Homologação
+
+- `0.4.2-alpha` teve `--check` executado na VPS ARM64; o dry-run completo foi bloqueado antes de alterações pela classificação anterior;
+- `0.4.3-alpha` ainda depende de novo check, dry-run interno e instalação interna na VPS;
+- nenhuma instalação, publicação ou migração foi executada nesta alteração local.
+
 ## [0.4.2-alpha] - 2026-08-02
 
 ### Corrigido

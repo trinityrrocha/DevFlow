@@ -167,7 +167,7 @@ scenario '--dry-run sem root orienta repetição privilegiada'
 scenario '--dry-run com root mantém validação completa'
 
 # 17. Garantia de ausência de mutações em --dry-run.
-dry_run_gate="$(grep -nF '[[ "$MODE" == dry-run ]] && {' "$ROOT/scripts/install.sh" | cut -d: -f1)"
+dry_run_gate="$(grep -nF 'if [[ "$MODE" == dry-run ]]; then' "$ROOT/scripts/install.sh" | cut -d: -f1 | tail -n1)"
 install_gate="$(grep -nF 'install -d -m 0750 "$DEVFLOW_INSTALL_ROOT"' "$ROOT/scripts/install.sh" | cut -d: -f1)"
 [[ -n "$dry_run_gate" && -n "$install_gate" && "$dry_run_gate" -lt "$install_gate" ]]
 ! grep -Eq 'docker (restart|start|stop|network create)|chmod .*fullpassword|chown .*fullpassword' <<< "$DIAGNOSTIC_SOURCE"

@@ -51,6 +51,12 @@ O bootstrap falha se o arquivo baixado não corresponder mais à `main`, se a co
 
 ## Porta ocupada
 
+Se 80/443 pertencerem de forma comprovada a `fullpassword_nginx`, isso não é falha da instalação interna. Confirme `public_proxy_status=occupied-by-known-docker-proxy`, `owner_proven=true` nas duas portas e execute o dry-run com `--install-scope internal`.
+
+Se `127.0.0.1:18080` ou `127.0.0.1:13000` estiver ocupada por outro serviço, a instalação interna permanece bloqueada. Não encerre o processo desconhecido automaticamente; escolha outras portas explicitamente ou libere-as em janela controlada.
+
+`owner-unproven` bloqueia somente publicação. Colete `docker ps`, `docker inspect`, `docker port` e `ss -lntp` com privilégio suficiente antes de qualquer decisão.
+
 ```bash
 sudo ss -ltnp
 docker ps --format 'table {{.Names}}\t{{.Ports}}'

@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.2-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.4.3-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,8 +42,8 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.2-alpha
-./install.sh --check --ref v0.4.2-alpha
+./install.sh --check --ref main --expected-version 0.4.3-alpha
+./install.sh --check --ref v0.4.3-alpha
 ```
 
 O fluxo explícito em três etapas também está disponível:
@@ -60,6 +60,37 @@ sudo ./install.sh --install \
   --domain devflow.exemplo.com \
   --letsencrypt-email tls@exemplo.com \
   --super-admin-email admin@exemplo.com
+```
+
+Quando 80/443 estiverem ocupadas, valide e instale somente a aplicação:
+
+```bash
+sudo ./install.sh --dry-run \
+  --install-scope internal \
+  --super-admin-email admin@exemplo.com
+
+sudo ./install.sh --install-internal \
+  --super-admin-email admin@exemplo.com
+```
+
+Esse escopo publica somente `127.0.0.1:18080` e `127.0.0.1:13000`. Não exige domínio ou e-mail TLS, não toca 80/443, Nginx, certificados, migração ou Full Password. O PostgreSQL não possui porta no host.
+
+Para acessar pela estação local:
+
+```bash
+ssh \
+  -L 18080:127.0.0.1:18080 \
+  -L 13000:127.0.0.1:13000 \
+  ubuntu@IP_DA_VPS
+```
+
+Abra `http://127.0.0.1:18080`. Depois da homologação interna, a publicação é uma operação separada:
+
+```bash
+sudo /opt/devflow/app/scripts/publish.sh --dry-run \
+  --provider host-nginx \
+  --domain devflow.exemplo.com \
+  --letsencrypt-email tls@exemplo.com
 ```
 
 Parâmetros de configuração podem ser fornecidos ao bootstrap sem clone prévio:
@@ -86,7 +117,7 @@ O provider padrão é `host-nginx`: um proxy central no Linux atende múltiplos 
 - `DEVFLOW_INFRASTRUCTURE_PROVIDER=isolated-nginx`: somente VPS exclusiva; proxy DevFlow ocupa 80/443.
 - `DEVFLOW_INFRASTRUCTURE_PROVIDER=legacy-docker-nginx`: legado, descontinuado e somente explícito para transição/rollback.
 
-Se `fullpassword_nginx` ocupar 80/443, o instalador comum interrompe sem alterar nada. A futura transição usa o [procedimento separado de migração](docs/infrastructure/proxy-migration.md); nesta fase, execute somente `--check` e `--dry-run`.
+Se `fullpassword_nginx` ocupar 80/443, somente a publicação externa fica bloqueada. A instalação interna continua disponível e preserva integralmente o proxy. A futura transição usa o [procedimento separado de migração](docs/infrastructure/proxy-migration.md); não execute migração automaticamente.
 
 ```bash
 sudo ./scripts/migrate-proxy-to-host-nginx.sh --check

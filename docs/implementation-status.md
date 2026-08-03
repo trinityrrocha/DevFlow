@@ -1,10 +1,12 @@
 # Estado de implementação
 
-Data de corte: 2026-08-02. Versão: `0.4.2-alpha`.
+Data de corte: 2026-08-02. Versão: `0.4.3-alpha`.
 
 ## Provider Nginx do host
 
 Implementados localmente: contrato comum, provider padrão `host-nginx`, providers isolado/legado, estado operacional, virtual host atômico, portas loopback, TLS/Certbot, integração com install/update/health/uninstall e utilitário transacional de migração. Em `0.4.1-alpha`, check/dry-run passaram a provar mappings, porta loopback, Compose original/override, vhost, listeners, saúde e rollback por evidências sanitizadas. A validação local é estrutural/simulada; nenhuma instalação, migração, emissão TLS, reload, troca de portas ou rollback real foi executado nesta rodada.
+
+Em `0.4.3-alpha`, a instalação interna deixou de depender da disponibilidade de 80/443. A publicação externa passou para `scripts/publish.sh`, e a propriedade das portas cruza sockets, mappings e inspect Docker. O check de `0.4.2-alpha` foi executado na VPS ARM64; os novos fluxos de `0.4.3-alpha` ainda aguardam homologação real.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 
@@ -41,7 +43,7 @@ Os resultados efetivamente obtidos nesta rodada devem constar no relatório fina
 - construir imagens e iniciar todos os containers em Linux com Docker;
 - executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
 - executar migration em PostgreSQL real e confirmar `/api/health`;
-- executar `--check` e `--dry-run` da migração com `0.4.2-alpha` e arquivar o relatório sanitizado;
+- executar `--check`, dry-run interno e instalação interna com `0.4.3-alpha` e arquivar o relatório sanitizado;
 - confirmar na VPS todos os booleans do Compose, Nginx, loopback, health e rollback antes de considerar `migration_ready=true`;
 - confirmar `compose_cross_directory_supported=true`, `compose_merge_valid=true`, `changes_performed=false` e `installation_ready=true` no dry-run privilegiado;
 - executar posteriormente a migração controlada e confirmar Nginx do host, Full Password e rollback;

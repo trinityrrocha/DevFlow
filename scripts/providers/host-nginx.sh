@@ -28,20 +28,6 @@ host_nginx_select_layout() {
   export HOST_NGINX_LAYOUT HOST_NGINX_AVAILABLE HOST_NGINX_ENABLED
 }
 
-host_nginx_port_owner() {
-  local port="$1" owner
-  owner="$(ss -H -ltnp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print $0; exit}' | redact_stream)"
-  [[ -n "$owner" ]] || return 1
-  if grep -Eq 'users:\(\("nginx"' <<< "$owner"; then
-    printf '%s\n' host-nginx
-  elif command -v docker >/dev/null 2>&1 \
-    && docker ps --filter name='^/fullpassword_nginx$' --format '{{.Ports}}' 2>/dev/null | grep -Eq "(^|, )[[:alnum:].:\[\]-]*:$port->"; then
-    printf '%s\n' fullpassword_nginx
-  else
-    [[ "$owner" == *'users:'* ]] && printf '%s\n' occupied || printf '%s\n' unknown
-  fi
-}
-
 provider_detect() {
   HOST_NGINX_PRESENT=false HOST_NGINX_VALID=false HOST_NGINX_CERTBOT=false
   HOST_NGINX_SERVICE=absent HOST_NGINX_VERSION=absent
@@ -58,21 +44,30 @@ provider_detect() {
   fi
   command -v certbot >/dev/null 2>&1 && HOST_NGINX_CERTBOT=true
   host_nginx_select_layout
-  local port owner
-  for port in 80 443; do
-    owner="$(host_nginx_port_owner "$port" || true)"
-    [[ -z "$owner" ]] && continue
-    if [[ "$owner" == unknown ]]; then
-      HOST_NGINX_PRIVILEGED_CHECK_REQUIRED=true
-      continue
-    fi
-    if [[ "$owner" == host-nginx && "$HOST_NGINX_PRESENT" == true && "$HOST_NGINX_SERVICE" == active ]]; then
-      continue
-    fi
-    HOST_NGINX_PUBLIC_CONFLICT=true
-    [[ "$owner" == fullpassword_nginx ]] && HOST_NGINX_CONFLICT_OWNER=fullpassword_nginx \
-      || HOST_NGINX_CONFLICT_OWNER=other
-  done
+  devflow_detect_public_port_ownership
+  case "${DEVFLOW_PUBLIC_PROXY_STATUS:-unknown}" in
+    free) ;;
+    occupied-by-host-nginx)
+      if [[ "$HOST_NGINX_PRESENT" != true || "$HOST_NGINX_SERVICE" != active ]]; then
+        HOST_NGINX_PUBLIC_CONFLICT=true
+        HOST_NGINX_CONFLICT_OWNER=other
+      fi
+      ;;
+    occupied-by-known-docker-proxy)
+      HOST_NGINX_PUBLIC_CONFLICT=true
+      [[ "${DEVFLOW_PUBLIC_PROXY_CONTAINER:-none}" == fullpassword_nginx ]] \
+        && HOST_NGINX_CONFLICT_OWNER=fullpassword_nginx \
+        || HOST_NGINX_CONFLICT_OWNER=other
+      ;;
+    *)
+      if [[ "$(id -u)" -ne 0 ]]; then
+        HOST_NGINX_PRIVILEGED_CHECK_REQUIRED=true
+      else
+        HOST_NGINX_PUBLIC_CONFLICT=true
+        HOST_NGINX_CONFLICT_OWNER=other
+      fi
+      ;;
+  esac
 }
 
 provider_check() {
@@ -105,13 +100,15 @@ provider_dry_run() {
 }
 
 provider_prepare() {
-  local domain="$1" frontend_port="$2" backend_port="$3" nginx_file
+  local domain="$1" frontend_port="$2" backend_port="$3" nginx_file tuple service port
   provider_check || return
   validate_domain "$domain"; validate_port "$frontend_port"; validate_port "$backend_port"
   [[ "$frontend_port" != "$backend_port" ]] || { log ERROR 'Portas locais devem ser distintas.'; return 1; }
-  for port in "$frontend_port" "$backend_port"; do
-    if port_is_listening "$port"; then
-      log ERROR "Porta loopback $port ja esta ocupada."; return 1
+  for tuple in "frontend:$frontend_port" "backend:$backend_port"; do
+    service="${tuple%%:*}"
+    port="${tuple##*:}"
+    if port_is_listening "$port" && ! devflow_container_running "$service"; then
+      log ERROR "Porta loopback $port esta ocupada por outro servico."; return 1
     fi
   done
   if [[ -d /etc/nginx ]]; then

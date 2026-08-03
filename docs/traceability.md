@@ -1,5 +1,20 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.3-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Instalação sem publicação | `install.sh --install-internal` e `--install-scope internal` | teste de escopo e ausência de chamadas ao provider mutável |
+| Loopback exclusivo | `docker-compose.shared.yml` | mappings `127.0.0.1:18080` e `127.0.0.1:13000` |
+| PostgreSQL privado | `docker-compose.yml` sem `ports` no serviço `db` | inspeção estrutural e operacional |
+| Propriedade de 80/443 | `scripts/lib/port-ownership.sh` | evidência cruzada de `ss`, `docker ps`, `docker inspect` e `docker port` |
+| Estado por escopo | `/opt/devflow/state/installation.json` | booleans de aplicação, publicação e migração |
+| Health interno | `scripts/health.sh` | HTTPS ausente resulta em `not-configured`, sem falha interna |
+| Publicação posterior | `scripts/publish.sh` | preflight interno, DNS, portas, TLS e rollback próprio |
+| Full Password preservado | escopo interno não carrega adaptador mutável | auditoria read-only e testes de regressão |
+
+Nenhuma instalação, publicação ou migração foi executada no Windows nesta alteração.
+
 ## Bootstrap dinâmico `0.4.2-alpha`
 
 | Requisito | Implementação | Evidência |
