@@ -1,5 +1,23 @@
 # Rastreabilidade — Documento 001
 
+## Evidências de migração `0.4.1-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Mappings atuais reais | coleta por target em `migrate-proxy-to-host-nginx.sh` | bloco `current_port_mappings` |
+| Porta `127.0.0.1:18081` livre | sockets, Docker, containers, systemd e configs | booleans específicos + blocker fail-closed |
+| Compose original e rollback | `docker compose config --format json` sem override | `rollback_compose_valid` e portas 80/443 |
+| Override real e preservação | template temporário + `validate-proxy-migration-compose.py` | serviços, mounts, redes, environment, restart e diff exclusivo de portas |
+| Vhost planejado | `docker/nginx/fullpassword-host.conf.template` | frontend, API, restore, uploads, timeouts, protocolo e IP real |
+| Nginx do host | binário, systemd, processos, tentativa anterior e listeners | estado sanitizado sem start/reload |
+| Saúde atual | HTTP, HTTPS, certificado, frontend e `/api/health` | `fullpassword_health_current` |
+| Upstream futuro | teste após recriar o proxy e antes de iniciar Nginx | dry-run registra `not-executed` com motivo |
+| Rollback ordenado | parar host, liberar portas, Compose original, mappings e health | seis booleans de rollback |
+| Relatório | `/var/log/devflow/proxy-migration-dry-run.log` | somente campos derivados e `changes_applied=false` |
+| Testes | `validate-proxy-migration-evidence.mjs` | 21 cenários automatizados |
+
+Os gates operacionais continuam pendentes na VPS. Esta rastreabilidade não autoriza `--migrate` e não declara homologação para produção.
+
 ## Provider padrão `0.4.0-alpha`
 
 | Requisito | Implementação | Evidência |

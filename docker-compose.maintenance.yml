@@ -19,5 +19,5 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.0-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.1-alpha}
       devflow.role: maintenance

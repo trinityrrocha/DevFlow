@@ -1,6 +1,6 @@
 {
   "name": "devflow",
-  "version": "0.4.0-alpha",
+  "version": "0.4.1-alpha",
   "private": true,
   "workspaces": [
     "backend",
@@ -18,11 +18,12 @@
     "validate:privileged-compose": "node scripts/validate-privileged-compose.mjs",
     "validate:compose-discovery": "node scripts/validate-compose-discovery.mjs",
     "validate:providers": "node scripts/validate-providers.mjs",
+    "validate:proxy-migration-evidence": "node scripts/validate-proxy-migration-evidence.mjs",
     "audit:bash-initialization": "node scripts/audit-bash-initialization.mjs",
     "audit:fullpassword-readonly": "node scripts/audit-fullpassword-readonly.mjs",
     "audit:repository": "node scripts/repository-audit.mjs",
     "audit:history": "node scripts/history-audit.mjs",
-    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm validate:shared-proxy && pnpm validate:fullpassword-adapter && pnpm validate:privileged-compose && pnpm validate:compose-discovery && pnpm validate:providers && pnpm audit:bash-initialization && pnpm audit:fullpassword-readonly && pnpm audit:repository && pnpm audit:history"
+    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm validate:shared-proxy && pnpm validate:fullpassword-adapter && pnpm validate:privileged-compose && pnpm validate:compose-discovery && pnpm validate:providers && pnpm validate:proxy-migration-evidence && pnpm audit:bash-initialization && pnpm audit:fullpassword-readonly && pnpm audit:repository && pnpm audit:history"
   },
   "packageManager": "pnpm@10.15.0",
   "engines": {

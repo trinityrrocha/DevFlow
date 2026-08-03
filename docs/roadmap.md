@@ -1,11 +1,11 @@
 # Roadmap inicial
 
-## Marco `0.4.0-alpha` — provider Nginx no host
+## Marco `0.4.1-alpha` — evidências da migração para Nginx no host
 
 - [x] contrato e três providers;
 - [x] estado operacional e integração nos scripts;
 - [x] loopback, virtual host, Certbot e rollback de configuração;
-- [x] utilitário separado de migração com check/dry-run;
+- [x] check/dry-run com gates técnicos, relatório sanitizado e 21 regressões;
 - [ ] homologar provider em VPS;
 - [ ] executar migração em janela aprovada e validar rollback real;
 - [ ] somente depois avaliar remoção do adaptador legado.
@@ -74,7 +74,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.3.3-alpha` consistente;
+- versão `0.4.1-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

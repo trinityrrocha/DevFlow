@@ -2,6 +2,29 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.1-alpha] - 2026-08-02
+
+### Corrigido
+
+- `--check` e `--dry-run` da migração agora apresentam mappings reais, ocupação da porta `127.0.0.1:18081`, estado do Nginx do host, saúde funcional do Full Password e blockers allowlisted;
+- o override temporário é validado com o Docker Compose real sem expor o JSON interpolado, comparando serviços, mounts, redes, ambiente, restart e a única troca de portas permitida;
+- o Compose original é validado separadamente como fonte de rollback para as portas públicas 80/443;
+- o vhost planejado preserva frontend, API, restore de backup, limites de upload, timeouts e headers de encaminhamento;
+- a futura transação valida frontend, API e fronteira de autenticação pelo loopback antes de iniciar o Nginx do host;
+- rollback para primeiro o Nginx do host, comprova liberação das portas, restaura somente `fullpassword_nginx` e valida o serviço publicamente.
+
+### Evidências
+
+- relatório sanitizado do dry-run em `/var/log/devflow/proxy-migration-dry-run.log`, sem conteúdo do ambiente ou credenciais;
+- 21 cenários automatizados cobrem gates, falhas antes/depois da troca, listeners, Compose, rollback, sigilo e cálculo de readiness;
+- `migration_ready=true` somente é emitido quando todos os gates aplicáveis e o rollback estão comprovados.
+
+### Homologação
+
+- nenhuma migração, troca de porta, parada de container, inicialização/reload de Nginx ou emissão de certificado foi executada nesta etapa;
+- o teste runtime de `127.0.0.1:18081` permanece corretamente como `not-executed` durante o dry-run;
+- esta versão alpha não está aprovada para produção.
+
 ## [0.4.0-alpha] - 2026-08-02
 
 ### Adicionado

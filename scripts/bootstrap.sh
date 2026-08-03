@@ -4,7 +4,7 @@ umask 077
 
 REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'
 RAW_VERSION_URL='https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/VERSION'
-EXPECTED_VERSION='0.4.0-alpha'
+EXPECTED_VERSION='0.4.1-alpha'
 SELECTED_REF=main
 MODE=
 MODE_EXPLICIT=false
@@ -22,7 +22,7 @@ die() { log "ERRO: $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-DevFlow 0.4.0-alpha — bootstrap público para homologação
+DevFlow 0.4.1-alpha — bootstrap público para homologação
 
 Uso:
   ./install.sh --check

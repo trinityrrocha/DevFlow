@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.0-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.4.1-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -79,6 +79,13 @@ O provider padrão é `host-nginx`: um proxy central no Linux atende múltiplos 
 - `DEVFLOW_INFRASTRUCTURE_PROVIDER=legacy-docker-nginx`: legado, descontinuado e somente explícito para transição/rollback.
 
 Se `fullpassword_nginx` ocupar 80/443, o instalador comum interrompe sem alterar nada. A futura transição usa o [procedimento separado de migração](docs/infrastructure/proxy-migration.md); nesta fase, execute somente `--check` e `--dry-run`.
+
+```bash
+sudo ./scripts/migrate-proxy-to-host-nginx.sh --check
+sudo ./scripts/migrate-proxy-to-host-nginx.sh --dry-run
+```
+
+O check não persiste arquivos. O dry-run grava somente evidências sanitizadas em `/var/log/devflow/proxy-migration-dry-run.log`; nenhum deles altera containers, portas ou o Nginx. Não execute `--migrate` com base apenas nesta versão.
 
 A rede `devflow_edge` contém somente frontend, backend e edge; `devflow_internal` é interna e contém somente PostgreSQL e backend. O proxy nunca recebe acesso à rede do banco.
 
