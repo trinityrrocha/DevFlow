@@ -14,6 +14,8 @@ DEVFLOW_ENV_FILE="${DEVFLOW_ENV_FILE:-$DEVFLOW_CONFIG_ROOT/devflow.env}"
 DEVFLOW_LOG_ROOT="${DEVFLOW_LOG_ROOT:-$DEVFLOW_INSTALL_ROOT/logs}"
 DEVFLOW_DATA_ROOT="${DEVFLOW_DATA_ROOT:-$DEVFLOW_INSTALL_ROOT/data}"
 DEVFLOW_STATE_ROOT="${DEVFLOW_STATE_ROOT:-$DEVFLOW_INSTALL_ROOT/state}"
+DEVFLOW_COMPOSE=()
+DEVFLOW_MAINTENANCE_COMPOSE=()
 
 timestamp() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 
@@ -89,6 +91,104 @@ validate_port() {
   [[ "$1" =~ ^[0-9]+$ && "$1" -ge 1 && "$1" -le 65535 ]] || die "Porta inválida: $1"
 }
 
+DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS=(
+  DEVFLOW_VERSION
+  DEVFLOW_RELEASE_COMMIT
+  DEVFLOW_ENV_FILE
+  DEVFLOW_DOMAIN
+  NODE_ENV
+  APP_ORIGIN
+  DB_USER
+  DB_PASSWORD
+  DB_NAME
+  JWT_SECRET
+  ADMIN_BOOTSTRAP_TOKEN
+  CONFIG_ENCRYPTION_KEY
+  SUPER_ADMIN_EMAIL
+  BACKUP_PASSPHRASE_FILE
+)
+
+devflow_env_key_has_value() {
+  local key="$1" file="${2:-$DEVFLOW_ENV_FILE}"
+  [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ && -f "$file" && ! -L "$file" ]] || return 2
+  awk -v target="$key" '
+    index($0, target "=") == 1 {
+      value=substr($0, length(target) + 2)
+      sub(/\r$/, "", value)
+      if (value ~ /^[[:space:]]*$/ || value ~ /^[[:space:]]*([\047\042][\047\042])[[:space:]]*$/) exit 1
+      found=1
+      exit 0
+    }
+    END { if (!found) exit 1 }
+  ' "$file"
+}
+
+devflow_env_metadata_value() {
+  local key="$1" file="${2:-$DEVFLOW_ENV_FILE}"
+  [[ "$key" == DEVFLOW_VERSION || "$key" == DEVFLOW_RELEASE_COMMIT || "$key" == DEVFLOW_ENV_FILE ]] \
+    || return 2
+  awk -v target="$key" '
+    index($0, target "=") == 1 {
+      value=substr($0, length(target) + 2)
+      sub(/\r$/, "", value)
+      print value
+      exit 0
+    }
+  ' "$file"
+}
+
+devflow_inspect_private_env() {
+  local file="${1:-$DEVFLOW_ENV_FILE}" mode owner effective_uid key
+  local -a missing=()
+  PRIVATE_ENV_DETECTED=false
+  PRIVATE_ENV_READABLE=false
+  PRIVATE_ENV_PERMISSIONS_VALID=false
+  PRIVATE_ENV_OWNER_VALID=false
+  PRIVATE_ENV_SYNTAX_VALID=false
+  DB_PASSWORD_PRESENT=false
+  CONFIGURATION_VERSION=unknown
+  MISSING_REQUIRED_ENV_KEYS=none
+
+  [[ -e "$file" ]] || return 1
+  PRIVATE_ENV_DETECTED=true
+  [[ "$file" == /* && -f "$file" && ! -L "$file" && -r "$file" ]] || return 2
+  PRIVATE_ENV_READABLE=true
+  mode="$(stat -c '%a' "$file" 2>/dev/null || true)"
+  [[ "$mode" == 600 || "$mode" == 400 ]] || return 3
+  PRIVATE_ENV_PERMISSIONS_VALID=true
+  owner="$(stat -c '%u' "$file" 2>/dev/null || true)"
+  effective_uid="$(id -u)"
+  [[ "$owner" == 0 || "$owner" == "$effective_uid" ]] || return 4
+  PRIVATE_ENV_OWNER_VALID=true
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* || "$line" =~ ^[A-Z][A-Z0-9_]*=.*$ ]] || return 5
+  done < "$file"
+  PRIVATE_ENV_SYNTAX_VALID=true
+
+  for key in "${DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS[@]}"; do
+    devflow_env_key_has_value "$key" "$file" || missing+=("$key")
+  done
+  devflow_env_key_has_value DB_PASSWORD "$file" && DB_PASSWORD_PRESENT=true
+  CONFIGURATION_VERSION="$(devflow_env_metadata_value DEVFLOW_VERSION "$file" 2>/dev/null || true)"
+  [[ -n "$CONFIGURATION_VERSION" ]] || CONFIGURATION_VERSION=unknown
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    MISSING_REQUIRED_ENV_KEYS="$(IFS=,; printf '%s' "${missing[*]}")"
+    return 6
+  fi
+  return 0
+}
+
+devflow_report_required_env_keys() {
+  local key present
+  for key in "${DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS[@]}"; do
+    present=false
+    devflow_env_key_has_value "$key" "${1:-$DEVFLOW_ENV_FILE}" && present=true
+    printf 'required_env_key=%s present=%s value_exposed=false\n' "$key" "$present"
+  done
+}
+
 load_devflow_env() {
   [[ -r "$DEVFLOW_ENV_FILE" ]] || die "Configuração ausente: $DEVFLOW_ENV_FILE"
   local mode
@@ -102,7 +202,7 @@ load_devflow_env() {
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-      DEVFLOW_VERSION|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|DEVFLOW_INFRASTRUCTURE_PROVIDER|DEVFLOW_PROXY_MODE|DEVFLOW_SHARED_PROXY_ADAPTER|LETSENCRYPT_EMAIL|DEVFLOW_ENV_FILE|DEVFLOW_BIND_ADDRESS|DEVFLOW_HTTP_PORT|DEVFLOW_API_PORT|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL)
+      DEVFLOW_VERSION|DEVFLOW_RELEASE_COMMIT|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|DEVFLOW_INFRASTRUCTURE_PROVIDER|DEVFLOW_PROXY_MODE|DEVFLOW_SHARED_PROXY_ADAPTER|LETSENCRYPT_EMAIL|DEVFLOW_ENV_FILE|DEVFLOW_BIND_ADDRESS|DEVFLOW_HTTP_PORT|DEVFLOW_API_PORT|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL)
         export "$key=$value"
         ;;
       *) die "$DEVFLOW_ENV_FILE contém variável não permitida: $key" ;;
@@ -139,18 +239,83 @@ set_managed_env_value() {
   mv -f -- "$temporary" "$DEVFLOW_ENV_FILE"
 }
 
+build_devflow_compose_command() {
+  local app_root="${1:-${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}}"
+  local env_file="${2:-$DEVFLOW_ENV_FILE}" target_name="${3:-DEVFLOW_COMPOSE}"
+  local project="${4:-$DEVFLOW_PROJECT}" layout="${5:-application}" compose_file
+  local -n target="$target_name"
+  [[ "$app_root" == /* && "$env_file" == /* ]] || return 2
+  [[ -d "$app_root" ]] || return 2
+  devflow_inspect_private_env "$env_file" || return 3
+  case "$layout" in
+    application) compose_file="$app_root/docker-compose.yml" ;;
+    maintenance) compose_file="$app_root/docker-compose.maintenance.yml" ;;
+    *) return 2 ;;
+  esac
+  [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] || return 2
+  target=(docker compose --env-file "$env_file" -p "$project" --project-directory "$app_root" -f "$compose_file")
+  if [[ "$layout" == application ]]; then
+    if [[ "${DEVFLOW_PROXY_MODE:-}" == shared ]]; then
+      if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
+        [[ -f "$app_root/docker-compose.fullpassword.yml" && ! -L "$app_root/docker-compose.fullpassword.yml" ]] || return 2
+        target+=(-f "$app_root/docker-compose.fullpassword.yml")
+      else
+        [[ -f "$app_root/docker-compose.shared.yml" && ! -L "$app_root/docker-compose.shared.yml" ]] || return 2
+        target+=(-f "$app_root/docker-compose.shared.yml")
+      fi
+    elif [[ "${DEVFLOW_PROXY_MODE:-}" == isolated ]]; then
+      target+=(--profile standalone)
+    fi
+  fi
+  COMPOSE_ENV_FILE_APPLIED=true
+}
+
 compose_files() {
   local app_root="${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}"
-  DEVFLOW_COMPOSE=(docker compose --env-file "$DEVFLOW_ENV_FILE" -p "$DEVFLOW_PROJECT" --project-directory "$app_root" -f "$app_root/docker-compose.yml")
-  if [[ "${DEVFLOW_PROXY_MODE:-}" == shared ]]; then
-    if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
-      DEVFLOW_COMPOSE+=(-f "$app_root/docker-compose.fullpassword.yml")
-    else
-      DEVFLOW_COMPOSE+=(-f "$app_root/docker-compose.shared.yml")
-    fi
-  elif [[ "${DEVFLOW_PROXY_MODE:-}" == isolated ]]; then
-    DEVFLOW_COMPOSE+=(--profile standalone)
+  build_devflow_compose_command "$app_root" "$DEVFLOW_ENV_FILE" DEVFLOW_COMPOSE "$DEVFLOW_PROJECT" application \
+    || die 'Não foi possível montar o comando Compose com a configuração privada validada.'
+}
+
+compose_validate_structure() {
+  local app_root="$1" temporary status=0 previous_proxy_mode="${DEVFLOW_PROXY_MODE:-}"
+  local previous_adapter="${DEVFLOW_SHARED_PROXY_ADAPTER:-}"
+  local previous_env_applied="${COMPOSE_ENV_FILE_APPLIED:-false}"
+  temporary="$(mktemp "${TMPDIR:-/tmp}/devflow-compose-structure.XXXXXX.env")"
+  chmod 0600 "$temporary"
+  cat > "$temporary" <<EOF
+DEVFLOW_VERSION=$DEVFLOW_RELEASE_VERSION
+DEVFLOW_RELEASE_COMMIT=0000000000000000000000000000000000000000
+DEVFLOW_ENV_FILE=$temporary
+DEVFLOW_DOMAIN=internal.invalid
+NODE_ENV=production
+APP_ORIGIN=http://127.0.0.1:18080
+DB_USER=devflow_validation
+DB_PASSWORD=placeholder-structural-validation
+DB_NAME=devflow_validation
+JWT_SECRET=placeholder-structural-validation-placeholder-structural-validation
+ADMIN_BOOTSTRAP_TOKEN=placeholder-structural-validation-placeholder
+CONFIG_ENCRYPTION_KEY=placeholder-structural-validation
+SUPER_ADMIN_EMAIL=validation@example.invalid
+BACKUP_PASSPHRASE_FILE=/tmp/devflow-structural-validation.passphrase
+DEVFLOW_DB_DATA_PATH=/opt/devflow/data/postgres
+DEVFLOW_UPLOADS_PATH=/opt/devflow/storage/uploads
+DEVFLOW_BIND_ADDRESS=127.0.0.1
+DEVFLOW_HTTP_PORT=18080
+DEVFLOW_API_PORT=13000
+EOF
+  DEVFLOW_PROXY_MODE=shared
+  DEVFLOW_SHARED_PROXY_ADAPTER=host-nginx
+  local -a structure_compose=()
+  if ! build_devflow_compose_command "$app_root" "$temporary" structure_compose devflow-validation application; then
+    status=2
+  elif ! "${structure_compose[@]}" config --quiet >/dev/null; then
+    status=2
   fi
+  DEVFLOW_PROXY_MODE="$previous_proxy_mode"
+  DEVFLOW_SHARED_PROXY_ADAPTER="$previous_adapter"
+  COMPOSE_ENV_FILE_APPLIED="$previous_env_applied"
+  rm -f -- "$temporary"
+  return "$status"
 }
 
 derive_legacy_proxy_settings() {
@@ -182,6 +347,8 @@ confirm_exact() {
 
 redact_stream() {
   sed -E \
+    -e 's#(https?|postgres(ql)?|smtp)://[^/@[:space:]]+:[^/@[:space:]]+@#\1://[CREDENTIALS_REDACTED]@#Ig' \
+    -e 's/^([[:space:]]*(DB_PASSWORD|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SMTP_PASSWORD|BACKUP_PASSPHRASE)[[:space:]]*[=:]).*$/\1[REDACTED]/I' \
     -e 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Kk]ey|[Pp]assphrase)([=:][[:space:]]*)[^[:space:]]+/\1\2[REDACTED]/g' \
     -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[EMAIL_REDACTED]/g' \
     -e 's/(Authorization:[[:space:]]*)(Bearer|Basic)[[:space:]]+[^[:space:]]+/\1[REDACTED]/Ig' \

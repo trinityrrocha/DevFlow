@@ -2,6 +2,24 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.6-alpha] - 2026-08-03
+
+### Corrigido
+
+- todas as operações Compose do DevFlow agora usam o construtor único `build_devflow_compose_command`, sempre com `--project-directory`, `--env-file` e arquivos Compose validados;
+- o dry-run de instalação parcial usa `/opt/devflow/config/devflow.env` para a interpolação runtime, sem carregar o arquivo como código shell, copiá-lo ou exibir valores;
+- uma instalação nova sem env realiza somente validação estrutural com placeholders temporários não secretos;
+- falhas de renderização são classificadas antes do resolvedor de imagens, eliminando a mensagem secundária incorreta sobre imagem ausente;
+- stderr do Compose não é reproduzido: somente categoria, nome permitido da variável e caminho esperado são registrados;
+- configuração parcial inválida retoma da etapa `04-configuration`; se não houver banco, volume ou migration, a recuperação exige confirmação literal e preserva cópia protegida;
+- qualquer evidência de dados persistentes bloqueia regeneração de senha e exige recuperação manual.
+
+### Testes e homologação
+
+- 24 cenários cobrem env válido, ausente, protegido, valores especiais, não execução de dotenv, renderização, JSON, sanitização, retomada, ARM64, Compose 5.3.1 e fail-closed;
+- uma auditoria dedicada impede novas construções Compose divergentes fora da biblioteca central;
+- Docker/Compose reais, recuperação da configuração e retomada ainda precisam ser repetidos na VPS ARM64.
+
 ## [0.4.5-alpha] - 2026-08-03
 
 ### Corrigido

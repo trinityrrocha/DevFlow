@@ -4,7 +4,7 @@
 # from a caller running with set -Eeuo pipefail.
 
 detect_partial_installation() {
-  local source_dir="$DEVFLOW_INSTALL_ROOT/source" source_commit= state_file="$DEVFLOW_STATE_ROOT/installation.json" env_mode
+  local source_dir="$DEVFLOW_INSTALL_ROOT/source" source_commit= state_file="$DEVFLOW_STATE_ROOT/installation.json"
   [[ ! -e "$DEVFLOW_INSTALL_ROOT/app" ]] || return 0
   if [[ -e "$source_dir" || -e "$DEVFLOW_ENV_FILE" || -e "$state_file" || -e "$DEVFLOW_INSTALL_TRANSACTION_FILE" ]]; then
     PARTIAL_INSTALLATION_DETECTED=true
@@ -25,12 +25,25 @@ detect_partial_installation() {
     fi
   fi
 
-  if [[ -f "$DEVFLOW_ENV_FILE" && ! -L "$DEVFLOW_ENV_FILE" ]]; then
+  if [[ -e "$DEVFLOW_ENV_FILE" || -L "$DEVFLOW_ENV_FILE" ]]; then
     PARTIAL_CONFIGURATION_PRESENT=true
-    env_mode="$(stat -c '%a' "$DEVFLOW_ENV_FILE" 2>/dev/null || true)"
-    if [[ "$env_mode" == 600 || "$env_mode" == 400 ]]; then
-      RESUME_CONFIGURATION_VALID=true
-      CONFIGURATION_READY=true
+    PRIVATE_ENV_DETECTED=true
+    if [[ -f "$DEVFLOW_ENV_FILE" && ! -L "$DEVFLOW_ENV_FILE" ]] \
+      && devflow_inspect_private_env "$DEVFLOW_ENV_FILE"; then
+      if devflow_semver_is_valid "$CONFIGURATION_VERSION" \
+        && ! devflow_version_is_greater "$CONFIGURATION_VERSION" "$DEVFLOW_RELEASE_VERSION"; then
+        RESUME_CONFIGURATION_VALID=true
+        CONFIGURATION_READY=true
+        CONFIGURATION_COMPATIBLE=true
+      else
+        PARTIAL_CONFIGURATION_INVALID=true
+        CONFIGURATION_READY=false
+        CONFIGURATION_COMPATIBLE=false
+      fi
+    else
+      PARTIAL_CONFIGURATION_INVALID=true
+      CONFIGURATION_READY=false
+      CONFIGURATION_COMPATIBLE=false
     fi
   fi
 
@@ -60,6 +73,12 @@ detect_partial_installation() {
     RESUME_CHECKOUT_VALID=false
     SOURCE_READY=false
   fi
+  if [[ "$PARTIAL_INSTALLATION_DETECTED" == true && "$PARTIAL_CONFIGURATION_PRESENT" == false ]]; then
+    PARTIAL_CONFIGURATION_INVALID=true
+    CONFIGURATION_READY=false
+    CONFIGURATION_COMPATIBLE=false
+    MISSING_REQUIRED_ENV_KEYS="$(IFS=,; printf '%s' "${DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS[*]}")"
+  fi
   if install_transaction_has_stage 09-run-migrations; then
     MIGRATIONS_READY=true
   fi
@@ -78,7 +97,9 @@ detect_partial_installation() {
 
 determine_resume_stage() {
   [[ "$PARTIAL_INSTALLATION_DETECTED" == true ]] || return 0
-  if [[ "$BACKEND_BUILD_REQUIRED" == true || "$FRONTEND_BUILD_REQUIRED" == true \
+  if [[ "$CONFIGURATION_READY" != true ]]; then
+    RESUME_FROM_STAGE=04-configuration
+  elif [[ "$BACKEND_BUILD_REQUIRED" == true || "$FRONTEND_BUILD_REQUIRED" == true \
     || "$POSTGRES_PULL_REQUIRED" == true ]]; then
     RESUME_FROM_STAGE=05-build-images
   elif [[ "$IMAGES_READY" != true ]]; then

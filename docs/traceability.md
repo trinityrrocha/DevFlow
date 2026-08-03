@@ -1,5 +1,16 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.6-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Env privado no Compose | `build_devflow_compose_command` em `scripts/lib/common.sh` | `--env-file` obrigatório em config, build, pull, up, run e exec |
+| Validação sem segredos | `devflow_inspect_private_env` | booleans e nomes de chaves; valores nunca exibidos |
+| Instalação nova | `compose_validate_structure` | placeholders temporários não secretos e nenhuma escrita persistente |
+| Falha primária | `compose_render_config_json` | códigos distintos para renderização e JSON; resolvedor não é chamado |
+| Recuperação parcial | etapa `04-configuration` | backup protegido e confirmação `REGERAR CONFIGURAÇÃO DEVFLOW` somente sem dados |
+| Regressões | `validate-compose-env.mjs` | 24 cenários e auditoria de chamadas Compose |
+
 ## Instalação interna `0.4.5-alpha`
 
 | Requisito | Implementação | Evidência |

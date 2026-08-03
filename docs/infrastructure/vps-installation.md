@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.5-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O startup foi corrigido e validado localmente; a retomada real ainda deve ser homologada na VPS.
+> Versão `0.4.6-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O Compose runtime usa explicitamente `/opt/devflow/config/devflow.env`; a retomada real ainda deve ser homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.5-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.6-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 

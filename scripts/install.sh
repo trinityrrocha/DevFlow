@@ -7,6 +7,8 @@ BOOTSTRAP_LOG=
 STARTUP_STAGE=00-bootstrap
 REQUESTED_MODE=unparsed
 RECOGNIZED_ARGUMENTS=()
+LOGICAL_OPERATION=startup
+ROOT_CAUSE=unexpected-command-failure
 export GIT_OPTIONAL_LOCKS=0
 
 bootstrap_timestamp() {
@@ -27,7 +29,7 @@ early_error_handler() {
   local exit_code="$?" line="${BASH_LINENO[0]:-${LINENO}}"
   local source="${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}" function_name="${FUNCNAME[1]:-main}"
   trap - ERR
-  bootstrap_emit ERROR "Falha inicial: script=${source##*/} linha=$line função=$function_name código=$exit_code versão=${DEVFLOW_RELEASE_VERSION:-unknown} commit=${release_sha:-unknown} modo=${REQUESTED_MODE:-unparsed} etapa=${STARTUP_STAGE:-00-bootstrap}."
+  bootstrap_emit ERROR "Falha inicial: script=${source##*/} linha=$line função=$function_name código=$exit_code versão=${DEVFLOW_RELEASE_VERSION:-unknown} commit=${release_sha:-unknown} modo=${REQUESTED_MODE:-unparsed} etapa=${STARTUP_STAGE:-00-bootstrap} logical_operation=${LOGICAL_OPERATION:-startup} root_cause=${ROOT_CAUSE:-unexpected-command-failure}."
   return "$exit_code"
 }
 
@@ -89,6 +91,35 @@ promote_bootstrap_log() {
   BOOTSTRAP_LOG=
 }
 
+compose_expected_image_or_die() {
+  local service="$1" label="$2" target_name="$3" image status=0
+  image="$(compose_service_image_expected "$service")" || status=$?
+  if [[ "$status" -eq 20 || "$status" -eq 21 ]]; then
+    LOGICAL_OPERATION=compose-render
+    ROOT_CAUSE=compose-runtime-render-failed
+    die 'A renderização do Compose falhou; a resolução de imagens foi interrompida.'
+  elif [[ "$status" -ne 0 ]]; then
+    die "O Compose renderizado não resolveu uma imagem única para $label."
+  fi
+  printf -v "$target_name" '%s' "$image"
+}
+
+resolve_compose_image_or_die() {
+  local service="$1" label="$2" expected="$3" resolved="$4" target_name="$5" image status=0
+  image="$(resolve_compose_service_image "$service")" || status=$?
+  if [[ "$status" -eq 20 || "$status" -eq 21 ]]; then
+    LOGICAL_OPERATION=compose-render
+    ROOT_CAUSE=compose-runtime-render-failed
+    die 'A renderização do Compose falhou; a validação de imagens foi interrompida.'
+  elif [[ "$status" -ne 0 ]]; then
+    printf '%s_image_expected=%s\n%s_image_resolved=%s\n%s_image_present=false\n' \
+      "$service" "$expected" "$service" "$resolved" "$service"
+    list_existing_devflow_images || true
+    die "A imagem resolvida de $label não existe localmente."
+  fi
+  printf -v "$target_name" '%s' "$image"
+}
+
 STARTUP_STAGE=03-parse-arguments
 
 MODE=check
@@ -134,6 +165,26 @@ POSTGRES_PULL_REQUIRED=true
 IMAGE_RESOLUTION_STATUS=pending-docker-install
 SOURCE_READY=false
 CONFIGURATION_READY=false
+CONFIGURATION_COMPATIBLE=false
+CONFIGURATION_VERSION=unknown
+PARTIAL_CONFIGURATION_INVALID=false
+PRIVATE_ENV_DETECTED=false
+PRIVATE_ENV_READABLE=false
+PRIVATE_ENV_PERMISSIONS_VALID=false
+PRIVATE_ENV_OWNER_VALID=false
+PRIVATE_ENV_SYNTAX_VALID=false
+DB_PASSWORD_PRESENT=false
+MISSING_REQUIRED_ENV_KEYS=none
+COMPOSE_ENV_FILE_APPLIED=false
+COMPOSE_CONFIG_VALID=false
+COMPOSE_STRUCTURE_VALID=false
+COMPOSE_RUNTIME_CONFIG_VALID=not-applicable-before-configuration
+DATABASE_VOLUME_PRESENT=false
+CONFIGURATION_RECOVERY_AVAILABLE=false
+REGENERATE_CONFIGURATION_REQUESTED=false
+MANUAL_RECOVERY_REQUIRED=false
+CONFIGURATION_BLOCKER=none
+FAILED_STAGE=none
 IMAGES_READY=false
 DATABASE_CONTAINER_READY=false
 DATABASE_HEALTHY=false
@@ -359,6 +410,15 @@ fullpassword_container=
 shared_proxy_container=
 devflow_containers=0
 config_state=absent
+if [[ "$PRIVATE_ENV_DETECTED" == true ]]; then
+  if [[ "$RESUME_CONFIGURATION_VALID" == true ]]; then
+    config_state=valid
+  elif [[ "$PRIVATE_ENV_READABLE" != true ]]; then
+    config_state=protected-unreadable
+  else
+    config_state=invalid
+  fi
+fi
 proxy_detected=none
 if command -v caddy >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
   proxy_detected=caddy-host
@@ -539,7 +599,8 @@ if [[ "$PARTIAL_INSTALLATION_DETECTED" == true && "$MODE" != check ]]; then
   [[ "$RESUME_CHECKOUT_VALID" == true ]] \
     || die 'Instalação parcial encontrada, mas o checkout não é limpo, canônico ou fast-forward compatível.'
   if [[ "$PARTIAL_CONFIGURATION_PRESENT" == true && "$RESUME_CONFIGURATION_VALID" != true ]]; then
-    die 'Instalação parcial contém configuração privada inválida ou com permissões inseguras.'
+    CONFIGURATION_BLOCKER=missing-required-private-configuration
+    CAN_RESUME=false
   fi
   if [[ "$MODE" == install && "$RESUME_REQUESTED" == false ]]; then
     [[ -t 0 ]] || die 'Instalação parcial encontrada. Use explicitamente --resume.'
@@ -597,20 +658,58 @@ if [[ "$MODE" != check ]]; then
         || die "A imagem $image não comprovou suporte a $DEVFLOW_ARCH."
     done
     IMAGE_ARCHITECTURE_STATUS=compatible
-    DB_PASSWORD=validation-only JWT_SECRET=validation-only CONFIG_ENCRYPTION_KEY=validation-only \
-      ADMIN_BOOTSTRAP_TOKEN=validation-only BACKUP_PASSPHRASE_FILE=/tmp/validation-only \
-      DEVFLOW_DOMAIN="${DOMAIN:-internal.local}" DEVFLOW_ENV_FILE="$SOURCE_DIR/.env.example" \
-      DEVFLOW_DB_DATA_PATH="$DEVFLOW_DATA_ROOT/postgres" \
-      DEVFLOW_UPLOADS_PATH="$DEVFLOW_INSTALL_ROOT/storage/uploads" \
-      docker compose -p devflow-validation --project-directory "$SOURCE_DIR" \
-        -f "$SOURCE_DIR/docker-compose.yml" -f "$SOURCE_DIR/docker-compose.shared.yml" config --quiet
+    LOGICAL_OPERATION=compose-structure-validation
+    ROOT_CAUSE=compose-structure-invalid
+    compose_validate_structure "$SOURCE_DIR" \
+      || die 'A estrutura do Docker Compose é inválida; nenhuma alteração foi aplicada.'
     COMPOSE_STRUCTURE_STATUS=valid
-    if command -v python3 >/dev/null 2>&1; then
-      DEVFLOW_COMPOSE=(docker compose --env-file "$SOURCE_DIR/.env.example" -p "$DEVFLOW_PROJECT" \
-        --project-directory "$SOURCE_DIR" -f "$SOURCE_DIR/docker-compose.yml" -f "$SOURCE_DIR/docker-compose.shared.yml")
+    COMPOSE_STRUCTURE_VALID=true
+    ROOT_CAUSE=unexpected-command-failure
+
+    if [[ "$RESUME_CONFIGURATION_VALID" == true ]]; then
+      LOGICAL_OPERATION=compose-render
+      DEVFLOW_APP_ROOT="$SOURCE_DIR"
+      build_devflow_compose_command "$SOURCE_DIR" "$DEVFLOW_ENV_FILE" DEVFLOW_COMPOSE "$DEVFLOW_PROJECT" application \
+        || die 'A configuração privada não atende ao contrato do Docker Compose.'
+      runtime_compose_json="$(mktemp "${TMPDIR:-/tmp}/devflow-runtime-compose.XXXXXX.json")"
+      chmod 0600 "$runtime_compose_json"
+      compose_render_status=0
+      compose_render_config_json "$runtime_compose_json" || compose_render_status=$?
+      rm -f -- "$runtime_compose_json"
+      if [[ "$compose_render_status" -eq 0 ]]; then
+        COMPOSE_CONFIG_VALID=true
+        COMPOSE_RUNTIME_CONFIG_VALID=true
+      else
+        COMPOSE_CONFIG_VALID=false
+        COMPOSE_RUNTIME_CONFIG_VALID=false
+        CONFIGURATION_READY=false
+        RESUME_CONFIGURATION_VALID=false
+        PARTIAL_CONFIGURATION_INVALID=true
+        CONFIGURATION_BLOCKER=compose-runtime-render-failed
+        CAN_RESUME=false
+      fi
+      ROOT_CAUSE=unexpected-command-failure
+    elif [[ "$PARTIAL_CONFIGURATION_PRESENT" == true ]]; then
+      COMPOSE_RUNTIME_CONFIG_VALID=false
+      IMAGE_RESOLUTION_STATUS=blocked-invalid-private-configuration
+    else
+      COMPOSE_RUNTIME_CONFIG_VALID=not-applicable-before-configuration
+      IMAGE_RESOLUTION_STATUS=pending-private-configuration
+    fi
+
+    if [[ "$COMPOSE_CONFIG_VALID" == true && -n "$(command -v python3 2>/dev/null || true)" ]]; then
       for service in backend frontend db; do
-        expected="$(compose_service_image_expected "$service")" \
-          || die "O Compose não resolveu exatamente uma imagem para o serviço $service."
+        image_resolution_code=0
+        expected="$(compose_service_image_expected "$service")" || image_resolution_code=$?
+        if [[ "$image_resolution_code" -eq 20 || "$image_resolution_code" -eq 21 ]]; then
+          COMPOSE_CONFIG_VALID=false
+          COMPOSE_RUNTIME_CONFIG_VALID=false
+          IMAGE_RESOLUTION_STATUS=blocked-compose-render-failure
+          CONFIGURATION_BLOCKER=compose-runtime-render-failed
+          break
+        elif [[ "$image_resolution_code" -ne 0 ]]; then
+          die "O Compose renderizado não resolveu exatamente uma imagem para o serviço $service."
+        fi
         resolved="$(normalize_image_reference "$expected")" \
           || die "O Compose retornou referência de imagem inválida para $service."
         case "$service" in
@@ -639,16 +738,19 @@ if [[ "$MODE" != check ]]; then
             ;;
         esac
       done
-      if [[ "$BACKEND_BUILD_REQUIRED" == false && "$FRONTEND_BUILD_REQUIRED" == false \
-        && "$POSTGRES_PULL_REQUIRED" == false ]]; then
-        IMAGES_READY=true
+      if [[ "$COMPOSE_CONFIG_VALID" == true ]]; then
+        if [[ "$BACKEND_BUILD_REQUIRED" == false && "$FRONTEND_BUILD_REQUIRED" == false \
+          && "$POSTGRES_PULL_REQUIRED" == false ]]; then
+          IMAGES_READY=true
+        fi
+        IMAGE_RESOLUTION_STATUS=validated
       fi
-      IMAGE_RESOLUTION_STATUS=validated
-    else
+    elif [[ "$COMPOSE_CONFIG_VALID" == true ]]; then
       IMAGE_RESOLUTION_STATUS=pending-python-install
     fi
   fi
 fi
+LOGICAL_OPERATION=preflight
 
 run_shared_proxy_diagnostic() {
   local -a diagnostic_args=(
@@ -832,6 +934,29 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
     POSTGRES_PUBLIC_PORT_EXPOSED=true
     die 'O PostgreSQL DevFlow não pode publicar portas no host.'
   fi
+  if docker volume ls --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" --quiet 2>/dev/null | grep -q .; then
+    DATABASE_VOLUME_PRESENT=true
+  fi
+fi
+
+if [[ -d "$DEVFLOW_DATA_ROOT/postgres" \
+  && -n "$(find "$DEVFLOW_DATA_ROOT/postgres" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
+  DATABASE_VOLUME_PRESENT=true
+fi
+
+if [[ "$PARTIAL_CONFIGURATION_INVALID" == true ]]; then
+  CONFIGURATION_READY=false
+  RESUME_CONFIGURATION_VALID=false
+  CONFIGURATION_BLOCKER=missing-required-private-configuration
+  FAILED_STAGE=04-configuration
+  if [[ "$DATABASE_CONTAINER_READY" == true || "$DATABASE_VOLUME_PRESENT" == true || "$MIGRATIONS_READY" == true ]]; then
+    MANUAL_RECOVERY_REQUIRED=true
+    CONFIGURATION_RECOVERY_AVAILABLE=false
+    CAN_RESUME=false
+  elif [[ "$RESUME_CHECKOUT_VALID" == true && "$TRANSACTION_STATE_CORRUPT" == false ]]; then
+    CONFIGURATION_RECOVERY_AVAILABLE=true
+    CAN_RESUME=true
+  fi
 fi
 
 determine_resume_stage
@@ -891,6 +1016,25 @@ frontend_loopback_port_available=$FRONTEND_LOOPBACK_PORT_AVAILABLE
 backend_loopback_port_available=$BACKEND_LOOPBACK_PORT_AVAILABLE
 postgres_public_port_exposed=$POSTGRES_PUBLIC_PORT_EXPOSED
 image_resolution_status=$IMAGE_RESOLUTION_STATUS
+private_env_detected=$PRIVATE_ENV_DETECTED
+private_env_readable=$PRIVATE_ENV_READABLE
+private_env_permissions_valid=$PRIVATE_ENV_PERMISSIONS_VALID
+private_env_owner_valid=$PRIVATE_ENV_OWNER_VALID
+private_env_syntax_valid=$PRIVATE_ENV_SYNTAX_VALID
+db_password_present=$DB_PASSWORD_PRESENT
+configuration_version=$CONFIGURATION_VERSION
+configuration_compatible=$CONFIGURATION_COMPATIBLE
+partial_configuration_invalid=$PARTIAL_CONFIGURATION_INVALID
+compose_env_file_applied=$COMPOSE_ENV_FILE_APPLIED
+compose_structure_valid=$COMPOSE_STRUCTURE_VALID
+compose_runtime_config_valid=$COMPOSE_RUNTIME_CONFIG_VALID
+compose_config_valid=$COMPOSE_CONFIG_VALID
+missing_required_env_keys=$MISSING_REQUIRED_ENV_KEYS
+configuration_recovery_available=$CONFIGURATION_RECOVERY_AVAILABLE
+database_volume_present=$DATABASE_VOLUME_PRESENT
+manual_recovery_required=$MANUAL_RECOVERY_REQUIRED
+blocker=$CONFIGURATION_BLOCKER
+failed_stage=$FAILED_STAGE
 resume_checkout_valid=$RESUME_CHECKOUT_VALID
 resume_configuration_valid=$RESUME_CONFIGURATION_VALID
 resume_transaction_valid=$RESUME_TRANSACTION_VALID
@@ -928,6 +1072,9 @@ super_admin_ready=$SUPER_ADMIN_READY
 installation_state_ready=$INSTALLATION_STATE_READY
 source_clone_preserved=$SOURCE_CLONE_PRESERVED
 EOF
+if [[ "$PRIVATE_ENV_DETECTED" == true && "$PRIVATE_ENV_READABLE" == true ]]; then
+  devflow_report_required_env_keys "$DEVFLOW_ENV_FILE"
+fi
 
 if [[ "$MODE" == check ]]; then
   [[ "$docker_version" != daemon-unavailable ]] || log WARN 'Docker ausente ou daemon indisponível.'
@@ -974,14 +1121,37 @@ EOF
 fi
 
 if [[ "$RESUME_REQUESTED" == true ]]; then
+  if [[ "$MANUAL_RECOVERY_REQUIRED" == true ]]; then
+    die 'A configuração privada está inválida e existem dados do PostgreSQL; recuperação manual obrigatória, sem regeneração de senha.'
+  fi
   [[ "$CAN_RESUME" == true ]] || die 'A instalação parcial não possui evidências suficientes para retomada segura.'
+  if [[ "$PARTIAL_CONFIGURATION_INVALID" == true ]]; then
+    [[ "$CONFIGURATION_RECOVERY_AVAILABLE" == true ]] \
+      || die 'A configuração parcial inválida não pode ser recuperada automaticamente.'
+    [[ -t 0 ]] || die 'A recuperação da configuração exige terminal interativo e confirmação explícita.'
+    cat <<'EOF'
+Configuração parcial inválida detectada.
+Uma ou mais chaves privadas obrigatórias estão ausentes ou vazias.
+Nenhum container PostgreSQL, volume persistente ou migration foi encontrado.
+
+Opções:
+  1 - Preservar a configuração anterior, regenerar a configuração privada e continuar
+  2 - Cancelar
+EOF
+    read -r -p 'Escolha [1/2]: ' configuration_choice
+    case "$configuration_choice" in
+      1) REGENERATE_CONFIGURATION_REQUESTED=true ;;
+      2) die 'Recuperação cancelada sem alterações.' ;;
+      *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
+    esac
+  fi
   cat <<EOF
 Instalação incompleta encontrada.
 
 Versão parcial: $PARTIAL_INSTALLATION_VERSION
 Versão atual: $DEVFLOW_RELEASE_VERSION
 Checkout: válido
-Configuração: válida
+Configuração: $([[ "$PARTIAL_CONFIGURATION_INVALID" == true ]] && printf 'recuperação controlada necessária' || printf válida)
 Estado transacional: $([[ "$TRANSACTION_STATE_RECONSTRUCTED" == true ]] && printf reconstruído-em-memória || printf validado)
 Etapa de retomada: $RESUME_FROM_STAGE
 
@@ -990,6 +1160,10 @@ EOF
   OUTPUT_EMITTED=true
 fi
 if [[ "$MODE" == dry-run ]]; then
+  if [[ "$PARTIAL_CONFIGURATION_INVALID" == true ]]; then
+    log ERROR 'Dry-run bloqueado: configuração privada obrigatória ausente ou inválida; nenhuma alteração foi realizada.'
+    exit 2
+  fi
   if [[ "$INSTALL_SCOPE" == complete && "$EXTERNAL_PUBLICATION_BLOCKED" == true ]]; then
     log WARN 'Dry-run completo: instalação interna pronta, publicação externa bloqueada; nenhuma alteração foi realizada.'
     exit 0
@@ -1002,6 +1176,9 @@ require_root
 if [[ "$RESUME_REQUESTED" == true ]]; then
   DEVFLOW_ASSUME_YES=false
   confirm_exact 'RETOMAR DEVFLOW' 'Autoriza retomar a instalação interna incompleta?'
+  if [[ "$REGENERATE_CONFIGURATION_REQUESTED" == true ]]; then
+    confirm_exact 'REGERAR CONFIGURAÇÃO DEVFLOW' 'Autoriza preservar a configuração anterior e gerar novos segredos?'
+  fi
 elif [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
   log INFO 'Confirmação explícita recebida pelo bootstrap público.'
 else
@@ -1062,8 +1239,10 @@ installation_failed() {
   if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
     DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
     load_devflow_env || true
-    compose_files
-    "${DEVFLOW_COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
+    if build_devflow_compose_command "$DEVFLOW_APP_ROOT" "$DEVFLOW_ENV_FILE" DEVFLOW_COMPOSE \
+      "$DEVFLOW_PROJECT" application; then
+      "${DEVFLOW_COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
+    fi
     if [[ "$PROVIDER_APPLIED" == true ]]; then
       provider_uninstall >/dev/null 2>&1 || true
       if [[ "${CERTIFICATE_EXISTED_BEFORE:-true}" == false ]]; then
@@ -1196,7 +1375,27 @@ export DEVFLOW_RELEASE_COMMIT DEVFLOW_RELEASE_REF DEVFLOW_REPOSITORY_URL DEVFLOW
 install_transaction_complete_stage 03-source | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=04-configuration
-if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
+if [[ "$REGENERATE_CONFIGURATION_REQUESTED" == true ]]; then
+  [[ "$DATABASE_CONTAINER_READY" == false && "$DATABASE_VOLUME_PRESENT" == false && "$MIGRATIONS_READY" == false ]] \
+    || die 'A recuperação foi bloqueada porque existem evidências de banco ou migrations.'
+  if docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
+    --filter 'label=com.docker.compose.service=db' --format '{{.ID}}' | grep -q . \
+    || docker volume ls --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" --quiet | grep -q . \
+    || [[ -d "$DEVFLOW_DATA_ROOT/postgres" \
+      && -n "$(find "$DEVFLOW_DATA_ROOT/postgres" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
+    die 'A recuperação foi bloqueada por evidência nova de dados persistentes; nenhuma senha foi regenerada.'
+  fi
+  recovery_backup_dir="$DEVFLOW_INSTALL_ROOT/backups/install/config-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+  install -d -m 0700 "$recovery_backup_dir"
+  [[ ! -f "$DEVFLOW_ENV_FILE" ]] \
+    || install -m 0600 "$DEVFLOW_ENV_FILE" "$recovery_backup_dir/devflow.env.previous"
+  [[ ! -f "$DEVFLOW_CONFIG_ROOT/backup.passphrase" ]] \
+    || install -m 0600 "$DEVFLOW_CONFIG_ROOT/backup.passphrase" "$recovery_backup_dir/backup.passphrase.previous"
+  [[ ! -f "$DEVFLOW_CONFIG_ROOT/bootstrap-token" ]] \
+    || install -m 0600 "$DEVFLOW_CONFIG_ROOT/bootstrap-token" "$recovery_backup_dir/bootstrap-token.previous"
+  log INFO "Artefatos anteriores preservados com acesso restrito em $recovery_backup_dir; nenhum valor foi exibido." | tee -a "$INSTALL_LOG"
+fi
+if [[ ! -f "$DEVFLOW_ENV_FILE" || "$REGENERATE_CONFIGURATION_REQUESTED" == true ]]; then
   runtime_domain="${DOMAIN:-internal.local}"
   runtime_letsencrypt_email="$LETSENCRYPT_EMAIL"
   runtime_app_origin="http://127.0.0.1:$HTTP_PORT"
@@ -1208,9 +1407,13 @@ if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   bootstrap_token="$(openssl rand -base64 48 | tr -d '\n')"
   encryption_key="$(openssl rand -base64 32 | tr -d '\n')"
   backup_passphrase="$(openssl rand -base64 64 | tr -d '\n')"
-  cat > "$DEVFLOW_ENV_FILE" <<EOF
+  generated_env="$(mktemp "$DEVFLOW_CONFIG_ROOT/.devflow-env.XXXXXX")"
+  generated_passphrase="$(mktemp "$DEVFLOW_CONFIG_ROOT/.backup-passphrase.XXXXXX")"
+  generated_bootstrap="$(mktemp "$DEVFLOW_CONFIG_ROOT/.bootstrap-token.XXXXXX")"
+  cat > "$generated_env" <<EOF
 # DevFlow runtime configuration — generated locally, never commit
 DEVFLOW_VERSION=$DEVFLOW_VERSION
+DEVFLOW_RELEASE_COMMIT=$DEVFLOW_RELEASE_COMMIT
 DEVFLOW_IMAGE_TAG=latest
 DEVFLOW_SOURCE_DIR=$operational_source_dir
 NODE_ENV=production
@@ -1257,10 +1460,12 @@ DEVFLOW_LOG_ROOT=$DEVFLOW_LOG_ROOT
 METRICS_REFRESH_SECONDS=60
 UPDATE_CHANNEL=main
 EOF
-  chmod 0600 "$DEVFLOW_ENV_FILE"
-  printf '%s\n' "$backup_passphrase" > "$DEVFLOW_CONFIG_ROOT/backup.passphrase"
-  printf '%s\n' "$bootstrap_token" > "$DEVFLOW_CONFIG_ROOT/bootstrap-token"
-  chmod 0600 "$DEVFLOW_CONFIG_ROOT/backup.passphrase" "$DEVFLOW_CONFIG_ROOT/bootstrap-token"
+  printf '%s\n' "$backup_passphrase" > "$generated_passphrase"
+  printf '%s\n' "$bootstrap_token" > "$generated_bootstrap"
+  chmod 0600 "$generated_env" "$generated_passphrase" "$generated_bootstrap"
+  mv -f -- "$generated_env" "$DEVFLOW_ENV_FILE"
+  mv -f -- "$generated_passphrase" "$DEVFLOW_CONFIG_ROOT/backup.passphrase"
+  mv -f -- "$generated_bootstrap" "$DEVFLOW_CONFIG_ROOT/bootstrap-token"
   unset db_password jwt_secret bootstrap_token encryption_key backup_passphrase
 fi
 
@@ -1270,6 +1475,8 @@ ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
 load_devflow_env
 validate_runtime_paths
+devflow_inspect_private_env "$DEVFLOW_ENV_FILE" \
+  || die 'A configuração privada gerada não atende ao contrato obrigatório.'
 [[ "$SUPER_ADMIN_EMAIL" == "$requested_super_admin_email" ]] \
   || die 'O e-mail informado diverge do Super Admin registrado na configuração parcial.'
 [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == "$SHARED_PROXY_ADAPTER" ]] \
@@ -1277,16 +1484,20 @@ validate_runtime_paths
 DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 export DEVFLOW_VERSION
 compose_files
-"${DEVFLOW_COMPOSE[@]}" config --quiet
+LOGICAL_OPERATION=compose-render
+ROOT_CAUSE=compose-runtime-render-failed
+runtime_compose_json="$(mktemp "${TMPDIR:-/tmp}/devflow-runtime-compose.XXXXXX.json")"
+chmod 0600 "$runtime_compose_json"
+compose_render_config_json "$runtime_compose_json"
+rm -f -- "$runtime_compose_json"
+LOGICAL_OPERATION=installation
+ROOT_CAUSE=unexpected-command-failure
 install_transaction_complete_stage 04-configuration | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=05-build-images
-BACKEND_IMAGE_EXPECTED="$(compose_service_image_expected backend)" \
-  || die 'O Compose não resolveu uma imagem única para backend.'
-FRONTEND_IMAGE_EXPECTED="$(compose_service_image_expected frontend)" \
-  || die 'O Compose não resolveu uma imagem única para frontend.'
-POSTGRES_IMAGE_EXPECTED="$(compose_service_image_expected db)" \
-  || die 'O Compose não resolveu uma imagem única para PostgreSQL.'
+compose_expected_image_or_die backend backend BACKEND_IMAGE_EXPECTED
+compose_expected_image_or_die frontend frontend FRONTEND_IMAGE_EXPECTED
+compose_expected_image_or_die db PostgreSQL POSTGRES_IMAGE_EXPECTED
 BACKEND_IMAGE_RESOLVED="$(normalize_image_reference "$BACKEND_IMAGE_EXPECTED")"
 FRONTEND_IMAGE_RESOLVED="$(normalize_image_reference "$FRONTEND_IMAGE_EXPECTED")"
 POSTGRES_IMAGE_RESOLVED="$(normalize_image_reference "$POSTGRES_IMAGE_EXPECTED")"
@@ -1314,19 +1525,9 @@ printf '%s\n' \
 install_transaction_complete_stage 05-build-images | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=06-validate-images
-backend_image="$(resolve_compose_service_image backend)" || {
-  printf 'backend_image_expected=%s\nbackend_image_resolved=%s\nbackend_image_present=false\n' \
-    "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED"
-  list_existing_devflow_images || true
-  die 'A imagem resolvida do backend não existe localmente.'
-}
-frontend_image="$(resolve_compose_service_image frontend)" || {
-  printf 'frontend_image_expected=%s\nfrontend_image_resolved=%s\nfrontend_image_present=false\n' \
-    "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED"
-  list_existing_devflow_images || true
-  die 'A imagem resolvida do frontend não existe localmente.'
-}
-postgres_image="$(resolve_compose_service_image db)" || die 'A imagem resolvida do PostgreSQL não existe localmente.'
+resolve_compose_image_or_die backend backend "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED" backend_image
+resolve_compose_image_or_die frontend frontend "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED" frontend_image
+resolve_compose_image_or_die db PostgreSQL "$POSTGRES_IMAGE_EXPECTED" "$POSTGRES_IMAGE_RESOLVED" postgres_image
 BACKEND_IMAGE_PRESENT=true
 FRONTEND_IMAGE_PRESENT=true
 POSTGRES_IMAGE_PRESENT=true

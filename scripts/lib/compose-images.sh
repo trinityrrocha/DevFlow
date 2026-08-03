@@ -23,24 +23,72 @@ normalize_image_reference() {
   printf '%s\n' "$image"
 }
 
+report_compose_render_failure() {
+  local category="$1" variable="${2:-unknown}"
+  printf '%s\n' \
+    'Não foi possível renderizar o Docker Compose.' \
+    '' \
+    "Motivo: $([[ "$category" == required-variable-missing ]] && printf '%s' 'variável obrigatória ausente.' || printf '%s' 'configuração inválida.')" \
+    "Variável: $variable" \
+    "Arquivo de configuração esperado: ${DEVFLOW_ENV_FILE:-indisponível}" \
+    '' \
+    'Nenhum valor sensível foi exibido.' \
+    'Nenhuma alteração foi aplicada.' \
+    'logical_operation=compose-render' \
+    "startup_stage=${STARTUP_STAGE:-runtime}" \
+    "root_cause=$category" >&2
+}
+
 compose_render_config_json() {
-  "${DEVFLOW_COMPOSE[@]}" config --format json
+  local output_file="${1:-}" error_file temporary_output status=0 variable=unknown
+  [[ -n "$output_file" ]] || return 2
+  error_file="$(mktemp "${TMPDIR:-/tmp}/devflow-compose-error.XXXXXX")"
+  temporary_output="$(mktemp "${TMPDIR:-/tmp}/devflow-compose-json.XXXXXX")"
+  chmod 0600 "$error_file" "$temporary_output"
+  if ! "${DEVFLOW_COMPOSE[@]}" config --format json > "$temporary_output" 2> "$error_file"; then
+    variable="$(grep -Eo 'required variable [A-Z][A-Z0-9_]*' "$error_file" 2>/dev/null \
+      | awk 'NR==1 {print $3}' || true)"
+    if [[ -n "$variable" ]]; then
+      report_compose_render_failure required-variable-missing "$variable"
+    else
+      report_compose_render_failure compose-render-failed unknown
+    fi
+    status=20
+  elif ! "${DEVFLOW_IMAGE_PYTHON:-python3}" -c \
+    'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary_output" >/dev/null 2>&1; then
+    report_compose_render_failure invalid-compose-json unknown
+    status=21
+  else
+    mv -f -- "$temporary_output" "$output_file"
+  fi
+  rm -f -- "$error_file" "$temporary_output"
+  return "$status"
 }
 
 compose_service_image_expected() {
-  local service="$1" python_bin="${DEVFLOW_IMAGE_PYTHON:-python3}" image
+  local service="$1" python_bin="${DEVFLOW_IMAGE_PYTHON:-python3}" image compose_json status=0
   [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || return 2
   command -v "$python_bin" >/dev/null 2>&1 || return 2
   [[ -f "$DEVFLOW_IMAGE_RESOLVER" && ! -L "$DEVFLOW_IMAGE_RESOLVER" ]] || return 2
-  image="$(compose_render_config_json | "$python_bin" "$DEVFLOW_IMAGE_RESOLVER" "$service")" || return 2
-  validate_image_reference "$image" || return 2
-  [[ "$(printf '%s\n' "$image" | wc -l | tr -d ' ')" -eq 1 ]] || return 2
+  compose_json="$(mktemp "${TMPDIR:-/tmp}/devflow-compose-resolved.XXXXXX.json")"
+  chmod 0600 "$compose_json"
+  compose_render_config_json "$compose_json" || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    rm -f -- "$compose_json"
+    return "$status"
+  fi
+  image="$("$python_bin" "$DEVFLOW_IMAGE_RESOLVER" "$service" < "$compose_json")" || status=22
+  rm -f -- "$compose_json"
+  [[ "$status" -eq 0 ]] || return "$status"
+  validate_image_reference "$image" || return 23
+  [[ "$(printf '%s\n' "$image" | wc -l | tr -d ' ')" -eq 1 ]] || return 23
   printf '%s\n' "$image"
 }
 
 resolve_compose_service_image() {
-  local service="$1" expected resolved
-  expected="$(compose_service_image_expected "$service")" || return 2
+  local service="$1" expected resolved status=0
+  expected="$(compose_service_image_expected "$service")" || status=$?
+  [[ "$status" -eq 0 ]] || return "$status"
   resolved="$(normalize_image_reference "$expected")" || return 2
   docker image inspect "$resolved" >/dev/null 2>&1 || return 3
   printf '%s\n' "$resolved"

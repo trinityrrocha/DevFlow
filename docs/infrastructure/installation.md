@@ -63,6 +63,10 @@ O adaptador cria apenas artefatos sob `/opt/devflow`, incluindo `/opt/devflow/co
 
 O Docker Compose pode precisar de `/opt/fullpassword/.env` e de `env_file` adicionais para interpolar a configuração original. Esses arquivos são inputs opacos: somente o processo `docker compose --project-directory /opt/fullpassword` pode consumi-los. O DevFlow registra caminhos e estados de legibilidade, nunca conteúdo ou valores interpolados.
 
+Para os próprios serviços, o DevFlow monta todo comando por `build_devflow_compose_command`. O construtor exige raiz e env absolutos, Compose regular e legível e `/opt/devflow/config/devflow.env` regular, não simbólico, legível, com modo `0400` ou `0600` e proprietário confiável. `config`, build, pull, up, run, exec, health, update, backup, restore, rollback e uninstall reutilizam o mesmo array com `--env-file`; o arquivo dotenv nunca é executado como shell.
+
+Antes da criação da configuração privada, somente a estrutura Compose é validada com um arquivo temporário `0600` contendo placeholders não secretos. Esse arquivo não é persistido, não copia o env real e nunca é usado para iniciar containers.
+
 ## Recursos próprios
 
 - projeto Compose: `devflow`;

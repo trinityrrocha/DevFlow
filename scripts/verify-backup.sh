@@ -15,8 +15,8 @@ load_devflow_env
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 BACKUP_FILE="$(realpath "$1")"
 MAX_RESTORE_MB="${BACKUP_MAX_RESTORE_MB:-4096}"
-COMPOSE=(docker compose --env-file "$ENV_FILE" -p devflow --project-directory "$PROJECT_DIR" -f "$PROJECT_DIR/docker-compose.yml")
-[[ "${DEVFLOW_PROXY_MODE:-}" != shared ]] || COMPOSE+=(-f "$PROJECT_DIR/docker-compose.shared.yml")
+DEVFLOW_APP_ROOT="$PROJECT_DIR"
+compose_files
 
 [[ -f "$BACKUP_FILE" && "$BACKUP_FILE" == *.dfbackup ]] || die 'Backup inválido.'
 [[ -r "$PASSPHRASE_FILE" ]] || die 'Passphrase de backup ausente.'
@@ -26,7 +26,7 @@ COMPOSE=(docker compose --env-file "$ENV_FILE" -p devflow --project-directory "$
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devflow-verify.XXXXXX")"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
-"${COMPOSE[@]}" run --rm --no-deps --user 0:0 \
+"${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --user 0:0 \
   -v "$(dirname "$BACKUP_FILE"):/backup:ro" \
   -v "$TEMP_DIR:/work" \
   -v "$PASSPHRASE_FILE:/run/secrets/devflow_backup_passphrase:ro" \

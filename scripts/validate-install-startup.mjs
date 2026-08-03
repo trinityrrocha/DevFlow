@@ -44,7 +44,7 @@ const createInstrumentedInstaller = (name, { failingImport = false } = {}) => {
   mkdirSync(resolve(fixtureRoot, 'scripts'), { recursive: true });
   cpSync(resolve(root, 'scripts/lib'), resolve(fixtureRoot, 'scripts/lib'), { recursive: true });
   cpSync(resolve(root, 'scripts/providers'), resolve(fixtureRoot, 'scripts/providers'), { recursive: true });
-  writeFileSync(resolve(fixtureRoot, 'VERSION'), '0.4.5-alpha\n');
+  writeFileSync(resolve(fixtureRoot, 'VERSION'), '0.4.6-alpha\n');
   let source = install.replace(
     'STARTUP_STAGE=04-platform\nrequire_linux',
     "STARTUP_STAGE=04-platform\nbootstrap_emit ERROR 'fixture-stop'; exit 97\nrequire_linux",
@@ -78,6 +78,16 @@ const initializeDetectionVariables = `
   PARTIAL_INSTALLATION_STAGE=unknown
   SOURCE_READY=false
   CONFIGURATION_READY=false
+  CONFIGURATION_COMPATIBLE=false
+  CONFIGURATION_VERSION=unknown
+  PARTIAL_CONFIGURATION_INVALID=false
+  PRIVATE_ENV_DETECTED=false
+  PRIVATE_ENV_READABLE=false
+  PRIVATE_ENV_PERMISSIONS_VALID=false
+  PRIVATE_ENV_OWNER_VALID=false
+  PRIVATE_ENV_SYNTAX_VALID=false
+  DB_PASSWORD_PRESENT=false
+  MISSING_REQUIRED_ENV_KEYS=none
   IMAGES_READY=false
   DATABASE_CONTAINER_READY=false
   DATABASE_HEALTHY=false
@@ -117,7 +127,23 @@ const createPartialFixture = (name, { dirty = false, stateDirectory = true, log 
   git(target, ['commit', '-m', 'current']);
   const targetCommit = git(target, ['rev-parse', 'HEAD']);
   mkdirSync(resolve(installRoot, 'config'), { recursive: true });
-  writeFileSync(resolve(installRoot, 'config/devflow.env'), 'DEVFLOW_VERSION=0.4.4-alpha\n');
+  const envPath = resolve(installRoot, 'config/devflow.env');
+  writeFileSync(envPath, `DEVFLOW_VERSION=0.4.4-alpha
+DEVFLOW_RELEASE_COMMIT=${legacyCommit}
+DEVFLOW_ENV_FILE=${bashPath(envPath)}
+DEVFLOW_DOMAIN=internal.local
+NODE_ENV=production
+APP_ORIGIN=http://127.0.0.1:18080
+DB_USER=devflow_user
+DB_PASSWORD=placeholder-test-value
+DB_NAME=devflow_db
+JWT_SECRET=placeholder-test-value
+ADMIN_BOOTSTRAP_TOKEN=placeholder-test-value
+CONFIG_ENCRYPTION_KEY=placeholder-test-value
+SUPER_ADMIN_EMAIL=owner@example.invalid
+BACKUP_PASSPHRASE_FILE=/tmp/test-only.passphrase
+`);
+  chmodSync(envPath, 0o600);
   if (stateDirectory) {
     mkdirSync(resolve(installRoot, 'state'), { recursive: true });
     writeFileSync(resolve(installRoot, 'state/installation.json'), `{
@@ -152,7 +178,13 @@ const probePartial = (fixture) => {
     ${initializeDetectionVariables}
     if [[ "$(uname -s)" == MINGW* ]]; then
       stat() {
-        if [[ "$*" == *devflow.env* ]]; then printf '600\\n'; else command stat "$@"; fi
+        if [[ "$*" == *devflow.env* && "$*" == *%a* ]]; then
+          printf '600\\n'
+        elif [[ "$*" == *devflow.env* && "$*" == *%u* ]]; then
+          id -u
+        else
+          command stat "$@"
+        fi
       }
     fi
     before="$(git -C "$DEVFLOW_INSTALL_ROOT/source" status --porcelain=v1; git hash-object "$DEVFLOW_INSTALL_ROOT/source/.git/index")"

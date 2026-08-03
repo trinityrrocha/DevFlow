@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.6-alpha` — env privado e Compose centralizado
+
+- [x] centralizar todas as operações Compose do DevFlow com `--env-file` explícito;
+- [x] separar validação estrutural com placeholders da validação runtime;
+- [x] interromper a resolução de imagens quando a renderização falhar;
+- [x] classificar e recuperar configuração parcial somente quando não existirem dados;
+- [x] cobrir env-file, sanitização e fail-closed em 24 cenários;
+- [ ] repetir dry-run e resume na VPS Ubuntu 24.04 ARM64 com Compose 5.3.1.
+
 ## Marco `0.4.5-alpha` — inicialização observável e retomada legada
 
 - [x] instalar trap e logger sanitizados antes dos imports;
@@ -108,7 +117,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.5-alpha` consistente;
+- versão `0.4.6-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

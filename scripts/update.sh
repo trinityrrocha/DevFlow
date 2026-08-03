@@ -233,8 +233,9 @@ set_compose_for() {
 
 maintenance_compose_for() {
   local root="$1"
-  DEVFLOW_MAINTENANCE_COMPOSE=(docker compose --env-file "$DEVFLOW_ENV_FILE" \
-    -p devflow-maintenance --project-directory "$root" -f "$root/docker-compose.maintenance.yml")
+  build_devflow_compose_command "$root" "$DEVFLOW_ENV_FILE" DEVFLOW_MAINTENANCE_COMPOSE \
+    devflow-maintenance maintenance \
+    || die 'Não foi possível montar o Compose de manutenção com a configuração privada.'
 }
 
 render_host_proxy() {

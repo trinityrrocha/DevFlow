@@ -77,8 +77,14 @@ fi
 for image_tuple in backend:BACKEND_IMAGE_PRESENT frontend:FRONTEND_IMAGE_PRESENT db:POSTGRES_IMAGE_PRESENT; do
   image_service="${image_tuple%%:*}"
   image_status_variable="${image_tuple##*:}"
-  if resolved_image="$(resolve_compose_service_image "$image_service")"; then
+  image_resolution_status=0
+  resolved_image="$(resolve_compose_service_image "$image_service")" || image_resolution_status=$?
+  if [[ "$image_resolution_status" -eq 0 ]]; then
     report PASS "${image_service}_image" "$resolved_image"
+  elif [[ "$image_resolution_status" -eq 20 || "$image_resolution_status" -eq 21 ]]; then
+    printf -v "$image_status_variable" '%s' false
+    report FAIL compose_config 'renderização inválida; resolução de imagens interrompida'
+    break
   else
     printf -v "$image_status_variable" '%s' false
     report FAIL "${image_service}_image" 'imagem resolvida ausente'

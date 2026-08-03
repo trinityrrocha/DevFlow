@@ -19,8 +19,8 @@ PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase
 BACKUP_FILE="$(realpath "$1")"
 MAX_RESTORE_MB="${BACKUP_MAX_RESTORE_MB:-4096}"
 UPLOAD_SOURCE="${DEVFLOW_UPLOADS_PATH:-devflow_devflow_uploads}"
-COMPOSE=(docker compose --env-file "$ENV_FILE" -p devflow --project-directory "$PROJECT_DIR" -f "$PROJECT_DIR/docker-compose.yml")
-[[ "${DEVFLOW_PROXY_MODE:-}" != shared ]] || COMPOSE+=(-f "$PROJECT_DIR/docker-compose.shared.yml")
+DEVFLOW_APP_ROOT="$PROJECT_DIR"
+compose_files
 SKIP_PREBACKUP="${DEVFLOW_RESTORE_SKIP_PREBACKUP:-false}"
 NO_START="${DEVFLOW_RESTORE_NO_START:-false}"
 [[ "$SKIP_PREBACKUP" == true || "$SKIP_PREBACKUP" == false ]] || { echo 'DEVFLOW_RESTORE_SKIP_PREBACKUP inválido.' >&2; exit 1; }
@@ -54,13 +54,13 @@ TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devflow-restore.XXXXXX")"
 BACKEND_STOPPED=0
 cleanup() {
   if [[ "$BACKEND_STOPPED" -eq 1 && "$NO_START" == false ]]; then
-    "${COMPOSE[@]}" start backend >/dev/null 2>&1 || true
+    "${DEVFLOW_COMPOSE[@]}" start backend >/dev/null 2>&1 || true
   fi
   rm -rf -- "$TEMP_DIR"
 }
 trap cleanup EXIT
 
-"${COMPOSE[@]}" run --rm --no-deps --user 0:0 \
+"${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --user 0:0 \
   -v "$(dirname "$BACKUP_FILE"):/backup:ro" \
   -v "$TEMP_DIR:/work" \
   -v "$PASSPHRASE_FILE:/run/secrets/devflow_backup_passphrase:ro" \
@@ -111,10 +111,10 @@ uploads_expanded_bytes="$(tar --numeric-owner -tvzf "$TEMP_DIR/uploads.tar.gz" |
   exit 1
 }
 
-"${COMPOSE[@]}" stop backend
+"${DEVFLOW_COMPOSE[@]}" stop backend
 BACKEND_STOPPED=1
 
-"${COMPOSE[@]}" exec -T db sh -c \
+"${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges' \
   < "$TEMP_DIR/database.dump"
 
@@ -124,12 +124,12 @@ docker run --rm \
   alpine:3.22 sh -c \
   'find /target -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /work/uploads.tar.gz -C /target'
 
-"${COMPOSE[@]}" exec -T db sh -c \
+"${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason='\''backup_restored'\'' WHERE revoked_at IS NULL"'
 if [[ "$NO_START" == false ]]; then
-  "${COMPOSE[@]}" start backend
+  "${DEVFLOW_COMPOSE[@]}" start backend
   BACKEND_STOPPED=0
-  "${COMPOSE[@]}" up -d --wait
+  "${DEVFLOW_COMPOSE[@]}" up -d --wait
   printf 'Restauração concluída e sessões anteriores revogadas.\n'
 else
   printf 'Restauração concluída; backend mantido parado para coordenação externa.\n'

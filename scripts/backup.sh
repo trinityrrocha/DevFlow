@@ -16,8 +16,8 @@ ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}"
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 UPLOAD_SOURCE="${DEVFLOW_UPLOADS_PATH:-devflow_devflow_uploads}"
-COMPOSE=(docker compose --env-file "$ENV_FILE" -p devflow --project-directory "$PROJECT_DIR" -f "$PROJECT_DIR/docker-compose.yml")
-[[ "${DEVFLOW_PROXY_MODE:-}" != shared ]] || COMPOSE+=(-f "$PROJECT_DIR/docker-compose.shared.yml")
+DEVFLOW_APP_ROOT="$PROJECT_DIR"
+compose_files
 
 [[ -r "$PASSPHRASE_FILE" ]] || { echo "Passphrase de backup não encontrada em $PASSPHRASE_FILE." >&2; exit 1; }
 [[ "$ARCHIVE_DIR" = /* && "$ARCHIVE_DIR" != "/" ]] || { echo "Diretório de backup inválido." >&2; exit 1; }
@@ -40,7 +40,7 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 archive_suffix="$(openssl rand -hex 4)"
 archive_name="devflow-${timestamp}-${archive_suffix}.dfbackup"
 
-"${COMPOSE[@]}" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TEMP_DIR/database.dump"
+"${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TEMP_DIR/database.dump"
 docker run --rm \
   -v "$UPLOAD_SOURCE:/source:ro" \
   -v "$TEMP_DIR:/work" \
@@ -58,7 +58,7 @@ EOF
   tar -czf payload.tar.gz manifest.json checksums.sha256 database.dump uploads.tar.gz
 )
 
-"${COMPOSE[@]}" run --rm --no-deps --user 0:0 \
+"${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --user 0:0 \
   -v "$TEMP_DIR:/work" \
   -v "$PASSPHRASE_FILE:/run/secrets/devflow_backup_passphrase:ro" \
   -e BACKUP_PASSPHRASE_FILE=/run/secrets/devflow_backup_passphrase \

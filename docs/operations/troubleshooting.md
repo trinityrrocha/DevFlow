@@ -182,6 +182,22 @@ sudo ./install.sh --diagnose-startup
 
 Depois execute o dry-run e confira `transaction_state_present=false`, `transaction_state_reconstruction_planned=true`, `can_resume=true`, `resume_from_stage=05-build-images` e `changes_applied=false`. Não abra o `.env`, não use tracing do shell e não apague o diretório parcial.
 
+## Compose informa `DB_PASSWORD` ausente durante o dry-run
+
+Na `0.4.5-alpha`, a validação de imagens montava um comando Compose separado e não aplicava de forma consistente `/opt/devflow/config/devflow.env`. O campo `env_file` de um serviço injeta variáveis no container, mas não substitui `docker compose --env-file` na interpolação do YAML. A mensagem posterior sobre imagem era somente um efeito secundário.
+
+A partir da `0.4.6-alpha`, o resumo sanitizado diferencia:
+
+```text
+compose_structure_valid=true
+compose_runtime_config_valid=true|false|not-applicable-before-configuration
+compose_env_file_applied=true|false
+missing_required_env_keys=none|CHAVE1,CHAVE2
+resume_from_stage=04-configuration|...
+```
+
+O dry-run nunca mostra valores. Se a configuração estiver incompleta sem banco, volume ou migration, a recuperação fica disponível apenas no `--resume`, preserva o arquivo anterior em `/opt/devflow/backups/install/` e exige `REGERAR CONFIGURAÇÃO DEVFLOW`. Se existir qualquer dado persistente, não regenere a senha: siga a recuperação manual indicada pelo instalador.
+
 ## Migration falhou
 
 Na instalação inicial, a release não é promovida. Durante update, a falha aciona automaticamente o backup pré-update e os containers anteriores. Não marque a migration, não altere `schema_migrations` e não repita o comando manualmente.

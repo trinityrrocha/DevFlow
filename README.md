@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.5-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.6-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,7 +42,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.5-alpha
+./install.sh --check --ref main --expected-version 0.4.6-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -86,6 +86,8 @@ sudo ./install.sh --resume \
 ```
 
 A retomada aceita somente checkout canônico, limpo e compatível por fast-forward. Imagens são resolvidas pelo Compose e verificadas com `docker image inspect`; uma imagem só é reutilizada sem build quando seus rótulos de versão e commit correspondem à release.
+
+O Compose runtime recebe sempre `--env-file /opt/devflow/config/devflow.env`. O dry-run informa apenas presença, permissões e nomes de chaves obrigatórias. Se uma configuração parcial estiver incompleta e não existir banco, volume ou migration, `--resume` pode preservá-la e regenerá-la somente após a confirmação literal `REGERAR CONFIGURAÇÃO DEVFLOW`. Com qualquer evidência de dados, a recuperação automática é bloqueada.
 
 Para investigar somente a inicialização, sem exibir valores de configuração ou aplicar mudanças:
 
