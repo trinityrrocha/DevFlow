@@ -29,6 +29,8 @@ No bootstrap baixado, a ausência de modo abre o fluxo interativo de instalaçã
 
 O fluxo é `detectar → validar → resumir → confirmar → aplicar → verificar → promover`. As 14 etapas são gravadas atomicamente em `/opt/devflow/state/install-transaction.json`. Qualquer incompatibilidade antes da confirmação interrompe a execução. Depois que a aplicação começa, falhas removem apenas recursos incompletos do DevFlow e registram relatório; checkout, configuração, imagens válidas e dados são preservados.
 
+Antes dos imports, o instalador cria um logger temporário 0600 e instala traps sanitizados. Uma tentativa legada sem estado transacional é reconstruída inicialmente em memória; o dry-run não grava `/opt/devflow/state`, e `--resume` só persiste o estado após `RETOMAR DEVFLOW`. O clone invocador é somente leitura, com locks opcionais do Git desativados e assinatura de `.git/index` conferida antes de qualquer aplicação.
+
 ## Plataformas e requisitos
 
 - Ubuntu 22.04/24.04 e Debian 12/13;

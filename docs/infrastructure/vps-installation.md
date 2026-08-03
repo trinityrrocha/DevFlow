@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.4-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. A correção foi validada localmente; a retomada real ainda deve ser homologada na VPS.
+> Versão `0.4.5-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O startup foi corrigido e validado localmente; a retomada real ainda deve ser homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.4-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.5-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -86,6 +86,14 @@ sudo ./install.sh --dry-run \
 sudo ./install.sh --resume \
   --super-admin-email contato@sti1.com.br
 ```
+
+Antes do dry-run, o diagnóstico sanitizado pode confirmar imports, argumentos e dependências sem abrir o `.env`:
+
+```bash
+sudo ./install.sh --diagnose-startup
+```
+
+Não use tracing de Bash: ele pode imprimir variáveis sensíveis. Todo código diferente de zero deve vir acompanhado por mensagem funcional e pelo caminho do log inicial protegido.
 
 O dry-run deve exibir o checkout parcial, versão, commit, etapa registrada, imagens esperadas/resolvidas e os flags `*_build_required`. Imagens `0.4.3-alpha` sem rótulos de proveniência podem existir, mas a primeira retomada em `0.4.4-alpha` as reconstrói para vincular versão e commit. Não execute `publish.sh` nessa homologação.
 

@@ -28,8 +28,15 @@ const criticalDiscoveryVariables = [
 const failures = [];
 const dependencies = {
   'scripts/detect-shared-proxy.sh': ['scripts/lib/common.sh'],
-  'scripts/install.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
+  'scripts/install.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/lib/compose-images.sh', 'scripts/lib/install-transaction.sh', 'scripts/lib/install-startup.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
   'scripts/bootstrap.sh': [],
+  'scripts/lib/common.sh': ['scripts/lib/version.sh'],
+  'scripts/lib/version.sh': [],
+  'scripts/lib/port-ownership.sh': ['scripts/lib/common.sh'],
+  'scripts/lib/proxy-config.sh': ['scripts/lib/common.sh'],
+  'scripts/lib/compose-images.sh': ['scripts/lib/common.sh'],
+  'scripts/lib/install-transaction.sh': ['scripts/lib/common.sh'],
+  'scripts/lib/install-startup.sh': ['scripts/install.sh', 'scripts/lib/common.sh', 'scripts/lib/install-transaction.sh'],
   'scripts/lib/fullpassword-proxy.sh': ['scripts/lib/common.sh'],
   'scripts/update.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
   'scripts/uninstall.sh': ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh', 'scripts/providers/provider-contract.sh', 'scripts/providers/host-nginx.sh'],
@@ -42,7 +49,7 @@ const dependencies = {
   'scripts/providers/legacy-docker-nginx.sh': ['scripts/lib/common.sh', 'scripts/lib/fullpassword-proxy.sh'],
 };
 const externalContract = new Set([
-  'BASH_SOURCE', 'BASH_REMATCH', 'BASHPID', 'EUID', 'FUNCNAME', 'HOME', 'ID', 'LINENO', 'PATH', 'PRETTY_NAME',
+  'BASH_SOURCE', 'BASH_LINENO', 'BASH_REMATCH', 'BASHPID', 'EUID', 'FUNCNAME', 'HOME', 'ID', 'LINENO', 'PATH', 'PRETTY_NAME',
   'PWD', 'RANDOM', 'TMPDIR', 'UBUNTU_CODENAME', 'UID', 'VERSION_CODENAME',
   'POSTGRES_DB', 'POSTGRES_USER', 'DEVFLOW_API_PORT', 'DEVFLOW_DOMAIN', 'DEVFLOW_EXPECTED_VERSION',
   'DEVFLOW_HEALTH_ALLOW_PENDING_VERSION', 'DEVFLOW_HTTP_PORT', 'DEVFLOW_PROXY_MODE',
@@ -110,7 +117,7 @@ function unguardedReferences(source) {
 
 for (const path of targets) {
   const source = readFileSync(resolve(root, path), 'utf8');
-  const sourcedLibrary = path === 'scripts/lib/fullpassword-proxy.sh' || path.startsWith('scripts/providers/');
+  const sourcedLibrary = path.startsWith('scripts/lib/') || path.startsWith('scripts/providers/');
   if (!sourcedLibrary && !/^set -[^\n]*u[^\n]*pipefail/mu.test(source)) {
     failures.push(`${path}: modo estrito com set -u e pipefail ausente`);
   }
@@ -157,6 +164,25 @@ const bash = bashCandidates.find(existsSync) || bashCandidates[0];
 for (const path of targets) {
   const result = spawnSync(bash, ['-n', resolve(root, path)], { encoding: 'utf8' });
   if (result.status !== 0) failures.push(`${path}: sintaxe Bash inválida: ${result.stderr.trim()}`);
+}
+
+const sourceSafetyTargets = [
+  ['scripts/lib/common.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/port-ownership.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/compose-images.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/install-transaction.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/install-transaction.sh', 'scripts/lib/install-startup.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/lib/fullpassword-proxy.sh'],
+  ['scripts/lib/common.sh', 'scripts/providers/provider-contract.sh'],
+  ['scripts/lib/common.sh', 'scripts/lib/proxy-config.sh', 'scripts/providers/host-nginx.sh'],
+];
+for (const libraries of sourceSafetyTargets) {
+  const command = `${libraries.map((path) => `source "${resolve(root, path).replaceAll('\\', '/')}"`).join('\n')}\nprintf sourced`;
+  const result = spawnSync(bash, ['-c', `set -Eeuo pipefail\n${command}`], { encoding: 'utf8' });
+  if (result.status !== 0 || result.stdout !== 'sourced') {
+    failures.push(`${libraries.at(-1)}: source sob modo estrito não concluiu com status zero: ${result.stderr.trim()}`);
+  }
 }
 
 if (failures.length) {

@@ -170,6 +170,18 @@ sudo ./install.sh --resume \
 
 Consulte `/opt/devflow/state/install-transaction.json` e o log sanitizado em `/opt/devflow/logs`. A retomada só avança com checkout canônico e limpo, configuração privada regular com modo 600/400 e versão compatível por fast-forward. Imagens legadas sem rótulos OCI são reconstruídas para estabelecer proveniência; imagens já rotuladas com o mesmo commit e versão são reutilizadas.
 
+## Instalador encerrou antes do log definitivo
+
+Na `0.4.4-alpha`, uma tentativa legada sem `install-transaction.json` fazia uma função booleana retornar `1` sob `set -e` antes do trap operacional. A `0.4.5-alpha` inicializa um logger 0600 em `/tmp` e instala o trap antes dos imports.
+
+Use somente o diagnóstico sanitizado:
+
+```bash
+sudo ./install.sh --diagnose-startup
+```
+
+Depois execute o dry-run e confira `transaction_state_present=false`, `transaction_state_reconstruction_planned=true`, `can_resume=true`, `resume_from_stage=05-build-images` e `changes_applied=false`. Não abra o `.env`, não use tracing do shell e não apague o diretório parcial.
+
 ## Migration falhou
 
 Na instalação inicial, a release não é promovida. Durante update, a falha aciona automaticamente o backup pré-update e os containers anteriores. Não marque a migration, não altere `schema_migrations` e não repita o comando manualmente.

@@ -8,6 +8,9 @@ INSTALL_TRANSACTION_STAGE=01-preflight
 INSTALL_TRANSACTION_FAILED_STAGE=none
 INSTALL_TRANSACTION_CAN_RESUME=false
 INSTALL_TRANSACTION_ACTIVE=false
+INSTALL_TRANSACTION_LEGACY_PARTIAL=false
+INSTALL_TRANSACTION_RECONSTRUCTED=false
+INSTALL_TRANSACTION_RESUME_FROM_STAGE=01-preflight
 INSTALL_TRANSACTION_COMPLETED=()
 
 install_stage_valid() {
@@ -69,6 +72,9 @@ install_transaction_write() {
     printf '  ],\n'
     printf '  "failedStage": "%s",\n' "$INSTALL_TRANSACTION_FAILED_STAGE"
     printf '  "canResume": %s,\n' "$INSTALL_TRANSACTION_CAN_RESUME"
+    printf '  "legacyPartialInstallation": %s,\n' "$INSTALL_TRANSACTION_LEGACY_PARTIAL"
+    printf '  "transactionStateReconstructed": %s,\n' "$INSTALL_TRANSACTION_RECONSTRUCTED"
+    printf '  "resumeFromStage": "%s",\n' "$INSTALL_TRANSACTION_RESUME_FROM_STAGE"
     printf '  "updatedAt": "%s"\n' "$(timestamp)"
     printf '}\n'
   } > "$temporary"
@@ -80,6 +86,12 @@ install_transaction_begin() {
   INSTALL_TRANSACTION_VERSION="$1"
   INSTALL_TRANSACTION_COMMIT="$2"
   INSTALL_TRANSACTION_SCOPE="$3"
+  INSTALL_TRANSACTION_LEGACY_PARTIAL="${4:-false}"
+  INSTALL_TRANSACTION_RECONSTRUCTED="${5:-false}"
+  INSTALL_TRANSACTION_RESUME_FROM_STAGE="${6:-01-preflight}"
+  [[ "$INSTALL_TRANSACTION_LEGACY_PARTIAL" == true || "$INSTALL_TRANSACTION_LEGACY_PARTIAL" == false ]] || return 2
+  [[ "$INSTALL_TRANSACTION_RECONSTRUCTED" == true || "$INSTALL_TRANSACTION_RECONSTRUCTED" == false ]] || return 2
+  install_stage_valid "$INSTALL_TRANSACTION_RESUME_FROM_STAGE" || return 2
   INSTALL_TRANSACTION_STAGE=01-preflight
   INSTALL_TRANSACTION_FAILED_STAGE=none
   INSTALL_TRANSACTION_CAN_RESUME=true
@@ -97,12 +109,21 @@ install_transaction_load() {
   INSTALL_TRANSACTION_STAGE="$(installation_state_value stage "$file")"
   INSTALL_TRANSACTION_FAILED_STAGE="$(installation_state_value failedStage "$file")"
   INSTALL_TRANSACTION_CAN_RESUME="$(installation_state_value canResume "$file")"
+  INSTALL_TRANSACTION_LEGACY_PARTIAL="$(installation_state_value legacyPartialInstallation "$file")"
+  INSTALL_TRANSACTION_RECONSTRUCTED="$(installation_state_value transactionStateReconstructed "$file")"
+  INSTALL_TRANSACTION_RESUME_FROM_STAGE="$(installation_state_value resumeFromStage "$file")"
+  [[ -n "$INSTALL_TRANSACTION_LEGACY_PARTIAL" ]] || INSTALL_TRANSACTION_LEGACY_PARTIAL=false
+  [[ -n "$INSTALL_TRANSACTION_RECONSTRUCTED" ]] || INSTALL_TRANSACTION_RECONSTRUCTED=false
+  [[ -n "$INSTALL_TRANSACTION_RESUME_FROM_STAGE" ]] || INSTALL_TRANSACTION_RESUME_FROM_STAGE=01-preflight
   devflow_semver_is_valid "$INSTALL_TRANSACTION_VERSION" || return 1
   [[ "$INSTALL_TRANSACTION_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 1
   [[ "$INSTALL_TRANSACTION_SCOPE" == internal || "$INSTALL_TRANSACTION_SCOPE" == complete ]] || return 1
   install_stage_valid "$INSTALL_TRANSACTION_STAGE" || return 1
   [[ "$INSTALL_TRANSACTION_FAILED_STAGE" == none ]] || install_stage_valid "$INSTALL_TRANSACTION_FAILED_STAGE" || return 1
   [[ "$INSTALL_TRANSACTION_CAN_RESUME" == true || "$INSTALL_TRANSACTION_CAN_RESUME" == false ]] || return 1
+  [[ "$INSTALL_TRANSACTION_LEGACY_PARTIAL" == true || "$INSTALL_TRANSACTION_LEGACY_PARTIAL" == false ]] || return 1
+  [[ "$INSTALL_TRANSACTION_RECONSTRUCTED" == true || "$INSTALL_TRANSACTION_RECONSTRUCTED" == false ]] || return 1
+  install_stage_valid "$INSTALL_TRANSACTION_RESUME_FROM_STAGE" || return 1
   INSTALL_TRANSACTION_COMPLETED=()
   while IFS= read -r stage; do
     install_stage_valid "$stage" || return 1

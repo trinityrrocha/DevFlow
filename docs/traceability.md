@@ -1,5 +1,17 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.5-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Nenhum erro silencioso | trap/EXIT guard antes dos imports em `install.sh` | erro inclui script, linha, função, código, versão, commit, modo e etapa |
+| Logger inicial | arquivo 0600 sob `/tmp` e promoção controlada | `--diagnose-startup` e teste de import falível |
+| Booleanos sob `set -e` | `if install_transaction_has_stage` e retorno explícito | regressão do retorno `1` anterior |
+| Legado sem transação | `install-startup.sh` | reconstrução planejada no dry-run e atômica após confirmação |
+| Confirmação de resume | `RETOMAR DEVFLOW` | nenhuma mutação anterior à confirmação |
+| Clone read-only | `GIT_OPTIONAL_LOCKS=0` e assinatura do index | `source_clone_preserved=true` |
+| Testes | `validate-install-startup.mjs` | 26 cenários automatizados |
+
 ## Instalação interna `0.4.4-alpha`
 
 | Requisito | Implementação | Evidência |

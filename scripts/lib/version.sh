@@ -126,8 +126,9 @@ devflow_validate_checkout_version_consistency() {
     docs/infrastructure/vps-installation.md docs/roadmap.md docs/traceability.md \
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
     scripts/publish.sh scripts/resolve-compose-image.py scripts/validate-compose-images-resume.mjs \
+    scripts/validate-install-startup.mjs \
     scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
-    scripts/lib/compose-images.sh scripts/lib/install-transaction.sh; do
+    scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh; do
     git -C "$root" ls-files --error-unmatch "$tracked_file" >/dev/null 2>&1 || return 1
     expected_mode=100644
     [[ "$tracked_file" != scripts/*.sh || "$tracked_file" == scripts/lib/* ]] || expected_mode=100755
@@ -149,8 +150,9 @@ devflow_validate_git_tree_version_consistency() {
     CHANGELOG.md docs/implementation-status.md docs/infrastructure/vps-installation.md \
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
     scripts/version.sh scripts/health.sh scripts/publish.sh scripts/resolve-compose-image.py \
-    scripts/validate-compose-images-resume.mjs scripts/lib/common.sh scripts/lib/version.sh \
-    scripts/lib/port-ownership.sh scripts/lib/compose-images.sh scripts/lib/install-transaction.sh \
+    scripts/validate-compose-images-resume.mjs scripts/validate-install-startup.mjs \
+    scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
+    scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh \
     | tar -x -C "$temporary"; then
     rm -rf -- "$temporary"
     return 1

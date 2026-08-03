@@ -1,6 +1,6 @@
 {
   "name": "devflow",
-  "version": "0.4.4-alpha",
+  "version": "0.4.5-alpha",
   "private": true,
   "workspaces": [
     "backend",
@@ -22,12 +22,13 @@
     "validate:version-policy": "node scripts/validate-version-policy.mjs",
     "validate:installation-scopes": "node scripts/validate-installation-scopes.mjs",
     "validate:compose-images-resume": "node scripts/validate-compose-images-resume.mjs",
+    "validate:install-startup": "node scripts/validate-install-startup.mjs",
     "audit:bash-initialization": "node scripts/audit-bash-initialization.mjs",
     "audit:fullpassword-readonly": "node scripts/audit-fullpassword-readonly.mjs",
     "audit:repository": "node scripts/repository-audit.mjs",
     "audit:history": "node scripts/history-audit.mjs",
     "audit:version-constants": "node scripts/audit-version-constants.mjs",
-    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm validate:shared-proxy && pnpm validate:fullpassword-adapter && pnpm validate:privileged-compose && pnpm validate:compose-discovery && pnpm validate:providers && pnpm validate:proxy-migration-evidence && pnpm validate:version-policy && pnpm validate:installation-scopes && pnpm validate:compose-images-resume && pnpm audit:bash-initialization && pnpm audit:fullpassword-readonly && pnpm audit:repository && pnpm audit:version-constants && pnpm audit:history"
+    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:compose && pnpm validate:operations && pnpm validate:shared-proxy && pnpm validate:fullpassword-adapter && pnpm validate:privileged-compose && pnpm validate:compose-discovery && pnpm validate:providers && pnpm validate:proxy-migration-evidence && pnpm validate:version-policy && pnpm validate:installation-scopes && pnpm validate:compose-images-resume && pnpm validate:install-startup && pnpm audit:bash-initialization && pnpm audit:fullpassword-readonly && pnpm audit:repository && pnpm audit:version-constants && pnpm audit:history"
   },
   "packageManager": "pnpm@10.15.0",
   "engines": {

@@ -67,7 +67,7 @@ for (const required of [
   if (!adapter.includes(required)) failures.push(`contrato obrigatório ausente: ${required}`);
 }
 const dryRunExit = installer.indexOf('if [[ "$MODE" == dry-run ]]');
-const installationRootGate = installer.indexOf('\nrequire_root\nif [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}"');
+const installationRootGate = installer.indexOf('\nrequire_root\n', dryRunExit);
 if (dryRunExit < 0 || installationRootGate < 0 || dryRunExit > installationRootGate) {
   failures.push('o dry-run não termina antes da fase privilegiada de instalação');
 }

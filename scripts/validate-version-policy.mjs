@@ -55,8 +55,10 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/lib/port-ownership.sh'), '# port ownership fixture\n');
   writeFileSync(resolve(directory, 'scripts/lib/compose-images.sh'), '# compose image fixture\n');
   writeFileSync(resolve(directory, 'scripts/lib/install-transaction.sh'), '# transaction fixture\n');
+  writeFileSync(resolve(directory, 'scripts/lib/install-startup.sh'), '# startup fixture\n');
   writeFileSync(resolve(directory, 'scripts/resolve-compose-image.py'), '# resolver fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-compose-images-resume.mjs'), '// image tests fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-install-startup.mjs'), '// startup tests fixture\n');
   for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
@@ -76,10 +78,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.4-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.5-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.5-alpha');
+  writeFixture(patchFixture, '0.4.6-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');

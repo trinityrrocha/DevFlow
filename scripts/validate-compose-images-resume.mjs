@@ -8,6 +8,7 @@ const install = read('scripts/install.sh');
 const common = read('scripts/lib/common.sh');
 const images = read('scripts/lib/compose-images.sh');
 const transaction = read('scripts/lib/install-transaction.sh');
+const startup = read('scripts/lib/install-startup.sh');
 const compose = read('docker-compose.yml');
 const health = read('scripts/health.sh');
 const bootstrap = read('scripts/bootstrap.sh');
@@ -56,13 +57,16 @@ const exerciseTransaction = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.4-alpha 0123456789012345678901234567890123456789 internal
+  install_transaction_begin 0.4.5-alpha 0123456789012345678901234567890123456789 internal true true 05-build-images
   install_transaction_complete_stage 01-preflight >/dev/null
   install_transaction_complete_stage 05-build-images >/dev/null
   install_transaction_fail 06-validate-images >/dev/null
   install_transaction_load
   [[ "$INSTALL_TRANSACTION_FAILED_STAGE" == 06-validate-images \
-    && "$INSTALL_TRANSACTION_CAN_RESUME" == true ]]
+    && "$INSTALL_TRANSACTION_CAN_RESUME" == true \
+    && "$INSTALL_TRANSACTION_LEGACY_PARTIAL" == true \
+    && "$INSTALL_TRANSACTION_RECONSTRUCTED" == true \
+    && "$INSTALL_TRANSACTION_RESUME_FROM_STAGE" == 05-build-images ]]
   [[ "$(uname -s)" == MINGW* || "$(stat -c '%a' "$DEVFLOW_INSTALL_TRANSACTION_FILE")" == 640 ]]
 `, '_', bashPath(resolve(root, 'scripts/lib/common.sh')), bashPath(resolve(root, 'scripts/lib/install-transaction.sh'))], { encoding: 'utf8' });
 
@@ -84,15 +88,16 @@ check('missing or implicit image is controlled', resolveJson({ services: { backe
 check('multiple images are rejected', resolveJson({ services: { backend: { image: ['one', 'two'] } } }, 'backend').status !== 0);
 check('explicit registry remains distinct', normalize('registry.example.com/team/devflow-backend:latest').stdout.trim() === 'registry.example.com/team/devflow-backend:latest');
 check('latest tag is accepted', normalize('devflow-backend:latest').status === 0);
-check('version tag is accepted', normalize('devflow-backend:0.4.4-alpha').status === 0);
+check('version tag is accepted', normalize('devflow-backend:0.4.5-alpha').status === 0);
 check('commit tag is accepted', normalize('devflow-backend:dab9444').status === 0);
 check('execution directory is irrelevant', resolveThroughCompose().stdout.trim() === 'docker.io/library/devflow-backend:latest'
   && common.includes('--project-directory "$app_root"') && compose.startsWith('name: devflow'));
 check('Compose project is explicit', compose.includes('name: devflow') && common.includes('DEVFLOW_PROJECT="devflow"'));
 check('resume after build reuses proven labels', install.includes('compose_image_matches_release') && install.includes('BACKEND_BUILD_REQUIRED=false'));
 check('resume after PostgreSQL pull reuses image', install.includes('POSTGRES_PULL_REQUIRED=false') && install.includes('docker image inspect "$POSTGRES_IMAGE_RESOLVED"'));
-check('valid partial checkout supports fast-forward', install.includes('resume_checkout_valid=') && install.includes('merge-base --is-ancestor "$source_commit" "$release_sha"'));
-check('divergent partial checkout fails closed', install.includes('checkout não é limpo, canônico ou fast-forward compatível'));
+check('valid partial checkout supports fast-forward', install.includes('resume_checkout_valid=') && startup.includes('merge-base --is-ancestor "$source_commit" "$release_sha"'));
+check('divergent partial checkout fails closed', install.includes('checkout não é limpo, canônico ou fast-forward compatível')
+  && startup.includes('RESUME_CHECKOUT_VALID=false'));
 const transactionResult = exerciseTransaction();
 check(`transaction state is atomic${transactionResult.status === 0 ? '' : ` (${transactionResult.stderr.trim()})`}`,
   transactionResult.status === 0 && transaction.includes('install-transaction.json')

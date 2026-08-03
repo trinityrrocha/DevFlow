@@ -2,6 +2,29 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.5-alpha] - 2026-08-03
+
+### Corrigido
+
+- eliminado o encerramento silencioso causado pelas linhas 233–234 de `scripts/install.sh` no commit `1152236`: uma verificação booleana de etapa retornava `1` como status final de `detect_partial_installation`, chamada diretamente sob `set -e`;
+- um trap sanitizado e um logger protegido em `/tmp/devflow-install-bootstrap.*.log` agora existem antes de qualquer import potencialmente falível;
+- argumentos ausentes ou desconhecidos produzem erro funcional e dica de `--help`, sem `shift` além dos argumentos;
+- `--resume` exige a confirmação exata `RETOMAR DEVFLOW` e nunca prossegue silenciosamente;
+- leituras Git do clone fornecido usam `GIT_OPTIONAL_LOCKS=0` e uma assinatura de integridade comprova que `.git/index` não mudou.
+
+### Retomada legada
+
+- a ausência de `install-transaction.json` é tratada como evidência esperada de uma tentativa anterior à transação;
+- source, configuração, imagens, containers e estado são classificados separadamente;
+- o dry-run apenas planeja a reconstrução; a gravação atômica acontece somente depois da confirmação do `--resume`;
+- o estado reconstruído registra origem legada e etapa real de retomada, sem segredos;
+- imagens antigas permanecem preservadas e são reconstruídas com cache quando não comprovam versão e commit.
+
+### Testes e homologação
+
+- 26 cenários cobrem imports, `set -e`, logger inicial, parsing, estado legado, clone read-only, sigilo, ARM64, Compose 5.3.1 e fail-closed;
+- a execução real de dry-run e retomada permanece pendente na VPS ARM64; nenhuma instalação, publicação externa ou migração foi executada nesta correção local.
+
 ## [0.4.4-alpha] - 2026-08-03
 
 ### Corrigido

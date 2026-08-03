@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.5-alpha` — inicialização observável e retomada legada
+
+- [x] instalar trap e logger sanitizados antes dos imports;
+- [x] impedir falso booleano de encerrar o chamador sob `set -e`;
+- [x] reconstruir em memória o estado legado e persistir somente após confirmação;
+- [x] preservar e comprovar o clone de origem como read-only;
+- [x] cobrir startup e retomada com 26 cenários automatizados;
+- [ ] repetir diagnóstico, dry-run e resume na VPS ARM64.
+
 ## Marco `0.4.4-alpha` — imagens determinísticas e retomada segura
 
 - [x] resolver imagens pelo Compose e confirmar existência com `docker image inspect`;
@@ -99,7 +108,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.4-alpha` consistente;
+- versão `0.4.5-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

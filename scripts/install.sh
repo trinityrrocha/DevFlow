@@ -2,8 +2,57 @@
 set -Eeuo pipefail
 umask 077
 
+OUTPUT_EMITTED=false
+BOOTSTRAP_LOG=
+STARTUP_STAGE=00-bootstrap
+REQUESTED_MODE=unparsed
+RECOGNIZED_ARGUMENTS=()
+export GIT_OPTIONAL_LOCKS=0
+
+bootstrap_timestamp() {
+  date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '%s\n' unknown-time
+}
+
+bootstrap_emit() {
+  local level="${1:-ERROR}" message="${2:-Erro interno do instalador.}" line
+  line="$(bootstrap_timestamp) [$level] $message"
+  OUTPUT_EMITTED=true
+  printf '%s\n' "$line" >&2
+  if [[ -n "${BOOTSTRAP_LOG:-}" && -f "$BOOTSTRAP_LOG" && ! -L "$BOOTSTRAP_LOG" ]]; then
+    printf '%s\n' "$line" >> "$BOOTSTRAP_LOG" 2>/dev/null || true
+  fi
+}
+
+early_error_handler() {
+  local exit_code="$?" line="${BASH_LINENO[0]:-${LINENO}}"
+  local source="${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}" function_name="${FUNCNAME[1]:-main}"
+  trap - ERR
+  bootstrap_emit ERROR "Falha inicial: script=${source##*/} linha=$line função=$function_name código=$exit_code versão=${DEVFLOW_RELEASE_VERSION:-unknown} commit=${release_sha:-unknown} modo=${REQUESTED_MODE:-unparsed} etapa=${STARTUP_STAGE:-00-bootstrap}."
+  return "$exit_code"
+}
+
+ensure_diagnostic_on_exit() {
+  local exit_code="$?"
+  if [[ "$exit_code" -ne 0 && "${OUTPUT_EMITTED:-false}" != true ]]; then
+    printf '%s\n' \
+      'Erro interno do instalador: encerramento sem diagnóstico funcional.' \
+      "Consulte o log inicial: ${BOOTSTRAP_LOG:-indisponível}" >&2
+  fi
+  return "$exit_code"
+}
+
+trap early_error_handler ERR
+trap ensure_diagnostic_on_exit EXIT
+
+if BOOTSTRAP_LOG="$(mktemp "${TMPDIR:-/tmp}/devflow-install-bootstrap.XXXXXX.log" 2>/dev/null)"; then
+  chmod 0600 "$BOOTSTRAP_LOG" 2>/dev/null || true
+fi
+bootstrap_emit INFO "Inicialização protegida do instalador; log inicial=${BOOTSTRAP_LOG:-indisponível}."
+
+STARTUP_STAGE=01-resolve-source
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+STARTUP_STAGE=02-load-libraries
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/proxy-config.sh
@@ -16,6 +65,31 @@ SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/compose-images.sh"
 # shellcheck source=lib/install-transaction.sh
 . "$SCRIPT_DIR/lib/install-transaction.sh"
+# shellcheck source=lib/install-startup.sh
+. "$SCRIPT_DIR/lib/install-startup.sh"
+
+log() {
+  local level="$1" line
+  shift
+  line="$(bootstrap_timestamp) [$level] $*"
+  OUTPUT_EMITTED=true
+  printf '%s\n' "$line"
+  if [[ -n "${BOOTSTRAP_LOG:-}" && -f "$BOOTSTRAP_LOG" && ! -L "$BOOTSTRAP_LOG" ]]; then
+    printf '%s\n' "$line" >> "$BOOTSTRAP_LOG" 2>/dev/null || true
+  fi
+}
+
+promote_bootstrap_log() {
+  local destination="$1" line
+  [[ -n "${BOOTSTRAP_LOG:-}" && -f "$BOOTSTRAP_LOG" && ! -L "$BOOTSTRAP_LOG" ]] || return 0
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >> "$destination"
+  done < "$BOOTSTRAP_LOG"
+  rm -f -- "$BOOTSTRAP_LOG"
+  BOOTSTRAP_LOG=
+}
+
+STARTUP_STAGE=03-parse-arguments
 
 MODE=check
 MODE_EXPLICIT=false
@@ -68,10 +142,20 @@ BACKEND_READY=false
 FRONTEND_READY=false
 SUPER_ADMIN_READY=false
 INSTALLATION_STATE_READY=false
+SOURCE_CLONE_PRESERVED=false
+SOURCE_CLONE_SIGNATURE_BEFORE=
+LEGACY_PARTIAL_INSTALLATION_DETECTED=false
+TRANSACTION_STATE_PRESENT=false
+TRANSACTION_STATE_CORRUPT=false
+TRANSACTION_STATE_RECONSTRUCTED=false
+TRANSACTION_STATE_RECONSTRUCTION_PLANNED=false
+CAN_RESUME=false
+RESUME_FROM_STAGE=01-preflight
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
 usage() {
+  OUTPUT_EMITTED=true
   printf 'DevFlow %s — instalador inicial para homologação\n\n' "$DEVFLOW_RELEASE_VERSION"
   cat <<'EOF'
 Uso:
@@ -83,6 +167,8 @@ Uso:
     --letsencrypt-email EMAIL --super-admin-email EMAIL
   sudo ./install.sh --install-internal [--provider host-nginx] --super-admin-email EMAIL
   sudo ./install.sh --resume --super-admin-email EMAIL
+  sudo ./install.sh --diagnose-startup
+  sudo ./install.sh --cleanup-failed-install
 
 Modos:
   --check       diagnóstico somente leitura (padrão)
@@ -90,6 +176,8 @@ Modos:
   --install     primeira instalação, com confirmação explícita
   --install-internal instala somente aplicação e serviços em loopback
   --resume      retoma uma instalação interna incompleta e compatível
+  --diagnose-startup diagnóstico sanitizado da inicialização; não altera o host
+  --cleanup-failed-install informa o procedimento seguro; não remove dados automaticamente
 
 Opções:
   --provider PROVIDER       host-nginx (padrão), isolated-nginx ou legado explícito
@@ -117,6 +205,17 @@ Provider de infraestrutura:
 EOF
 }
 
+argument_error() {
+  log ERROR "Erro: $1"
+  log ERROR 'Use --help para consultar as opções.'
+  exit 2
+}
+
+require_option_value() {
+  local option="$1" value="${2:-}"
+  [[ -n "$value" && "$value" != --* ]] || argument_error "o argumento $option exige um valor."
+}
+
 set_mode() {
   [[ "$MODE_EXPLICIT" == false ]] || die 'Informe somente um modo de execução.'
   MODE="$1"
@@ -131,14 +230,18 @@ set_install_scope() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --check) set_mode check; shift ;;
-    --dry-run) set_mode dry-run; shift ;;
-    --install) set_mode install; shift ;;
-    --install-internal) set_mode install; set_install_scope internal; shift ;;
-    --resume) set_mode install; set_install_scope internal; RESUME_REQUESTED=true; shift ;;
-    --install-scope) set_install_scope "${2:-}"; shift 2 ;;
-    --provider) INFRASTRUCTURE_PROVIDER="${2:-}"; PROVIDER_EXPLICIT=true; shift 2 ;;
+    --check) RECOGNIZED_ARGUMENTS+=(--check); REQUESTED_MODE=check; set_mode check; shift ;;
+    --dry-run) RECOGNIZED_ARGUMENTS+=(--dry-run); REQUESTED_MODE=dry-run; set_mode dry-run; shift ;;
+    --install) RECOGNIZED_ARGUMENTS+=(--install); REQUESTED_MODE=install; set_mode install; shift ;;
+    --install-internal) RECOGNIZED_ARGUMENTS+=(--install-internal); REQUESTED_MODE=install-internal; set_mode install; set_install_scope internal; shift ;;
+    --resume) RECOGNIZED_ARGUMENTS+=(--resume); REQUESTED_MODE=resume; set_mode install; set_install_scope internal; RESUME_REQUESTED=true; shift ;;
+    --diagnose-startup) RECOGNIZED_ARGUMENTS+=(--diagnose-startup); REQUESTED_MODE=diagnose-startup; set_mode diagnose-startup; shift ;;
+    --cleanup-failed-install) RECOGNIZED_ARGUMENTS+=(--cleanup-failed-install); REQUESTED_MODE=cleanup-failed-install; set_mode cleanup-failed-install; shift ;;
+    --install-scope) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--install-scope); set_install_scope "$2"; shift 2 ;;
+    --provider) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--provider); INFRASTRUCTURE_PROVIDER="$2"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
+      require_option_value "$1" "${2:-}"
+      RECOGNIZED_ARGUMENTS+=(--proxy-mode)
       case "${2:-}" in
         shared) INFRASTRUCTURE_PROVIDER=host-nginx ;;
         isolated) INFRASTRUCTURE_PROVIDER=isolated-nginx ;;
@@ -147,28 +250,69 @@ while [[ $# -gt 0 ]]; do
       PROVIDER_EXPLICIT=true
       shift 2
       ;;
-    --domain) DOMAIN="${2:-}"; shift 2 ;;
-    --letsencrypt-email|--email) LETSENCRYPT_EMAIL="${2:-}"; shift 2 ;;
-    --super-admin-email|--super-admin) SUPER_ADMIN_EMAIL="${2:-}"; shift 2 ;;
-    --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
-    --api-port) API_PORT="${2:-}"; shift 2 ;;
+    --domain) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--domain); DOMAIN="$2"; shift 2 ;;
+    --letsencrypt-email|--email) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--letsencrypt-email); LETSENCRYPT_EMAIL="$2"; shift 2 ;;
+    --super-admin-email|--super-admin) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--super-admin-email); SUPER_ADMIN_EMAIL="$2"; shift 2 ;;
+    --http-port) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--http-port); HTTP_PORT="$2"; shift 2 ;;
+    --api-port) require_option_value "$1" "${2:-}"; RECOGNIZED_ARGUMENTS+=(--api-port); API_PORT="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
-    *) die "Opção desconhecida: $1" ;;
+    *) argument_error "argumento desconhecido: $1" ;;
   esac
 done
 
+[[ "$REQUESTED_MODE" != unparsed ]] || REQUESTED_MODE="$MODE"
+log INFO "Argumentos reconhecidos: ${RECOGNIZED_ARGUMENTS[*]:-nenhum}; modo=$REQUESTED_MODE; etapa=$STARTUP_STAGE."
+
+STARTUP_STAGE=04-platform
 require_linux
 detect_platform
-command -v ss >/dev/null 2>&1 || die 'ss (iproute2) é obrigatório para comprovar a disponibilidade das portas.'
+SS_PRESENT=false
+command -v ss >/dev/null 2>&1 && SS_PRESENT=true
+if [[ "$MODE" == diagnose-startup ]]; then
+  printf '%s\n' \
+    "version=$DEVFLOW_RELEASE_VERSION" \
+    'libraries_found=true' \
+    'libraries_loaded=true' \
+    "arguments_recognized=${RECOGNIZED_ARGUMENTS[*]:-none}" \
+    "mode=$MODE" \
+    "source_directory=$SOURCE_DIR" \
+    "install_directory=$DEVFLOW_INSTALL_ROOT" \
+    "effective_user=$(id -u)" \
+    "ss_present=$SS_PRESENT" \
+    "git_present=$(command -v git >/dev/null 2>&1 && printf true || printf false)" \
+    "docker_present=$(command -v docker >/dev/null 2>&1 && printf true || printf false)" \
+    "compose_present=$(docker compose version >/dev/null 2>&1 && printf true || printf false)" \
+    "startup_stage=$STARTUP_STAGE" \
+    'changes_applied=false'
+  OUTPUT_EMITTED=true
+  exit 0
+fi
+if [[ "$MODE" == cleanup-failed-install ]]; then
+  log ERROR 'A limpeza automática da tentativa parcial não está habilitada; checkout, configuração, dados, logs e imagens foram preservados.'
+  log ERROR 'Use scripts/uninstall.sh somente após concluir um backup e revisar exatamente os recursos DevFlow.'
+  exit 2
+fi
+[[ "$SS_PRESENT" == true ]] || die 'ss (iproute2) é obrigatório para comprovar a disponibilidade das portas.'
+STARTUP_STAGE=05-source-validation
 validate_safe_absolute_path "$DEVFLOW_INSTALL_ROOT" 'Diretório de instalação'
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Esta versão suporta somente o diretório /opt/devflow.'
 validate_safe_absolute_path "$SOURCE_DIR" 'Checkout operacional'
 command -v git >/dev/null 2>&1 || die 'Git é obrigatório para validar a origem publicada.'
+source_clone_signature() {
+  local index="$SOURCE_DIR/.git/index" metadata digest
+  [[ -f "$index" && ! -L "$index" ]] || return 1
+  metadata="$(stat -c '%u:%g:%a:%s:%Y' "$index" 2>/dev/null)" || return 1
+  digest="$(git hash-object "$index" 2>/dev/null)" || return 1
+  printf '%s:%s\n' "$metadata" "$digest"
+}
+SOURCE_CLONE_SIGNATURE_BEFORE="$(source_clone_signature)" \
+  || die 'Não foi possível registrar a integridade read-only do clone de origem.'
 public_remote='https://github.com/trinityrrocha/DevFlow.git'
 source_ref="${DEVFLOW_BOOTSTRAP_REF:-main}"
 devflow_ref_is_valid "$source_ref" || die 'Referência de instalação inválida; use main ou vSEMVER.'
 release_sha="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'A origem deve ser um checkout Git publicado.'
+log INFO "Contexto validado: versão=$DEVFLOW_RELEASE_VERSION commit=$release_sha modo=$REQUESTED_MODE etapa=$STARTUP_STAGE."
 devflow_validate_checkout_identity "$SOURCE_DIR" "$source_ref" "$release_sha" \
   || die 'Origem, referência, commit ou limpeza do checkout de instalação diverge do repositório canônico.'
 if [[ "$source_ref" == main ]]; then
@@ -181,59 +325,7 @@ else
     ls-remote origin "refs/tags/$source_ref" | awk 'NR==1 {print $1}')"
 fi
 
-detect_partial_installation() {
-  local source_dir="$DEVFLOW_INSTALL_ROOT/source" source_commit= state_file="$DEVFLOW_STATE_ROOT/installation.json"
-  [[ ! -e "$DEVFLOW_INSTALL_ROOT/app" ]] || return 0
-  if [[ -e "$source_dir" || -e "$DEVFLOW_ENV_FILE" || -e "$state_file" || -e "$DEVFLOW_INSTALL_TRANSACTION_FILE" ]]; then
-    PARTIAL_INSTALLATION_DETECTED=true
-  else
-    return 0
-  fi
-
-  if [[ -d "$source_dir/.git" && ! -L "$source_dir/.git" \
-    && "$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)" == "$public_remote" \
-    && "$(git -C "$source_dir" branch --show-current 2>/dev/null || true)" == main \
-    && -z "$(git -C "$source_dir" status --porcelain 2>/dev/null || printf invalid)" ]]; then
-    source_commit="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
-    if [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] \
-      && git -C "$SOURCE_DIR" merge-base --is-ancestor "$source_commit" "$release_sha" 2>/dev/null; then
-      RESUME_CHECKOUT_VALID=true
-      SOURCE_READY=true
-      PARTIAL_INSTALLATION_COMMIT="$source_commit"
-    fi
-  fi
-
-  if [[ -f "$DEVFLOW_ENV_FILE" && ! -L "$DEVFLOW_ENV_FILE" ]]; then
-    PARTIAL_CONFIGURATION_PRESENT=true
-    env_mode="$(stat -c '%a' "$DEVFLOW_ENV_FILE" 2>/dev/null || true)"
-    if [[ "$env_mode" == 600 || "$env_mode" == 400 ]]; then
-      RESUME_CONFIGURATION_VALID=true
-      CONFIGURATION_READY=true
-    fi
-  fi
-
-  if install_transaction_load 2>/dev/null; then
-    RESUME_TRANSACTION_VALID=true
-    PARTIAL_INSTALLATION_VERSION="$INSTALL_TRANSACTION_VERSION"
-    PARTIAL_INSTALLATION_COMMIT="$INSTALL_TRANSACTION_COMMIT"
-    PARTIAL_INSTALLATION_STAGE="$INSTALL_TRANSACTION_STAGE"
-  elif [[ -r "$state_file" ]]; then
-    PARTIAL_INSTALLATION_VERSION="$(installation_state_value version "$state_file" || true)"
-    [[ "$PARTIAL_INSTALLATION_COMMIT" != unknown ]] \
-      || PARTIAL_INSTALLATION_COMMIT="$(installation_state_value commit "$state_file" || true)"
-    PARTIAL_INSTALLATION_STAGE="$(installation_state_value result "$state_file" || true)"
-  fi
-  if [[ "$PARTIAL_INSTALLATION_VERSION" == unknown && -r "$source_dir/VERSION" ]]; then
-    PARTIAL_INSTALLATION_VERSION="$(devflow_read_version_file "$source_dir/VERSION" 2>/dev/null || printf unknown)"
-  fi
-  if [[ "$PARTIAL_INSTALLATION_COMMIT" != unknown && "$source_commit" != "$PARTIAL_INSTALLATION_COMMIT" ]]; then
-    RESUME_CHECKOUT_VALID=false
-    SOURCE_READY=false
-  fi
-  install_transaction_has_stage 09-run-migrations && MIGRATIONS_READY=true
-  install_transaction_has_stage 12-bootstrap-super-admin && SUPER_ADMIN_READY=true
-}
-
+STARTUP_STAGE=06-partial-detection
 detect_partial_installation
 [[ "$published_sha" == "$release_sha" ]] \
   || die 'O commit local não corresponde exatamente à referência publicada solicitada.'
@@ -244,6 +336,7 @@ detected_source_version="$(devflow_validate_checkout_version_consistency "$SOURC
 [[ "$source_ref" == main || "$source_ref" == "v$detected_source_version" ]] \
   || die 'A tag solicitada diverge da versão validada no checkout.'
 check_capacity /
+STARTUP_STAGE=07-preflight
 validate_port "$HTTP_PORT"
 validate_port "$API_PORT"
 [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'As portas do frontend e da API devem ser diferentes.'
@@ -441,6 +534,8 @@ if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_ROOT/app" ]]; then
 fi
 
 if [[ "$PARTIAL_INSTALLATION_DETECTED" == true && "$MODE" != check ]]; then
+  [[ "$TRANSACTION_STATE_CORRUPT" == false ]] \
+    || die 'Estado transacional existente é inválido; a retomada foi bloqueada sem sobrescrevê-lo.'
   [[ "$RESUME_CHECKOUT_VALID" == true ]] \
     || die 'Instalação parcial encontrada, mas o checkout não é limpo, canônico ou fast-forward compatível.'
   if [[ "$PARTIAL_CONFIGURATION_PRESENT" == true && "$RESUME_CONFIGURATION_VALID" != true ]]; then
@@ -544,8 +639,8 @@ if [[ "$MODE" != check ]]; then
             ;;
         esac
       done
-      if [[ "$BACKEND_IMAGE_PRESENT" == true && "$FRONTEND_IMAGE_PRESENT" == true \
-        && "$POSTGRES_IMAGE_PRESENT" == true ]]; then
+      if [[ "$BACKEND_BUILD_REQUIRED" == false && "$FRONTEND_BUILD_REQUIRED" == false \
+        && "$POSTGRES_PULL_REQUIRED" == false ]]; then
         IMAGES_READY=true
       fi
       IMAGE_RESOLUTION_STATUS=validated
@@ -739,7 +834,19 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
   fi
 fi
 
+determine_resume_stage
+if [[ "$RESUME_REQUESTED" == true && "$TRANSACTION_STATE_RECONSTRUCTION_PLANNED" == true ]]; then
+  TRANSACTION_STATE_RECONSTRUCTED=true
+fi
+
+if [[ "$(source_clone_signature)" == "$SOURCE_CLONE_SIGNATURE_BEFORE" ]]; then
+  SOURCE_CLONE_PRESERVED=true
+else
+  die 'O clone de origem foi alterado durante as validações; a instalação foi interrompida.'
+fi
+
 devflow_detect_public_port_ownership
+STARTUP_STAGE=08-summary
 if [[ "$FRONTEND_LOOPBACK_PORT_AVAILABLE" == false || "$BACKEND_LOOPBACK_PORT_AVAILABLE" == false \
   || "$POSTGRES_PUBLIC_PORT_EXPOSED" == true ]]; then
   DEVFLOW_INTERNAL_INSTALLATION_READY=false
@@ -802,6 +909,13 @@ postgres_service=db
 postgres_image_resolved=$POSTGRES_IMAGE_RESOLVED
 postgres_image_present=$POSTGRES_IMAGE_PRESENT
 postgres_pull_required=$POSTGRES_PULL_REQUIRED
+partial_installation_detected=$PARTIAL_INSTALLATION_DETECTED
+legacy_partial_installation_detected=$LEGACY_PARTIAL_INSTALLATION_DETECTED
+transaction_state_present=$TRANSACTION_STATE_PRESENT
+transaction_state_reconstruction_planned=$TRANSACTION_STATE_RECONSTRUCTION_PLANNED
+transaction_state_reconstructed=$TRANSACTION_STATE_RECONSTRUCTED
+can_resume=$CAN_RESUME
+resume_from_stage=$RESUME_FROM_STAGE
 source_ready=$SOURCE_READY
 configuration_ready=$CONFIGURATION_READY
 images_ready=$IMAGES_READY
@@ -812,6 +926,7 @@ backend_ready=$BACKEND_READY
 frontend_ready=$FRONTEND_READY
 super_admin_ready=$SUPER_ADMIN_READY
 installation_state_ready=$INSTALLATION_STATE_READY
+source_clone_preserved=$SOURCE_CLONE_PRESERVED
 EOF
 
 if [[ "$MODE" == check ]]; then
@@ -857,6 +972,23 @@ Ações planejadas para instalação completa:
   - modificar somente estes recursos do provider: $(provider_resources).
 EOF
 fi
+
+if [[ "$RESUME_REQUESTED" == true ]]; then
+  [[ "$CAN_RESUME" == true ]] || die 'A instalação parcial não possui evidências suficientes para retomada segura.'
+  cat <<EOF
+Instalação incompleta encontrada.
+
+Versão parcial: $PARTIAL_INSTALLATION_VERSION
+Versão atual: $DEVFLOW_RELEASE_VERSION
+Checkout: válido
+Configuração: válida
+Estado transacional: $([[ "$TRANSACTION_STATE_RECONSTRUCTED" == true ]] && printf reconstruído-em-memória || printf validado)
+Etapa de retomada: $RESUME_FROM_STAGE
+
+As imagens antigas serão preservadas e reconstruídas com cache quando a proveniência não corresponder à release.
+EOF
+  OUTPUT_EMITTED=true
+fi
 if [[ "$MODE" == dry-run ]]; then
   if [[ "$INSTALL_SCOPE" == complete && "$EXTERNAL_PUBLICATION_BLOCKED" == true ]]; then
     log WARN 'Dry-run completo: instalação interna pronta, publicação externa bloqueada; nenhuma alteração foi realizada.'
@@ -867,7 +999,10 @@ if [[ "$MODE" == dry-run ]]; then
 fi
 
 require_root
-if [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
+if [[ "$RESUME_REQUESTED" == true ]]; then
+  DEVFLOW_ASSUME_YES=false
+  confirm_exact 'RETOMAR DEVFLOW' 'Autoriza retomar a instalação interna incompleta?'
+elif [[ "${DEVFLOW_BOOTSTRAP_CONFIRMED:-false}" == true ]]; then
   log INFO 'Confirmação explícita recebida pelo bootstrap público.'
 else
   DEVFLOW_ASSUME_YES=false
@@ -884,6 +1019,7 @@ fi
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
+promote_bootstrap_log "$INSTALL_LOG"
 log INFO "Log sanitizado: $INSTALL_LOG" | tee -a "$INSTALL_LOG"
 if [[ "$RESUME_REQUESTED" == true && "$RESUME_TRANSACTION_VALID" == true \
   && "$INSTALL_TRANSACTION_COMMIT" == "$release_sha" \
@@ -891,7 +1027,11 @@ if [[ "$RESUME_REQUESTED" == true && "$RESUME_TRANSACTION_VALID" == true \
   && "$INSTALL_TRANSACTION_SCOPE" == "$INSTALL_SCOPE" ]]; then
   log INFO "Retomando transação registrada em $INSTALL_TRANSACTION_STAGE." | tee -a "$INSTALL_LOG"
 else
-  install_transaction_begin "$DEVFLOW_RELEASE_VERSION" "$release_sha" "$INSTALL_SCOPE"
+  install_transaction_begin "$DEVFLOW_RELEASE_VERSION" "$release_sha" "$INSTALL_SCOPE" \
+    "$LEGACY_PARTIAL_INSTALLATION_DETECTED" "$TRANSACTION_STATE_RECONSTRUCTED" "$RESUME_FROM_STAGE"
+  if [[ "$TRANSACTION_STATE_RECONSTRUCTED" == true ]]; then
+    log INFO "Estado transacional legado reconstruído; resume_from_stage=$RESUME_FROM_STAGE." | tee -a "$INSTALL_LOG"
+  fi
 fi
 CURRENT_INSTALL_STAGE=01-preflight
 install_transaction_complete_stage 01-preflight | tee -a "$INSTALL_LOG"
