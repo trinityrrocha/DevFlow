@@ -12,14 +12,14 @@ O desenvolvimento, os commits e o push da `main` acontecem apenas no Windows. A 
 
 ## Identidade de versão
 
-`VERSION` é a fonte canônica. Backend, frontend, Compose e documentação devem usar o mesmo SemVer. Consulte o ambiente sem alterções:
+`VERSION` é a fonte canônica. Backend, frontend, Compose e documentação devem usar o mesmo SemVer. A leitura, comparação e validação de consistência são centralizadas em `scripts/lib/version.sh`; `main` é dinâmica e uma versão fixa só é exigida com `--expected-version`. Consulte o ambiente sem alterações:
 
 ```bash
 sudo /opt/devflow/app/scripts/version.sh --installed
 sudo /opt/devflow/app/scripts/version.sh --all --refresh
 ```
 
-O segundo comando consulta anonimamente o repositório público por HTTPS. O updater aceita apenas a URL canônica de `trinityrrocha/DevFlow`, branch `main`, checkout limpo, fast-forward e uma versão SemVer estritamente superior.
+O segundo comando consulta anonimamente o repositório público por HTTPS. O updater aceita apenas a URL canônica de `trinityrrocha/DevFlow`, branch `main`, checkout limpo, fast-forward e uma versão SemVer estritamente superior. Para uma janela fixada, use `scripts/update.sh --check --expected-version SEMVER`; divergência interrompe antes do backup.
 
 ## Atualização transacional
 

@@ -14,14 +14,20 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/providers/provider-contract.sh"
 
 CHECK_ONLY=false
+EXPECTED_UPDATE_VERSION=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true; shift ;;
+    --expected-version)
+      [[ -n "${2:-}" ]] || die '--expected-version exige um valor.'
+      EXPECTED_UPDATE_VERSION="$2"
+      shift 2
+      ;;
     --help|-h)
       cat <<'EOF'
 Uso:
-  sudo scripts/update.sh --check
-  sudo scripts/update.sh
+  sudo scripts/update.sh --check [--expected-version SEMVER]
+  sudo scripts/update.sh [--expected-version SEMVER]
 
 --check  consulta versão e changelog, sem backup ou alterações
 
@@ -33,10 +39,14 @@ EOF
   esac
 done
 
+[[ -z "$EXPECTED_UPDATE_VERSION" ]] || devflow_semver_is_valid "$EXPECTED_UPDATE_VERSION" \
+  || die 'Versão explicitamente esperada não atende ao contrato SemVer.'
+
 require_linux
 require_root
 command -v flock >/dev/null 2>&1 || die 'flock é obrigatório para impedir atualizações concorrentes.'
 command -v git >/dev/null 2>&1 || die 'Git é obrigatório para consultar o repositório de atualização.'
+command -v tar >/dev/null 2>&1 || die 'tar é obrigatório para validar a consistência da release.'
 command -v docker >/dev/null 2>&1 || die 'Docker não está disponível.'
 docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 não está disponível.'
 
@@ -88,7 +98,7 @@ if [[ -r "$OLD_RELEASE_DIR/VERSION" ]]; then
 else
   OLD_VERSION="${DEVFLOW_VERSION:-unknown}"
 fi
-[[ "$OLD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die 'Versão instalada inválida.'
+devflow_semver_is_valid "$OLD_VERSION" || die 'Versão instalada inválida.'
 [[ "${DEVFLOW_VERSION:-}" == "$OLD_VERSION" ]] \
   || die 'DEVFLOW_VERSION diverge da release instalada; corrija a configuração antes de atualizar.'
 for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer; do
@@ -137,8 +147,12 @@ NEW_SHA="$(git -C "$REMOTE_REPO" rev-parse "$REMOTE_REF")"
 [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'Commit remoto inválido.'
 git -C "$REMOTE_REPO" merge-base --is-ancestor "$OLD_SHA" "$NEW_SHA" \
   || die 'origin/main não é uma continuação fast-forward da release instalada.'
-NEW_VERSION="$(git -C "$REMOTE_REPO" show "$NEW_SHA:VERSION" 2>/dev/null | tr -d '\r\n' || true)"
-[[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die 'VERSION remoto ausente ou inválido.'
+NEW_VERSION="$(devflow_validate_git_tree_version_consistency "$REMOTE_REPO" "$NEW_SHA" 2>/dev/null || true)"
+devflow_semver_is_valid "$NEW_VERSION" || die 'version_consistency=false; release remota ausente, inválida ou divergente.'
+if [[ -n "$EXPECTED_UPDATE_VERSION" && "$NEW_VERSION" != "$EXPECTED_UPDATE_VERSION" ]]; then
+  devflow_version_mismatch_message main "$EXPECTED_UPDATE_VERSION" "$NEW_VERSION" "$NEW_SHA" >&2
+  exit 1
+fi
 
 printf '\nVersão instalada: %s\nCommit instalado: %s\n' "$OLD_VERSION" "$OLD_SHA"
 printf 'Versão disponível: %s\nCommit disponível: %s\n\n' "$NEW_VERSION" "$NEW_SHA"
@@ -422,7 +436,9 @@ chmod 0644 "$CANDIDATE_TEMP/.devflow-release"
 mv -- "$CANDIDATE_TEMP" "$CANDIDATE_DIR"
 CANDIDATE_TEMP=
 CANDIDATE_CREATED=true
-[[ "$(tr -d '\r\n' < "$CANDIDATE_DIR/VERSION")" == "$NEW_VERSION" ]] || die 'Release candidata possui versão divergente.'
+candidate_version="$(devflow_validate_directory_version_consistency "$CANDIDATE_DIR")" \
+  || die 'version_consistency=false; release candidata possui versões divergentes.'
+[[ "$candidate_version" == "$NEW_VERSION" ]] || die 'Release candidata possui versão divergente.'
 [[ -x "$CANDIDATE_DIR/scripts/health.sh" && -r "$CANDIDATE_DIR/docker-compose.maintenance.yml" ]] \
   || die 'Release candidata não contém os componentes transacionais obrigatórios.'
 systemctl stop devflow-backup.timer

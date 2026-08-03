@@ -105,6 +105,31 @@ detect_platform
 validate_safe_absolute_path "$DEVFLOW_INSTALL_ROOT" 'Diretório de instalação'
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Esta versão suporta somente o diretório /opt/devflow.'
 validate_safe_absolute_path "$SOURCE_DIR" 'Checkout operacional'
+command -v git >/dev/null 2>&1 || die 'Git é obrigatório para validar a origem publicada.'
+public_remote='https://github.com/trinityrrocha/DevFlow.git'
+source_ref="${DEVFLOW_BOOTSTRAP_REF:-main}"
+devflow_ref_is_valid "$source_ref" || die 'Referência de instalação inválida; use main ou vSEMVER.'
+release_sha="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'A origem deve ser um checkout Git publicado.'
+devflow_validate_checkout_identity "$SOURCE_DIR" "$source_ref" "$release_sha" \
+  || die 'Origem, referência, commit ou limpeza do checkout de instalação diverge do repositório canônico.'
+if [[ "$source_ref" == main ]]; then
+  published_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$SOURCE_DIR" \
+    ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')"
+else
+  published_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$SOURCE_DIR" \
+    ls-remote origin "refs/tags/$source_ref^{}" | awk 'NR==1 {print $1}')"
+  [[ -n "$published_sha" ]] || published_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$SOURCE_DIR" \
+    ls-remote origin "refs/tags/$source_ref" | awk 'NR==1 {print $1}')"
+fi
+[[ "$published_sha" == "$release_sha" ]] \
+  || die 'O commit local não corresponde exatamente à referência publicada solicitada.'
+detected_source_version="$(devflow_validate_checkout_version_consistency "$SOURCE_DIR")" \
+  || die 'version_consistency=false; checkout de instalação possui versões divergentes ou inválidas.'
+[[ "$detected_source_version" == "$DEVFLOW_RELEASE_VERSION" ]] \
+  || die 'VERSION diverge da versão carregada pelo instalador.'
+[[ "$source_ref" == main || "$source_ref" == "v$detected_source_version" ]] \
+  || die 'A tag solicitada diverge da versão validada no checkout.'
 check_capacity /
 validate_port "$HTTP_PORT"
 validate_port "$API_PORT"
@@ -565,20 +590,6 @@ if [[ -e "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
     || die 'O certificado existente não corresponde ao domínio DevFlow.'
 fi
 
-[[ -z "$(git -C "$SOURCE_DIR" status --porcelain 2>/dev/null || true)" ]] \
-  || die 'O checkout de origem possui alterações locais; a release não seria reproduzível.'
-[[ "$(git -C "$SOURCE_DIR" branch --show-current 2>/dev/null || true)" == main ]] \
-  || die 'A instalação inicial aceita somente a branch main.'
-source_remote="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
-[[ "$source_remote" =~ ^(https://github\.com/|git@github\.com:)trinityrrocha/DevFlow(\.git)?$ ]] \
-  || die 'O remote origin deve pertencer exatamente a trinityrrocha/DevFlow.'
-public_remote='https://github.com/trinityrrocha/DevFlow.git'
-[[ "$(tr -d '\r\n' < "$SOURCE_DIR/VERSION")" == "$DEVFLOW_RELEASE_VERSION" ]] \
-  || die 'VERSION diverge da versão carregada pelo instalador.'
-release_sha="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
-[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'A origem deve ser um checkout Git publicado.'
-[[ "$(git -C "$SOURCE_DIR" rev-parse refs/remotes/origin/main 2>/dev/null || true)" == "$release_sha" ]] \
-  || die 'O commit local deve corresponder exatamente a origin/main antes da instalação.'
 release_dir="$DEVFLOW_INSTALL_ROOT/releases/$release_sha"
 if [[ ! -d "$release_dir" ]]; then
   install -d -m 0750 "$release_dir"
@@ -592,9 +603,11 @@ fi
 
 operational_source_dir="$DEVFLOW_INSTALL_ROOT/source"
 if [[ ! -e "$operational_source_dir" ]]; then
-  GIT_TERMINAL_PROMPT=0 git clone --no-local --branch main --single-branch \
-    "$SOURCE_DIR" "$operational_source_dir"
-  git -C "$operational_source_dir" remote set-url origin "$public_remote"
+  GIT_TERMINAL_PROMPT=0 git clone --branch main --single-branch \
+    "$public_remote" "$operational_source_dir"
+  git -C "$operational_source_dir" merge-base --is-ancestor "$release_sha" origin/main \
+    || die 'A release selecionada não pertence ao histórico publicado de main.'
+  git -C "$operational_source_dir" reset --hard "$release_sha"
   git -C "$operational_source_dir" config --local core.hooksPath /dev/null
 else
   [[ -d "$operational_source_dir/.git" ]] || die 'Checkout operacional existente não é um repositório Git.'
@@ -609,8 +622,8 @@ else
   operational_sha="$(git -C "$operational_source_dir" rev-parse HEAD 2>/dev/null || true)"
   if [[ "$operational_sha" != "$release_sha" ]]; then
     GIT_TERMINAL_PROMPT=0 git -C "$operational_source_dir" fetch origin main
-    [[ "$(git -C "$operational_source_dir" rev-parse origin/main 2>/dev/null || true)" == "$release_sha" ]] \
-      || die 'origin/main do checkout operacional diverge da release verificada.'
+    git -C "$operational_source_dir" merge-base --is-ancestor "$release_sha" origin/main \
+      || die 'A release verificada não pertence ao histórico publicado de main.'
     git -C "$operational_source_dir" merge-base --is-ancestor "$operational_sha" "$release_sha" \
       || die 'Retomada recusada: o checkout operacional não permite fast-forward seguro.'
     git -C "$operational_source_dir" merge --ff-only "$release_sha"
@@ -621,7 +634,7 @@ fi
 chown -R root:root "$operational_source_dir"
 chmod -R go-w "$operational_source_dir"
 DEVFLOW_RELEASE_COMMIT="$release_sha"
-DEVFLOW_RELEASE_REF=main
+DEVFLOW_RELEASE_REF="$source_ref"
 DEVFLOW_REPOSITORY_URL="$public_remote"
 DEVFLOW_UPDATE_CHANNEL=main
 export DEVFLOW_RELEASE_COMMIT DEVFLOW_RELEASE_REF DEVFLOW_REPOSITORY_URL DEVFLOW_UPDATE_CHANNEL

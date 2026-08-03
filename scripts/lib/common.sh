@@ -2,8 +2,9 @@
 
 DEVFLOW_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEVFLOW_SOURCE_ROOT="$(cd "$DEVFLOW_COMMON_DIR/../.." && pwd)"
-DEVFLOW_RELEASE_VERSION="$(tr -d '\r\n' < "$DEVFLOW_SOURCE_ROOT/VERSION")"
-[[ "$DEVFLOW_RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+# shellcheck source=version.sh
+. "$DEVFLOW_COMMON_DIR/version.sh"
+DEVFLOW_RELEASE_VERSION="$(devflow_read_version_file "$DEVFLOW_SOURCE_ROOT/VERSION")" \
   || { echo 'VERSION inválido no código DevFlow.' >&2; exit 1; }
 DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 DEVFLOW_PROJECT="devflow"
@@ -65,57 +66,7 @@ version_at_least() {
   [[ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -n1)" == "$required" ]]
 }
 
-version_is_greater() {
-  local candidate="$1" installed="$2"
-  local candidate_major candidate_minor candidate_patch candidate_pre
-  local installed_major installed_minor installed_patch installed_pre
-  local index candidate_part installed_part
-  local -a candidate_parts installed_parts
-
-  [[ "$candidate" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$ ]] || return 2
-  candidate_major="${BASH_REMATCH[1]}"
-  candidate_minor="${BASH_REMATCH[2]}"
-  candidate_patch="${BASH_REMATCH[3]}"
-  candidate_pre="${BASH_REMATCH[5]:-}"
-  [[ "$installed" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$ ]] || return 2
-  installed_major="${BASH_REMATCH[1]}"
-  installed_minor="${BASH_REMATCH[2]}"
-  installed_patch="${BASH_REMATCH[3]}"
-  installed_pre="${BASH_REMATCH[5]:-}"
-
-  for index in major minor patch; do
-    candidate_part="candidate_$index"
-    installed_part="installed_$index"
-    if (( 10#${!candidate_part} > 10#${!installed_part} )); then
-      return 0
-    elif (( 10#${!candidate_part} < 10#${!installed_part} )); then
-      return 1
-    fi
-  done
-
-  [[ "$candidate_pre" != "$installed_pre" ]] || return 1
-  [[ -z "$installed_pre" ]] && return 1
-  [[ -z "$candidate_pre" ]] && return 0
-  IFS='.' read -r -a candidate_parts <<< "$candidate_pre"
-  IFS='.' read -r -a installed_parts <<< "$installed_pre"
-  for ((index = 0; index < ${#candidate_parts[@]} || index < ${#installed_parts[@]}; index++)); do
-    [[ -n "${candidate_parts[index]+set}" ]] || return 1
-    [[ -n "${installed_parts[index]+set}" ]] || return 0
-    candidate_part="${candidate_parts[index]}"
-    installed_part="${installed_parts[index]}"
-    [[ "$candidate_part" != "$installed_part" ]] || continue
-    if [[ "$candidate_part" =~ ^[0-9]+$ && "$installed_part" =~ ^[0-9]+$ ]]; then
-      (( 10#$candidate_part > 10#$installed_part )) && return 0 || return 1
-    elif [[ "$candidate_part" =~ ^[0-9]+$ ]]; then
-      return 1
-    elif [[ "$installed_part" =~ ^[0-9]+$ ]]; then
-      return 0
-    fi
-    [[ "$candidate_part" > "$installed_part" ]]
-    return
-  done
-  return 1
-}
+version_is_greater() { devflow_version_is_greater "$@"; }
 
 validate_safe_absolute_path() {
   local value="$1" label="$2"

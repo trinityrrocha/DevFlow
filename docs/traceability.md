@@ -1,5 +1,21 @@
 # Rastreabilidade — Documento 001
 
+## Bootstrap dinâmico `0.4.2-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| `main` sem versão fixa | `scripts/bootstrap.sh` detecta após validar checkout | teste de incremento patch/minor e ausência de `EXPECTED_VERSION` literal |
+| SemVer estrito | `scripts/lib/version.sh` | vazio, multiline, inválido, alpha, beta, estável e build metadata |
+| Pin opcional | `--expected-version` no bootstrap/updater | match e mensagem detalhada de divergência |
+| Tags | `--ref vSEMVER` | ref, checkout detached, commit e versão correspondente |
+| Origem canônica | URL `trinityrrocha/DevFlow` | remote incorreto bloqueado |
+| Integridade Git | branch/tag, SHA remoto, fsck, limpeza e arquivos rastreados | testes de branch, commit e fail-closed |
+| Consistência | VERSION, packages, backend, endpoint, env, README e changelog | divergência frontend/backend bloqueada |
+| Atualizações futuras | biblioteca comum no install/update/version/health | auditoria contra regex/constantes duplicadas |
+| Falha sem mutação | validação anterior ao instalador/backup | hash e status de fixture preservados |
+
+Nenhuma instalação foi executada nesta correção. A homologação real permanece limitada a `--check` e `--dry-run`.
+
 ## Evidências de migração `0.4.1-alpha`
 
 | Requisito | Implementação | Evidência |

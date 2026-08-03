@@ -38,8 +38,8 @@ provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao 
 CONFIGURED_VERSION="${DEVFLOW_VERSION:-unknown}"
 DEVFLOW_APP_ROOT="${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}"
 [[ -r "$DEVFLOW_APP_ROOT/docker-compose.yml" ]] || die 'Release DevFlow não encontrada.'
-EXPECTED_VERSION="${DEVFLOW_EXPECTED_VERSION:-$(tr -d '\r\n' < "$DEVFLOW_APP_ROOT/VERSION" 2>/dev/null || printf '%s' "$DEVFLOW_VERSION")}"
-[[ "$EXPECTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die 'Versão esperada inválida.'
+EXPECTED_VERSION="${DEVFLOW_EXPECTED_VERSION:-$(devflow_read_version_file "$DEVFLOW_APP_ROOT/VERSION" 2>/dev/null || printf '%s' "$DEVFLOW_VERSION")}"
+devflow_semver_is_valid "$EXPECTED_VERSION" || die 'Versão esperada inválida.'
 export DEVFLOW_VERSION="$EXPECTED_VERSION"
 compose_files
 

@@ -9,6 +9,7 @@ const backendPackage = JSON.parse(read('backend/package.json'));
 const frontendPackage = JSON.parse(read('frontend/package.json'));
 const install = read('scripts/install.sh');
 const bootstrap = read('scripts/bootstrap.sh');
+const versionLibrary = read('scripts/lib/version.sh');
 const update = read('scripts/update.sh');
 const restore = read('scripts/restore.sh');
 const diagnostic = read('scripts/detect-shared-proxy.sh');
@@ -32,23 +33,45 @@ if (/--update|MODE.*update|install\.sh --update/.test(install)) {
 for (const [label, fragment] of [
   ['repositório público', "REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'"],
   ['diretório temporário', 'mktemp -d'],
-  ['clone público', 'git clone'],
+  ['clone público', 'http.followRedirects=false clone'],
   ['validação de commit remoto', 'REMOTE_COMMIT'],
-  ['validação VERSION', 'EXPECTED_VERSION'],
+  ['validação VERSION', 'devflow_validate_checkout_version_consistency'],
+  ['política central de versão', 'scripts/lib/version.sh'],
+  ['versão esperada opcional', '--expected-version'],
+  ['referência dinâmica', '--ref'],
   ['limpeza', 'trap cleanup EXIT'],
   ['instalador interno', 'scripts/install.sh'],
   ['confirmação', 'Deseja iniciar a instalação? [s/N]'],
 ]) {
   if (!bootstrap.includes(fragment)) throw new Error(`Gate ausente no bootstrap: ${label}.`);
 }
-if (!bootstrap.includes(`EXPECTED_VERSION='${version}'`)) {
-  throw new Error('Bootstrap público diverge de VERSION.');
+if (/EXPECTED_VERSION=['"][0-9]/.test(bootstrap) || bootstrap.includes('RAW_VERSION_URL')) {
+  throw new Error('Bootstrap público ainda contém versão fixa ou leitura remota não validada.');
 }
 if (bootstrap.includes('lib/common.sh') || bootstrap.includes('DEVFLOW_ENV_FILE')) {
   throw new Error('Bootstrap público depende indevidamente do checkout ou da configuração instalada.');
 }
 if (!install.includes("public_remote='https://github.com/trinityrrocha/DevFlow.git'")) {
   throw new Error('Instalador não fixa o checkout operacional no HTTPS público.');
+}
+for (const [label, source, fragment] of [
+  ['bootstrap', bootstrap, 'devflow_validate_checkout_version_consistency'],
+  ['instalador', install, 'devflow_validate_checkout_version_consistency'],
+  ['atualizador', update, 'devflow_validate_git_tree_version_consistency'],
+]) {
+  if (!source.includes(fragment)) throw new Error(`Política central de versão ausente no ${label}.`);
+}
+for (const fragment of [
+  'devflow_semver_is_valid',
+  'devflow_read_version_file',
+  'devflow_validate_checkout_identity',
+  'devflow_validate_directory_version_consistency',
+  'devflow_version_mismatch_message',
+]) {
+  if (!versionLibrary.includes(fragment)) throw new Error(`Contrato de versão incompleto: ${fragment}.`);
+}
+if (!install.includes('DEVFLOW_BOOTSTRAP_REF') || !install.includes('merge-base --is-ancestor "$release_sha" origin/main')) {
+  throw new Error('Instalação por tag não prepara checkout operacional atualizável com segurança.');
 }
 if (!install.includes('run_shared_proxy_diagnostic') || !install.includes('detect-shared-proxy.sh')) {
   throw new Error('Instalador não exige diagnóstico antes do modo compartilhado.');

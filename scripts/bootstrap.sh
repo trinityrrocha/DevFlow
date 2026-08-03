@@ -3,9 +3,8 @@ set -Eeuo pipefail
 umask 077
 
 REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'
-RAW_VERSION_URL='https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/VERSION'
-EXPECTED_VERSION='0.4.1-alpha'
 SELECTED_REF=main
+REQUESTED_VERSION=
 MODE=
 MODE_EXPLICIT=false
 INFRASTRUCTURE_PROVIDER=host-nginx
@@ -16,21 +15,23 @@ SUPER_ADMIN_EMAIL=
 HTTP_PORT=18080
 API_PORT=13000
 TEMP_ROOT=
+TEMP_PARENT=
 
 log() { printf '%s [bootstrap] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERRO: $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-DevFlow 0.4.1-alpha — bootstrap público para homologação
+DevFlow — bootstrap público para homologação
 
 Uso:
-  ./install.sh --check
+  ./install.sh --check [--ref main|vSEMVER] [--expected-version SEMVER]
   ./install.sh --dry-run [opções]
   sudo ./install.sh --install [opções]
   sudo ./install.sh [opções]
 
 Sem argumentos, coleta a configuração de forma interativa e solicita confirmação.
+A versão é detectada no checkout validado. Use --expected-version somente para pin explícito.
 
 Opções:
   --provider host-nginx|isolated-nginx
@@ -40,7 +41,8 @@ Opções:
   --super-admin-email EMAIL
   --http-port PORT
   --api-port PORT
-  --ref main
+  --ref main|vSEMVER
+  --expected-version SEMVER
   --help
 EOF
 }
@@ -63,7 +65,7 @@ while [[ $# -gt 0 ]]; do
     --provider) require_value "$1" "${2:-}"; INFRASTRUCTURE_PROVIDER="$2"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
       require_value "$1" "${2:-}"
-      case "$2" in shared) INFRASTRUCTURE_PROVIDER=host-nginx ;; isolated) INFRASTRUCTURE_PROVIDER=isolated-nginx ;; *) die 'Modo legado invalido.' ;; esac
+      case "$2" in shared) INFRASTRUCTURE_PROVIDER=host-nginx ;; isolated) INFRASTRUCTURE_PROVIDER=isolated-nginx ;; *) die 'Modo legado inválido.' ;; esac
       PROVIDER_EXPLICIT=true
       shift 2
       ;;
@@ -73,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --http-port) require_value "$1" "${2:-}"; HTTP_PORT="$2"; shift 2 ;;
     --api-port) require_value "$1" "${2:-}"; API_PORT="$2"; shift 2 ;;
     --ref) require_value "$1" "${2:-}"; SELECTED_REF="$2"; shift 2 ;;
+    --expected-version) require_value "$1" "${2:-}"; REQUESTED_VERSION="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) die "Opção desconhecida: $1" ;;
   esac
@@ -80,27 +83,20 @@ done
 
 [[ -n "$MODE" ]] || MODE=install
 [[ "$(uname -s)" == Linux ]] || die 'Este bootstrap pode ser executado somente em Linux.'
-[[ "$SELECTED_REF" == main ]] || die 'Esta versão pública aceita somente a referência main.'
-for command_name in mktemp rm chmod date grep awk cmp tr; do
+[[ "$SELECTED_REF" == main || "$SELECTED_REF" =~ ^v[0-9A-Za-z.+-]+$ ]] \
+  || die 'Referência inválida; use main ou uma tag vSEMVER sem caminhos ou caracteres de shell.'
+[[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" =~ ^[0-9A-Za-z.+-]+$ ]] \
+  || die 'Versão esperada contém caracteres não permitidos.'
+for command_name in git mktemp rm chmod date grep awk cmp tr wc sed readlink stat id; do
   command -v "$command_name" >/dev/null 2>&1 || die "Dependência mínima ausente: $command_name"
 done
 
 check_connectivity() {
-  if command -v curl >/dev/null 2>&1; then
-    REMOTE_VERSION="$(curl --fail --silent --show-error --location --max-time 20 "$RAW_VERSION_URL" | tr -d '\r\n')"
-  elif command -v wget >/dev/null 2>&1; then
-    REMOTE_VERSION="$(wget --quiet --output-document=- --timeout=20 "$RAW_VERSION_URL" | tr -d '\r\n')"
-  elif command -v git >/dev/null 2>&1; then
-    GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "$REPOSITORY_URL" refs/heads/main >/dev/null
-    REMOTE_VERSION=unknown-until-clone
-  else
-    die 'curl, wget ou git é necessário para validar conectividade com o GitHub.'
-  fi
+  GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false \
+    ls-remote --exit-code "$REPOSITORY_URL" >/dev/null
 }
 
 check_connectivity || die 'Não foi possível acessar o repositório público no GitHub.'
-[[ "$REMOTE_VERSION" == unknown-until-clone || "$REMOTE_VERSION" == "$EXPECTED_VERSION" ]] \
-  || die "VERSION público inesperado: $REMOTE_VERSION"
 
 prompt_value() {
   local variable_name="$1" prompt="$2" value="${!1}"
@@ -138,8 +134,7 @@ if [[ "$MODE" != check ]]; then
   prompt_value SUPER_ADMIN_EMAIL 'E-mail do Super Administrador'
   prompt_proxy_mode
   [[ "$INFRASTRUCTURE_PROVIDER" == host-nginx || "$INFRASTRUCTURE_PROVIDER" == isolated-nginx ]] || die 'Provider inválido.'
-  [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$DOMAIN" == *.* ]] \
-    || die 'Domínio inválido.'
+  [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$DOMAIN" == *.* ]] || die 'Domínio inválido.'
   for email in "$LETSENCRYPT_EMAIL" "$SUPER_ADMIN_EMAIL"; do
     [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "E-mail inválido: $email"
   done
@@ -149,44 +144,21 @@ if [[ "$MODE" != check ]]; then
   [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'As portas do frontend e da API devem ser diferentes.'
 fi
 
-ensure_git() {
-  command -v git >/dev/null 2>&1 && return 0
-  [[ "$MODE" == install ]] || die 'Git é obrigatório; o modo de diagnóstico não instala dependências.'
-  [[ "$(id -u)" -eq 0 ]] || die 'Execute a instalação com sudo para instalar a dependência Git ausente.'
-  [[ -r /etc/os-release ]] || die 'Não foi possível identificar a distribuição para instalar Git.'
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  case "${ID:-}" in
-    ubuntu|debian)
-      apt-get update
-      apt-get install -y git ca-certificates
-      ;;
-    *) die 'Git ausente e distribuição não suportada para bootstrap automático.' ;;
-  esac
-}
+[[ "$MODE" != install || "$(id -u)" -eq 0 ]] \
+  || die 'Execute a instalação com sudo ou como root.'
 
-if [[ "$MODE" == install ]]; then
-  [[ "$(id -u)" -eq 0 ]] || die 'Execute a instalação com sudo ou como root.'
-  cat <<EOF
-Resumo da instalação pública:
-  repositório: $REPOSITORY_URL
-  referência: $SELECTED_REF
-  versão esperada: $EXPECTED_VERSION
-  domínio: $DOMAIN
-  provider: $INFRASTRUCTURE_PROVIDER
-  e-mail TLS: $LETSENCRYPT_EMAIL
-  Super Admin: $SUPER_ADMIN_EMAIL
-EOF
-  [[ -t 0 ]] || die 'A instalação exige confirmação em um terminal interativo.'
-  read -r -p 'Deseja iniciar a instalação? [s/N] ' confirmation
-  [[ "$confirmation" == s || "$confirmation" == S ]] || die 'Instalação cancelada sem alterações permanentes.'
-fi
-
-ensure_git
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/devflow-bootstrap.XXXXXX")"
+TEMP_PARENT="$(readlink -f "${TMPDIR:-/tmp}" 2>/dev/null || true)"
+[[ "$TEMP_PARENT" == /* && -d "$TEMP_PARENT" ]] || die 'Diretório temporário base inválido.'
+TEMP_ROOT="$(mktemp -d "$TEMP_PARENT/devflow-bootstrap.XXXXXX")"
 chmod 0700 "$TEMP_ROOT"
+[[ ! -L "$TEMP_ROOT" \
+  && "$(readlink -f "$TEMP_ROOT")" == "$TEMP_ROOT" \
+  && "$(stat -c '%u' "$TEMP_ROOT")" == "$(id -u)" \
+  && "$(stat -c '%a' "$TEMP_ROOT")" == 700 ]] \
+  || die 'Integridade do diretório temporário não pôde ser comprovada.'
 cleanup() {
-  if [[ -n "$TEMP_ROOT" && "$TEMP_ROOT" == "${TMPDIR:-/tmp}/devflow-bootstrap."* && -d "$TEMP_ROOT" ]]; then
+  if [[ -n "$TEMP_ROOT" && -n "$TEMP_PARENT" \
+    && "$TEMP_ROOT" == "$TEMP_PARENT/devflow-bootstrap."* && -d "$TEMP_ROOT" && ! -L "$TEMP_ROOT" ]]; then
     rm -rf -- "$TEMP_ROOT"
   fi
 }
@@ -195,26 +167,80 @@ trap 'exit 130' INT TERM
 
 CHECKOUT="$TEMP_ROOT/DevFlow"
 log "Obtendo $REPOSITORY_URL ($SELECTED_REF)."
-GIT_TERMINAL_PROMPT=0 git clone --quiet --branch "$SELECTED_REF" --single-branch "$REPOSITORY_URL" "$CHECKOUT"
+GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false clone --quiet \
+  --branch "$SELECTED_REF" --single-branch "$REPOSITORY_URL" "$CHECKOUT"
 
-[[ -d "$CHECKOUT/.git" ]] || die 'O download não produziu um checkout Git válido.'
+[[ -d "$CHECKOUT/.git" && ! -L "$CHECKOUT/.git" ]] || die 'O download não produziu um checkout Git válido.'
 [[ "$(git -C "$CHECKOUT" remote get-url origin)" == "$REPOSITORY_URL" ]] || die 'Remote do checkout público divergente.'
-[[ "$(git -C "$CHECKOUT" branch --show-current)" == "$SELECTED_REF" ]] || die 'Branch obtida é diferente da selecionada.'
+if [[ "$SELECTED_REF" == main ]]; then
+  [[ "$(git -C "$CHECKOUT" branch --show-current)" == main ]] || die 'Branch obtida é diferente da selecionada.'
+  REMOTE_COMMIT="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$CHECKOUT" ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')"
+else
+  [[ -z "$(git -C "$CHECKOUT" branch --show-current)" ]] || die 'Uma tag deve produzir checkout detached.'
+  REMOTE_COMMIT="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$CHECKOUT" ls-remote origin "refs/tags/$SELECTED_REF^{}" | awk 'NR==1 {print $1}')"
+  [[ -n "$REMOTE_COMMIT" ]] || REMOTE_COMMIT="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$CHECKOUT" ls-remote origin "refs/tags/$SELECTED_REF" | awk 'NR==1 {print $1}')"
+fi
 [[ -z "$(git -C "$CHECKOUT" status --porcelain)" ]] || die 'Checkout público contém alterações inesperadas.'
 COMMIT="$(git -C "$CHECKOUT" rev-parse HEAD)"
-REMOTE_COMMIT="$(GIT_TERMINAL_PROMPT=0 git -C "$CHECKOUT" ls-remote origin "refs/heads/$SELECTED_REF" | awk 'NR==1 {print $1}')"
-[[ "$COMMIT" =~ ^[0-9a-f]{40}$ && "$COMMIT" == "$REMOTE_COMMIT" ]] || die 'Commit baixado não corresponde ao GitHub.'
+[[ "$COMMIT" =~ ^[0-9a-f]{40}$ && "$COMMIT" == "$REMOTE_COMMIT" ]] || die 'Commit baixado não corresponde à referência remota solicitada.'
 git -C "$CHECKOUT" fsck --strict --no-dangling >/dev/null
 
-VERSION="$(tr -d '\r\n' < "$CHECKOUT/VERSION")"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die 'Arquivo VERSION inválido.'
-[[ "$VERSION" == "$EXPECTED_VERSION" ]] || die "Bootstrap $EXPECTED_VERSION incompatível com a versão obtida $VERSION."
+for trusted_file in VERSION scripts/lib/version.sh scripts/install.sh; do
+  git -C "$CHECKOUT" ls-files --error-unmatch "$trusted_file" >/dev/null 2>&1 || die "Arquivo obrigatório não rastreado: $trusted_file"
+  [[ -f "$CHECKOUT/$trusted_file" && ! -L "$CHECKOUT/$trusted_file" ]] || die "Arquivo obrigatório inválido: $trusted_file"
+done
+# A biblioteca somente é carregada após origem, referência, commit e integridade Git serem comprovados.
+# shellcheck source=lib/version.sh
+. "$CHECKOUT/scripts/lib/version.sh"
+devflow_ref_is_valid "$SELECTED_REF" || die 'Referência não atende ao contrato main|vSEMVER.'
+devflow_validate_checkout_identity "$CHECKOUT" "$SELECTED_REF" "$COMMIT" \
+  || die 'Identidade, referência, commit ou limpeza do checkout não pôde ser comprovada.'
+DETECTED_VERSION="$(devflow_validate_checkout_version_consistency "$CHECKOUT")" \
+  || die 'version_consistency=false; checkout público possui versões divergentes ou inválidas.'
+
+if [[ "$SELECTED_REF" != main && "$SELECTED_REF" != "v$DETECTED_VERSION" ]]; then
+  devflow_version_mismatch_message "$SELECTED_REF" "${SELECTED_REF#v}" "$DETECTED_VERSION" "$COMMIT" >&2
+  exit 1
+fi
+if [[ -n "$REQUESTED_VERSION" ]]; then
+  devflow_semver_is_valid "$REQUESTED_VERSION" || die 'Versão explicitamente esperada não atende ao contrato SemVer.'
+  if [[ "$DETECTED_VERSION" != "$REQUESTED_VERSION" ]]; then
+    devflow_version_mismatch_message "$SELECTED_REF" "$REQUESTED_VERSION" "$DETECTED_VERSION" "$COMMIT" >&2
+    exit 1
+  fi
+  printf 'expected_version=%s\ndetected_version=%s\nversion_match=true\n' "$REQUESTED_VERSION" "$DETECTED_VERSION"
+fi
 [[ -x "$CHECKOUT/scripts/install.sh" ]] || die 'Instalador interno ausente ou sem permissão de execução.'
 
 SELF_PATH="$(readlink -f "$0" 2>/dev/null || true)"
-if [[ -n "$SELF_PATH" && -f "$SELF_PATH" ]]; then
-  cmp -s "$SELF_PATH" "$CHECKOUT/scripts/bootstrap.sh" \
-    || die 'O bootstrap baixado não corresponde mais à main; baixe-o novamente.'
+if [[ "$SELECTED_REF" == main && -n "$SELF_PATH" && -f "$SELF_PATH" ]]; then
+  cmp -s "$SELF_PATH" "$CHECKOUT/scripts/bootstrap.sh" || die 'O bootstrap baixado não corresponde mais à main; baixe-o novamente.'
+fi
+
+cat <<EOF
+Checkout validado:
+  repositório: trinityrrocha/DevFlow
+  referência: $SELECTED_REF
+  versão: $DETECTED_VERSION
+  commit: $COMMIT
+EOF
+
+if [[ "$MODE" == install ]]; then
+  cat <<EOF
+Resumo da instalação pública:
+  repositório: $REPOSITORY_URL
+  referência: $SELECTED_REF
+  versão validada: $DETECTED_VERSION
+  commit validado: $COMMIT
+  domínio: $DOMAIN
+  provider: $INFRASTRUCTURE_PROVIDER
+  e-mail TLS: $LETSENCRYPT_EMAIL
+  Super Admin: $SUPER_ADMIN_EMAIL
+EOF
+  [[ -t 0 ]] || die 'A instalação exige confirmação em um terminal interativo.'
+  read -r -p 'Deseja iniciar a instalação? [s/N] ' confirmation
+  [[ "$confirmation" == s || "$confirmation" == S ]] \
+    || die 'Instalação cancelada sem alterações permanentes.'
 fi
 
 INSTALL_ARGS=("--$MODE")
@@ -224,10 +250,10 @@ if [[ "$MODE" != check ]]; then
     --http-port "$HTTP_PORT" --api-port "$API_PORT")
 fi
 
-log "Checkout validado: versão=$VERSION commit=$COMMIT branch=$SELECTED_REF."
 if [[ "$MODE" == install ]]; then
-  DEVFLOW_BOOTSTRAP_CONFIRMED=true "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
+  DEVFLOW_BOOTSTRAP_CONFIRMED=true DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" \
+    "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
 else
-  "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
+  DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
 fi
-log "Bootstrap concluído no modo $MODE; arquivos temporários serão removidos."
+log "Bootstrap concluído no modo $MODE; versão=$DETECTED_VERSION commit=$COMMIT; temporários serão removidos."

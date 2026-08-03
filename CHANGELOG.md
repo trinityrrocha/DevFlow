@@ -2,6 +2,27 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.2-alpha] - 2026-08-02
+
+### Corrigido
+
+- o bootstrap público deixou de fixar uma versão alpha e passa a detectar o SemVer do checkout validado de `main`;
+- `--ref vSEMVER` e `--expected-version SEMVER` oferecem pin explícito, com divergência detalhada e sem `eval`;
+- origem, referência, commit remoto, limpeza, arquivos rastreados, ausência de symlinks e consistência entre componentes permanecem fail-closed;
+- a política SemVer, leitura estrita de `VERSION`, comparação e consistência foram centralizadas em `scripts/lib/version.sh` e reutilizadas por bootstrap, install, update, version e health;
+- o updater aceita pin opcional e valida a árvore Git remota antes de backup ou qualquer mutação.
+
+### Testes
+
+- 19 cenários cobrem evolução dinâmica de `main`, tags, pins, SemVer, divergências, identidade Git, commit e ausência de mutação em falha;
+- auditoria de constantes classifica ocorrências históricas e bloqueia versões antigas em configuração operacional.
+
+### Homologação
+
+- a tentativa real anterior foi interrompida antes da instalação pelo bootstrap desatualizado;
+- nenhuma instalação real foi executada nesta correção;
+- esta versão alpha permanece não aprovada para produção.
+
 ## [0.4.1-alpha] - 2026-08-02
 
 ### Corrigido

@@ -1,5 +1,13 @@
 # Roadmap inicial
 
+## Marco `0.4.2-alpha` — versão pública dinâmica
+
+- [x] remover pin operacional do bootstrap em `main`;
+- [x] centralizar SemVer e consistência de componentes;
+- [x] suportar tag e versão esperada somente quando explícitas;
+- [x] adicionar regressões contra futuros incrementos sem edição manual do bootstrap;
+- [ ] repetir `--check` e `--dry-run` na VPS antes de nova tentativa de instalação.
+
 ## Marco `0.4.1-alpha` — evidências da migração para Nginx no host
 
 - [x] contrato e três providers;
@@ -74,7 +82,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.1-alpha` consistente;
+- versão `0.4.2-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

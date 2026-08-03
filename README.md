@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.1-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
+Versão atual: **0.4.2-alpha**. Os Documentos 001, 002 e 003 formam a baseline. O provider Nginx do host, a migração de proxy e o mecanismo operacional de atualização ainda dependem de homologação em VPS e não representam aprovação para produção.
 
 ## Estado atual
 
@@ -20,6 +20,7 @@ Nenhum código do Full Password foi reutilizado. A referência técnica permanec
 - domínio exclusivo apontado para a VPS;
 - pelo menos 2 GiB de RAM e 5 GiB livres;
 - acesso `root` por `sudo`;
+- Git instalado para validar origem, referência e commit antes de qualquer instalação;
 - portas 80/443 disponíveis ao Nginx do host; se `fullpassword_nginx` as ocupar, a migração separada deve ser diagnosticada antes;
 - `python3` e `openssl` previamente disponíveis quando o diagnóstico read-only do `fullpassword_nginx` for utilizado;
 - acesso HTTPS ao repositório público `trinityrrocha/DevFlow`.
@@ -36,7 +37,14 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mails e proxy, exige confirmação, cria um diretório temporário seguro, clona e valida a `main`, confere `VERSION` e commit remoto, chama `scripts/install.sh` e remove os temporários.
+O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mails e proxy, cria um diretório temporário seguro, clona e valida a `main`, detecta dinamicamente o SemVer consistente do checkout, confere o commit remoto e somente então exige confirmação para chamar `scripts/install.sh`. Não existe versão alpha fixa no bootstrap.
+
+Pins são sempre explícitos:
+
+```bash
+./install.sh --check --ref main --expected-version 0.4.2-alpha
+./install.sh --check --ref v0.4.2-alpha
+```
 
 O fluxo explícito em três etapas também está disponível:
 

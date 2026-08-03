@@ -47,7 +47,7 @@ wget --spider https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/VERSI
 git ls-remote https://github.com/trinityrrocha/DevFlow.git refs/heads/main
 ```
 
-O bootstrap falha se o arquivo baixado não corresponder mais à `main`, se `VERSION` divergir ou se o commit clonado não for o commit remoto. Baixe novamente o bootstrap em vez de desabilitar a validação.
+O bootstrap falha se o arquivo baixado não corresponder mais à `main`, se a consistência de versões divergir ou se o commit clonado não for o commit remoto. `main` não possui pin implícito; quando `--expected-version` for informado, a mensagem apresenta referência, versão esperada, detectada e commit. Baixe novamente o bootstrap em vez de desabilitar a validação.
 
 ## Porta ocupada
 

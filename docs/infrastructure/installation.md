@@ -6,7 +6,7 @@
 
 O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrito (`set -Eeuo pipefail`) e são somente leitura por padrão.
 
-Para instalação pública sem clone prévio, `scripts/bootstrap.sh` é o entrypoint standalone. Ele baixa a `main` em diretório temporário, valida origem, commit e `VERSION`, e então chama o mesmo instalador interno; não duplica a lógica de instalação.
+Para instalação pública sem clone prévio, `scripts/bootstrap.sh` é o entrypoint standalone. Ele baixa `main` ou uma tag `vSEMVER` em diretório temporário, valida origem, referência, commit, arquivos rastreados e consistência da versão, e então chama o mesmo instalador interno. Em `main`, não existe constante de versão; `--expected-version` é opcional e explícito.
 
 | Modo | Efeito |
 |---|---|

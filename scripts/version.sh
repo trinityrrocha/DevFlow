@@ -36,15 +36,14 @@ if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
   config_loaded=true
 fi
 if [[ -r "$DEVFLOW_INSTALL_ROOT/app/VERSION" ]]; then
-  installed_version="$(tr -d '\r\n' < "$DEVFLOW_INSTALL_ROOT/app/VERSION")"
+  installed_version="$(devflow_read_version_file "$DEVFLOW_INSTALL_ROOT/app/VERSION")" || die 'Versão instalada inválida.'
 elif [[ "$config_loaded" == true && "${DEVFLOW_VERSION:-}" != "" ]]; then
   installed_version="${DEVFLOW_VERSION:-unknown}"
 fi
 if [[ -r "$DEVFLOW_INSTALL_ROOT/app/.devflow-release" ]]; then
   installed_commit="$(tr -d '\r\n' < "$DEVFLOW_INSTALL_ROOT/app/.devflow-release")"
 fi
-[[ "$installed_version" == unknown || "$installed_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
-  || die 'Versão instalada inválida.'
+[[ "$installed_version" == unknown ]] || devflow_semver_is_valid "$installed_version" || die 'Versão instalada inválida.'
 [[ "$installed_commit" == unknown || "$installed_commit" =~ ^[0-9a-f]{40}$ ]] \
   || die 'Commit instalado inválido.'
 
@@ -62,12 +61,11 @@ if [[ "$MODE" != installed ]]; then
     if [[ "$REFRESH" == true ]]; then
       GIT_TERMINAL_PROMPT=0 git -C "$source_dir" fetch --quiet origin main
     fi
-    available_version="$(git -C "$source_dir" show origin/main:VERSION 2>/dev/null | tr -d '\r\n' || true)"
     available_commit="$(git -C "$source_dir" rev-parse origin/main 2>/dev/null || true)"
+    available_version="$(devflow_validate_git_tree_version_consistency "$source_dir" "$available_commit" 2>/dev/null || true)"
     [[ -n "$available_version" ]] || available_version=unknown
     [[ -n "$available_commit" ]] || available_commit=unknown
-    [[ "$available_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
-      || die 'Versão disponível inválida.'
+    devflow_semver_is_valid "$available_version" || die 'Versão disponível inválida ou inconsistente.'
     [[ "$available_commit" =~ ^[0-9a-f]{40}$ ]] || die 'Commit disponível inválido.'
   fi
 fi

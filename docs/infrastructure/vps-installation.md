@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.1-alpha`: o provider padrão é `host-nginx`. Antes de instalar, use `./install.sh --check` e o dry-run com `--provider host-nginx`. Se `fullpassword_nginx` ocupar 80/443, a instalação será bloqueada; execute somente os diagnósticos descritos em [migração de proxy](proxy-migration.md). Nenhuma instalação ou migração desta versão foi homologada na VPS.
+> Versão `0.4.2-alpha`: o provider padrão é `host-nginx`. Antes de instalar, use `./install.sh --check` e o dry-run com `--provider host-nginx`. Se `fullpassword_nginx` ocupar 80/443, a instalação será bloqueada; execute somente os diagnósticos descritos em [migração de proxy](proxy-migration.md). Nenhuma instalação ou migração desta versão foi homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install --provider host-nginx --domain devflow.example.com \
   --letsencrypt-email tls@example.com --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.1-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.2-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, a única atividade autorizada nesta etapa é coletar evidências com `sudo ./scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`. O segundo comando grava somente `/var/log/devflow/proxy-migration-dry-run.log`; não execute `--migrate` automaticamente.
 
@@ -36,7 +36,7 @@ chmod +x install.sh
 less install.sh
 ```
 
-O bootstrap é independente de checkout anterior. Ele valida Linux, conectividade e dependências; somente após a confirmação de instalação pode instalar Git ausente pelos pacotes da distribuição. O checkout temporário usa HTTPS público e é removido ao sair.
+O bootstrap é independente de checkout anterior. Git deve estar instalado previamente: ele é usado para bloquear redirecionamentos, validar origem, referência e commit antes da confirmação. O bootstrap não instala dependências. O checkout temporário usa HTTPS público e é removido ao sair.
 
 Não são necessários token, GitHub CLI, deploy key ou chave SSH. A VPS nunca deve receber commits.
 
