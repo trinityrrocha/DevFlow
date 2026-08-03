@@ -104,7 +104,10 @@ check('ARM64 remains supported', common.includes('aarch64|arm64) DEVFLOW_ARCH=ar
 check('Docker Compose 5.3.1 is compatible', install.includes('version_at_least "$compose_version" 2.20'));
 check('old image lookup cannot regress', !install.includes('images -q backend')
   && !install.includes('Não foi possível identificar a imagem do backend')
-  && health.includes('backend_image_present'));
+  && health.includes('backend_image_present')
+  && ['source_ready=', 'configuration_ready=', 'images_ready=', 'database_container_ready=',
+    'database_healthy=', 'migrations_ready=', 'backend_ready=', 'frontend_ready=',
+    'super_admin_ready=', 'installation_state_ready='].every((field) => install.includes(field)));
 
 if (checks.length !== 24) throw new Error(`Expected 24 checks, got ${checks.length}`);
 console.log(`Compose image and resume tests passed: ${checks.length} scenarios.`);

@@ -58,6 +58,16 @@ POSTGRES_IMAGE_RESOLVED=unknown
 POSTGRES_IMAGE_PRESENT=false
 POSTGRES_PULL_REQUIRED=true
 IMAGE_RESOLUTION_STATUS=pending-docker-install
+SOURCE_READY=false
+CONFIGURATION_READY=false
+IMAGES_READY=false
+DATABASE_CONTAINER_READY=false
+DATABASE_HEALTHY=false
+MIGRATIONS_READY=false
+BACKEND_READY=false
+FRONTEND_READY=false
+SUPER_ADMIN_READY=false
+INSTALLATION_STATE_READY=false
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
@@ -188,6 +198,7 @@ detect_partial_installation() {
     if [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] \
       && git -C "$SOURCE_DIR" merge-base --is-ancestor "$source_commit" "$release_sha" 2>/dev/null; then
       RESUME_CHECKOUT_VALID=true
+      SOURCE_READY=true
       PARTIAL_INSTALLATION_COMMIT="$source_commit"
     fi
   fi
@@ -195,7 +206,10 @@ detect_partial_installation() {
   if [[ -f "$DEVFLOW_ENV_FILE" && ! -L "$DEVFLOW_ENV_FILE" ]]; then
     PARTIAL_CONFIGURATION_PRESENT=true
     env_mode="$(stat -c '%a' "$DEVFLOW_ENV_FILE" 2>/dev/null || true)"
-    [[ "$env_mode" == 600 || "$env_mode" == 400 ]] && RESUME_CONFIGURATION_VALID=true
+    if [[ "$env_mode" == 600 || "$env_mode" == 400 ]]; then
+      RESUME_CONFIGURATION_VALID=true
+      CONFIGURATION_READY=true
+    fi
   fi
 
   if install_transaction_load 2>/dev/null; then
@@ -214,7 +228,10 @@ detect_partial_installation() {
   fi
   if [[ "$PARTIAL_INSTALLATION_COMMIT" != unknown && "$source_commit" != "$PARTIAL_INSTALLATION_COMMIT" ]]; then
     RESUME_CHECKOUT_VALID=false
+    SOURCE_READY=false
   fi
+  install_transaction_has_stage 09-run-migrations && MIGRATIONS_READY=true
+  install_transaction_has_stage 12-bootstrap-super-admin && SUPER_ADMIN_READY=true
 }
 
 detect_partial_installation
@@ -527,6 +544,10 @@ if [[ "$MODE" != check ]]; then
             ;;
         esac
       done
+      if [[ "$BACKEND_IMAGE_PRESENT" == true && "$FRONTEND_IMAGE_PRESENT" == true \
+        && "$POSTGRES_IMAGE_PRESENT" == true ]]; then
+        IMAGES_READY=true
+      fi
       IMAGE_RESOLUTION_STATUS=validated
     else
       IMAGE_RESOLUTION_STATUS=pending-python-install
@@ -697,6 +718,21 @@ if [[ "$docker_state" == present && "$docker_version" != daemon-unavailable ]]; 
   fi
   db_container_id="$(docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
     --filter 'label=com.docker.compose.service=db' --format '{{.ID}}' | head -n1)"
+  if [[ -n "$db_container_id" ]]; then
+    DATABASE_CONTAINER_READY=true
+    [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$db_container_id" 2>/dev/null || true)" == healthy ]] \
+      && DATABASE_HEALTHY=true
+  fi
+  backend_container_id="$(docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
+    --filter 'label=com.docker.compose.service=backend' --format '{{.ID}}' | head -n1)"
+  frontend_container_id="$(docker ps -a --filter "label=com.docker.compose.project=$DEVFLOW_PROJECT" \
+    --filter 'label=com.docker.compose.service=frontend' --format '{{.ID}}' | head -n1)"
+  [[ -n "$backend_container_id" \
+    && "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$backend_container_id" 2>/dev/null || true)" == healthy ]] \
+    && BACKEND_READY=true
+  [[ -n "$frontend_container_id" \
+    && "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$frontend_container_id" 2>/dev/null || true)" == healthy ]] \
+    && FRONTEND_READY=true
   if [[ -n "$db_container_id" && -n "$(docker port "$db_container_id" 2>/dev/null || true)" ]]; then
     POSTGRES_PUBLIC_PORT_EXPOSED=true
     die 'O PostgreSQL DevFlow não pode publicar portas no host.'
@@ -766,6 +802,16 @@ postgres_service=db
 postgres_image_resolved=$POSTGRES_IMAGE_RESOLVED
 postgres_image_present=$POSTGRES_IMAGE_PRESENT
 postgres_pull_required=$POSTGRES_PULL_REQUIRED
+source_ready=$SOURCE_READY
+configuration_ready=$CONFIGURATION_READY
+images_ready=$IMAGES_READY
+database_container_ready=$DATABASE_CONTAINER_READY
+database_healthy=$DATABASE_HEALTHY
+migrations_ready=$MIGRATIONS_READY
+backend_ready=$BACKEND_READY
+frontend_ready=$FRONTEND_READY
+super_admin_ready=$SUPER_ADMIN_READY
+installation_state_ready=$INSTALLATION_STATE_READY
 EOF
 
 if [[ "$MODE" == check ]]; then
@@ -1247,7 +1293,17 @@ if [[ "$INSTALL_SCOPE" == internal ]]; then
     'public_proxy_modified=false' \
     'proxy_migration_executed=false' \
     'certificate_issued=false' \
-    'external_publication_enabled=false' | tee -a "$INSTALL_LOG"
+    'external_publication_enabled=false' \
+    'source_ready=true' \
+    'configuration_ready=true' \
+    'images_ready=true' \
+    'database_container_ready=true' \
+    'database_healthy=true' \
+    'migrations_ready=true' \
+    'backend_ready=true' \
+    'frontend_ready=true' \
+    'super_admin_ready=true' \
+    'installation_state_ready=true' | tee -a "$INSTALL_LOG"
 else
   log INFO "DevFlow $DEVFLOW_VERSION instalado para homologação em https://$DOMAIN" | tee -a "$INSTALL_LOG"
 fi
