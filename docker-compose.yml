@@ -13,7 +13,7 @@ services:
     volumes:
       - ${DEVFLOW_DB_DATA_PATH:-devflow_db_data}:/var/lib/postgresql/data
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.4-alpha}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -23,14 +23,18 @@ services:
       - devflow_internal
 
   backend:
+    image: devflow-backend:${DEVFLOW_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.4-alpha}
+        DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.4.3-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.4.4-alpha}
       DB_HOST: db
       DB_PORT: 5432
       UPLOAD_DIR: /var/lib/devflow/uploads
@@ -39,7 +43,7 @@ services:
     volumes:
       - ${DEVFLOW_UPLOADS_PATH:-devflow_uploads}:/var/lib/devflow/uploads
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.4-alpha}
     depends_on:
       db:
         condition: service_healthy
@@ -53,11 +57,14 @@ services:
       - devflow_edge
 
   frontend:
+    image: devflow-frontend:${DEVFLOW_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.4-alpha}
+        DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     expose:
       - "80"
@@ -67,7 +74,7 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.4-alpha}
     networks:
       - devflow_edge
 
@@ -95,7 +102,7 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.4-alpha}
     networks:
       - devflow_edge
 

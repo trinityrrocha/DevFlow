@@ -153,6 +153,23 @@ sudo docker compose --env-file /opt/devflow/config/devflow.env -p devflow logs -
 
 Não execute migration manual com schema inconsistente. Preserve o banco e investigue permissões de `/opt/devflow/data/postgres`, capacidade e healthcheck.
 
+## Build concluída, mas a imagem não foi identificada
+
+Na `0.4.3-alpha`, o instalador executava `docker compose ... images -q backend`. Esse comando retornou vazio porque nenhum container do backend havia sido criado, embora a build tivesse produzido `devflow-backend:latest` (também exibida canonicamente como `docker.io/library/devflow-backend:latest`). A `0.4.4-alpha` usa o JSON resolvido do Compose e `docker image inspect`.
+
+Não apague imagens nem execute prune. Atualize o checkout local da VPS e faça primeiro o dry-run:
+
+```bash
+cd ~/DevFlow
+git pull --ff-only origin main
+sudo ./install.sh --dry-run --install-scope internal \
+  --super-admin-email contato@sti1.com.br
+sudo ./install.sh --resume \
+  --super-admin-email contato@sti1.com.br
+```
+
+Consulte `/opt/devflow/state/install-transaction.json` e o log sanitizado em `/opt/devflow/logs`. A retomada só avança com checkout canônico e limpo, configuração privada regular com modo 600/400 e versão compatível por fast-forward. Imagens legadas sem rótulos OCI são reconstruídas para estabelecer proveniência; imagens já rotuladas com o mesmo commit e versão são reutilizadas.
+
 ## Migration falhou
 
 Na instalação inicial, a release não é promovida. Durante update, a falha aciona automaticamente o backup pré-update e os containers anteriores. Não marque a migration, não altere `schema_migrations` e não repita o comando manualmente.

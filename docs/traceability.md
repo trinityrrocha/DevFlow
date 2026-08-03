@@ -1,5 +1,17 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.4-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Fonte de verdade das imagens | `scripts/lib/compose-images.sh` e `scripts/resolve-compose-image.py` | `docker compose config --format json` por serviço |
+| Existência local | `resolve_compose_service_image` | `docker image inspect` após normalização |
+| Retomada explícita | `install.sh --resume` | checkout limpo/canônico, fast-forward e configuração protegida |
+| Estado transacional | `scripts/lib/install-transaction.sh` | 14 etapas e escrita atômica em `install-transaction.json` |
+| Proveniência da build | Dockerfiles e Compose | rótulos OCI de versão e commit |
+| Health de imagens | `scripts/health.sh` | três booleans `*_image_present` |
+| Regressões | `scripts/validate-compose-images-resume.mjs` | 24 cenários, incluindo ARM64 e Compose 5.3.1 |
+
 ## Instalação interna `0.4.3-alpha`
 
 | Requisito | Implementação | Evidência |

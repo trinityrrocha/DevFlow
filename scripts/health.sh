@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/proxy-config.sh"
 # shellcheck source=providers/provider-contract.sh
 . "$SCRIPT_DIR/providers/provider-contract.sh"
+# shellcheck source=lib/compose-images.sh
+. "$SCRIPT_DIR/lib/compose-images.sh"
 
 INTERNAL_ONLY=false
 QUIET=false
@@ -55,6 +57,9 @@ INTERNAL_FRONTEND_HEALTHY=true
 INTERNAL_BACKEND_HEALTHY=true
 DATABASE_HEALTHY=true
 MIGRATIONS_CURRENT=true
+BACKEND_IMAGE_PRESENT=true
+FRONTEND_IMAGE_PRESENT=true
+POSTGRES_IMAGE_PRESENT=true
 report() {
   local state="$1" item="$2" detail="${3:-}"
   [[ "$state" == PASS ]] || failures=$((failures + 1))
@@ -68,6 +73,17 @@ elif [[ "$ALLOW_PENDING_VERSION" == true ]]; then
 else
   report FAIL configured_version "$CONFIGURED_VERSION != $EXPECTED_VERSION"
 fi
+
+for image_tuple in backend:BACKEND_IMAGE_PRESENT frontend:FRONTEND_IMAGE_PRESENT db:POSTGRES_IMAGE_PRESENT; do
+  image_service="${image_tuple%%:*}"
+  image_status_variable="${image_tuple##*:}"
+  if resolved_image="$(resolve_compose_service_image "$image_service")"; then
+    report PASS "${image_service}_image" "$resolved_image"
+  else
+    printf -v "$image_status_variable" '%s' false
+    report FAIL "${image_service}_image" 'imagem resolvida ausente'
+  fi
+done
 
 for service in db backend frontend; do
   container_id="$("${DEVFLOW_COMPOSE[@]}" ps -q "$service" 2>/dev/null || true)"
@@ -168,6 +184,9 @@ if [[ "$failures" -gt 0 ]]; then
     printf 'internal_backend_healthy=%s\n' "$INTERNAL_BACKEND_HEALTHY"
     printf 'database_healthy=%s\n' "$DATABASE_HEALTHY"
     printf 'migrations_current=%s\n' "$MIGRATIONS_CURRENT"
+    printf 'backend_image_present=%s\n' "$BACKEND_IMAGE_PRESENT"
+    printf 'frontend_image_present=%s\n' "$FRONTEND_IMAGE_PRESENT"
+    printf 'postgres_image_present=%s\n' "$POSTGRES_IMAGE_PRESENT"
     printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
     [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
       && printf 'external_https_status=failed\n' || printf 'external_https_status=not-configured\n'
@@ -181,6 +200,9 @@ if [[ "$QUIET" == false ]]; then
   printf 'internal_backend_healthy=true\n'
   printf 'database_healthy=true\n'
   printf 'migrations_current=true\n'
+  printf 'backend_image_present=true\n'
+  printf 'frontend_image_present=true\n'
+  printf 'postgres_image_present=true\n'
   printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
   [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
     && printf 'external_https_status=healthy\n' || printf 'external_https_status=not-configured\n'

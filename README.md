@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.3-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.4-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,9 +42,10 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.3-alpha
-./install.sh --check --ref v0.4.3-alpha
+./install.sh --check --ref main --expected-version 0.4.4-alpha
 ```
+
+Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
 
 O fluxo explícito em três etapas também está disponível:
 
@@ -72,6 +73,19 @@ sudo ./install.sh --dry-run \
 sudo ./install.sh --install-internal \
   --super-admin-email admin@exemplo.com
 ```
+
+Se uma instalação interna tiver sido interrompida, valide primeiro o plano e retome explicitamente:
+
+```bash
+sudo ./install.sh --dry-run \
+  --install-scope internal \
+  --super-admin-email admin@exemplo.com
+
+sudo ./install.sh --resume \
+  --super-admin-email admin@exemplo.com
+```
+
+A retomada aceita somente checkout canônico, limpo e compatível por fast-forward. Imagens são resolvidas pelo Compose e verificadas com `docker image inspect`; uma imagem só é reutilizada sem build quando seus rótulos de versão e commit correspondem à release.
 
 Esse escopo publica somente `127.0.0.1:18080` e `127.0.0.1:13000`. Não exige domínio ou e-mail TLS, não toca 80/443, Nginx, certificados, migração ou Full Password. O PostgreSQL não possui porta no host.
 

@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.3-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. Nenhuma instalação desta versão foi executada pelo desenvolvimento no Windows.
+> Versão `0.4.4-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. A correção foi validada localmente; a retomada real ainda deve ser homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.3-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.4-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -71,6 +71,24 @@ sudo ./install.sh --install-internal \
   --super-admin-email contato@sti1.com.br
 ```
 
+Se `/opt/devflow` contiver a tentativa parcial da versão anterior, atualize primeiro o checkout de operação e valide a retomada:
+
+```bash
+cd ~/DevFlow
+git pull --ff-only origin main
+git rev-parse HEAD
+cat VERSION
+
+sudo ./install.sh --dry-run \
+  --install-scope internal \
+  --super-admin-email contato@sti1.com.br
+
+sudo ./install.sh --resume \
+  --super-admin-email contato@sti1.com.br
+```
+
+O dry-run deve exibir o checkout parcial, versão, commit, etapa registrada, imagens esperadas/resolvidas e os flags `*_build_required`. Imagens `0.4.3-alpha` sem rótulos de proveniência podem existir, mas a primeira retomada em `0.4.4-alpha` as reconstrói para vincular versão e commit. Não execute `publish.sh` nessa homologação.
+
 O dry-run deve informar `internal_installation_ready=true`, as duas portas loopback disponíveis e `postgres_public_port_exposed=false`. A ocupação comprovada por `fullpassword_nginx` resulta em `external_publication_ready=false`, sem falha global do estágio interno.
 
 Durante esse escopo não são permitidos Nginx no host, Certbot, `/etc/nginx`, certificados, override, reload, migração ou alteração em `/opt/fullpassword`.
@@ -92,7 +110,7 @@ Confirme o estado sem exigir HTTPS:
 sudo /opt/devflow/app/scripts/health.sh
 ```
 
-O resultado interno saudável apresenta `external_publication_enabled=false`, `external_https_status=not-configured` e `overall_internal_health=healthy`.
+O resultado interno saudável apresenta `backend_image_present=true`, `frontend_image_present=true`, `postgres_image_present=true`, `database_healthy=true`, `migrations_current=true`, `internal_backend_healthy=true`, `internal_frontend_healthy=true`, `external_publication_enabled=false`, `external_https_status=not-configured` e `overall_internal_health=healthy`.
 
 ## 5. Publicação externa posterior
 

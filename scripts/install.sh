@@ -12,11 +12,16 @@ SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 # shellcheck source=providers/provider-contract.sh
 . "$SCRIPT_DIR/providers/provider-contract.sh"
+# shellcheck source=lib/compose-images.sh
+. "$SCRIPT_DIR/lib/compose-images.sh"
+# shellcheck source=lib/install-transaction.sh
+. "$SCRIPT_DIR/lib/install-transaction.sh"
 
 MODE=check
 MODE_EXPLICIT=false
 INSTALL_SCOPE=complete
 INSTALL_SCOPE_EXPLICIT=false
+RESUME_REQUESTED=false
 DOMAIN=
 LETSENCRYPT_EMAIL=
 SUPER_ADMIN_EMAIL=
@@ -32,6 +37,27 @@ FRONTEND_LOOPBACK_PORT_AVAILABLE=unknown
 BACKEND_LOOPBACK_PORT_AVAILABLE=unknown
 POSTGRES_PUBLIC_PORT_EXPOSED=false
 EXTERNAL_PUBLICATION_BLOCKED=false
+PARTIAL_INSTALLATION_DETECTED=false
+RESUME_CHECKOUT_VALID=false
+RESUME_CONFIGURATION_VALID=false
+PARTIAL_CONFIGURATION_PRESENT=false
+RESUME_TRANSACTION_VALID=false
+PARTIAL_INSTALLATION_VERSION=unknown
+PARTIAL_INSTALLATION_COMMIT=unknown
+PARTIAL_INSTALLATION_STAGE=unknown
+BACKEND_IMAGE_EXPECTED=unknown
+BACKEND_IMAGE_RESOLVED=unknown
+BACKEND_IMAGE_PRESENT=false
+BACKEND_BUILD_REQUIRED=true
+FRONTEND_IMAGE_EXPECTED=unknown
+FRONTEND_IMAGE_RESOLVED=unknown
+FRONTEND_IMAGE_PRESENT=false
+FRONTEND_BUILD_REQUIRED=true
+POSTGRES_IMAGE_EXPECTED=unknown
+POSTGRES_IMAGE_RESOLVED=unknown
+POSTGRES_IMAGE_PRESENT=false
+POSTGRES_PULL_REQUIRED=true
+IMAGE_RESOLUTION_STATUS=pending-docker-install
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 MANAGED_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 
@@ -46,12 +72,14 @@ Uso:
   sudo ./install.sh --install [--provider host-nginx|isolated-nginx] --domain HOST \
     --letsencrypt-email EMAIL --super-admin-email EMAIL
   sudo ./install.sh --install-internal [--provider host-nginx] --super-admin-email EMAIL
+  sudo ./install.sh --resume --super-admin-email EMAIL
 
 Modos:
   --check       diagnóstico somente leitura (padrão)
   --dry-run     valida e apresenta o plano; não altera o host
   --install     primeira instalação, com confirmação explícita
   --install-internal instala somente aplicação e serviços em loopback
+  --resume      retoma uma instalação interna incompleta e compatível
 
 Opções:
   --provider PROVIDER       host-nginx (padrão), isolated-nginx ou legado explícito
@@ -97,6 +125,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
     --install-internal) set_mode install; set_install_scope internal; shift ;;
+    --resume) set_mode install; set_install_scope internal; RESUME_REQUESTED=true; shift ;;
     --install-scope) set_install_scope "${2:-}"; shift 2 ;;
     --provider) INFRASTRUCTURE_PROVIDER="${2:-}"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
@@ -141,6 +170,54 @@ else
   [[ -n "$published_sha" ]] || published_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.followRedirects=false -C "$SOURCE_DIR" \
     ls-remote origin "refs/tags/$source_ref" | awk 'NR==1 {print $1}')"
 fi
+
+detect_partial_installation() {
+  local source_dir="$DEVFLOW_INSTALL_ROOT/source" source_commit= state_file="$DEVFLOW_STATE_ROOT/installation.json"
+  [[ ! -e "$DEVFLOW_INSTALL_ROOT/app" ]] || return 0
+  if [[ -e "$source_dir" || -e "$DEVFLOW_ENV_FILE" || -e "$state_file" || -e "$DEVFLOW_INSTALL_TRANSACTION_FILE" ]]; then
+    PARTIAL_INSTALLATION_DETECTED=true
+  else
+    return 0
+  fi
+
+  if [[ -d "$source_dir/.git" && ! -L "$source_dir/.git" \
+    && "$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)" == "$public_remote" \
+    && "$(git -C "$source_dir" branch --show-current 2>/dev/null || true)" == main \
+    && -z "$(git -C "$source_dir" status --porcelain 2>/dev/null || printf invalid)" ]]; then
+    source_commit="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
+    if [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] \
+      && git -C "$SOURCE_DIR" merge-base --is-ancestor "$source_commit" "$release_sha" 2>/dev/null; then
+      RESUME_CHECKOUT_VALID=true
+      PARTIAL_INSTALLATION_COMMIT="$source_commit"
+    fi
+  fi
+
+  if [[ -f "$DEVFLOW_ENV_FILE" && ! -L "$DEVFLOW_ENV_FILE" ]]; then
+    PARTIAL_CONFIGURATION_PRESENT=true
+    env_mode="$(stat -c '%a' "$DEVFLOW_ENV_FILE" 2>/dev/null || true)"
+    [[ "$env_mode" == 600 || "$env_mode" == 400 ]] && RESUME_CONFIGURATION_VALID=true
+  fi
+
+  if install_transaction_load 2>/dev/null; then
+    RESUME_TRANSACTION_VALID=true
+    PARTIAL_INSTALLATION_VERSION="$INSTALL_TRANSACTION_VERSION"
+    PARTIAL_INSTALLATION_COMMIT="$INSTALL_TRANSACTION_COMMIT"
+    PARTIAL_INSTALLATION_STAGE="$INSTALL_TRANSACTION_STAGE"
+  elif [[ -r "$state_file" ]]; then
+    PARTIAL_INSTALLATION_VERSION="$(installation_state_value version "$state_file" || true)"
+    [[ "$PARTIAL_INSTALLATION_COMMIT" != unknown ]] \
+      || PARTIAL_INSTALLATION_COMMIT="$(installation_state_value commit "$state_file" || true)"
+    PARTIAL_INSTALLATION_STAGE="$(installation_state_value result "$state_file" || true)"
+  fi
+  if [[ "$PARTIAL_INSTALLATION_VERSION" == unknown && -r "$source_dir/VERSION" ]]; then
+    PARTIAL_INSTALLATION_VERSION="$(devflow_read_version_file "$source_dir/VERSION" 2>/dev/null || printf unknown)"
+  fi
+  if [[ "$PARTIAL_INSTALLATION_COMMIT" != unknown && "$source_commit" != "$PARTIAL_INSTALLATION_COMMIT" ]]; then
+    RESUME_CHECKOUT_VALID=false
+  fi
+}
+
+detect_partial_installation
 [[ "$published_sha" == "$release_sha" ]] \
   || die 'O commit local não corresponde exatamente à referência publicada solicitada.'
 detected_source_version="$(devflow_validate_checkout_version_consistency "$SOURCE_DIR")" \
@@ -346,6 +423,41 @@ if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_ROOT/app" ]]; then
   die 'Uma instalação já existe. O instalador não atualiza sistemas; use scripts/update.sh.'
 fi
 
+if [[ "$PARTIAL_INSTALLATION_DETECTED" == true && "$MODE" != check ]]; then
+  [[ "$RESUME_CHECKOUT_VALID" == true ]] \
+    || die 'Instalação parcial encontrada, mas o checkout não é limpo, canônico ou fast-forward compatível.'
+  if [[ "$PARTIAL_CONFIGURATION_PRESENT" == true && "$RESUME_CONFIGURATION_VALID" != true ]]; then
+    die 'Instalação parcial contém configuração privada inválida ou com permissões inseguras.'
+  fi
+  if [[ "$MODE" == install && "$RESUME_REQUESTED" == false ]]; then
+    [[ -t 0 ]] || die 'Instalação parcial encontrada. Use explicitamente --resume.'
+    cat <<EOF
+Foi encontrada uma instalação interna incompleta.
+
+Versão: $PARTIAL_INSTALLATION_VERSION
+Commit: $PARTIAL_INSTALLATION_COMMIT
+Última etapa registrada: $PARTIAL_INSTALLATION_STAGE
+
+Opções:
+  1 - Retomar instalação
+  2 - Reexecutar somente as validações
+  3 - Cancelar
+EOF
+    read -r -p 'Escolha [1/2/3]: ' resume_choice
+    case "$resume_choice" in
+      1) RESUME_REQUESTED=true ;;
+      2)
+        printf '%s\n' 'Execute: sudo ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL'
+        exit 0
+        ;;
+      3) die 'Retomada cancelada sem alterações.' ;;
+      *) die 'Opção inválida; nenhuma alteração foi realizada.' ;;
+    esac
+  fi
+elif [[ "$RESUME_REQUESTED" == true ]]; then
+  die 'Nenhuma instalação incompleta compatível foi encontrada para retomada.'
+fi
+
 if [[ "$MODE" != check && "$docker_state" == present && "$docker_version" == daemon-unavailable ]]; then
   die 'Docker está instalado, mas o daemon não responde. Corrija o serviço antes da instalação.'
 fi
@@ -361,7 +473,8 @@ IMAGE_ARCHITECTURE_STATUS=pending-docker-install
 COMPOSE_STRUCTURE_STATUS=pending-docker-install
 if [[ "$MODE" != check ]]; then
   for required_file in database/migrations/001_initial_schema.sql backend/scripts/migrate.js \
-    scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh; do
+    scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh \
+    scripts/resolve-compose-image.py scripts/lib/compose-images.sh scripts/lib/install-transaction.sh; do
     [[ -f "$SOURCE_DIR/$required_file" && ! -L "$SOURCE_DIR/$required_file" ]] \
       || die "Componente interno obrigatório ausente ou inválido: $required_file"
   done
@@ -380,6 +493,44 @@ if [[ "$MODE" != check ]]; then
       docker compose -p devflow-validation --project-directory "$SOURCE_DIR" \
         -f "$SOURCE_DIR/docker-compose.yml" -f "$SOURCE_DIR/docker-compose.shared.yml" config --quiet
     COMPOSE_STRUCTURE_STATUS=valid
+    if command -v python3 >/dev/null 2>&1; then
+      DEVFLOW_COMPOSE=(docker compose --env-file "$SOURCE_DIR/.env.example" -p "$DEVFLOW_PROJECT" \
+        --project-directory "$SOURCE_DIR" -f "$SOURCE_DIR/docker-compose.yml" -f "$SOURCE_DIR/docker-compose.shared.yml")
+      for service in backend frontend db; do
+        expected="$(compose_service_image_expected "$service")" \
+          || die "O Compose não resolveu exatamente uma imagem para o serviço $service."
+        resolved="$(normalize_image_reference "$expected")" \
+          || die "O Compose retornou referência de imagem inválida para $service."
+        case "$service" in
+          backend)
+            BACKEND_IMAGE_EXPECTED="$expected"; BACKEND_IMAGE_RESOLVED="$resolved"
+            if docker image inspect "$resolved" >/dev/null 2>&1; then
+              BACKEND_IMAGE_PRESENT=true
+              compose_image_matches_release "$resolved" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
+                && BACKEND_BUILD_REQUIRED=false
+            fi
+            ;;
+          frontend)
+            FRONTEND_IMAGE_EXPECTED="$expected"; FRONTEND_IMAGE_RESOLVED="$resolved"
+            if docker image inspect "$resolved" >/dev/null 2>&1; then
+              FRONTEND_IMAGE_PRESENT=true
+              compose_image_matches_release "$resolved" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
+                && FRONTEND_BUILD_REQUIRED=false
+            fi
+            ;;
+          db)
+            POSTGRES_IMAGE_EXPECTED="$expected"; POSTGRES_IMAGE_RESOLVED="$resolved"
+            if docker image inspect "$resolved" >/dev/null 2>&1; then
+              POSTGRES_IMAGE_PRESENT=true
+              POSTGRES_PULL_REQUIRED=false
+            fi
+            ;;
+        esac
+      done
+      IMAGE_RESOLUTION_STATUS=validated
+    else
+      IMAGE_RESOLUTION_STATUS=pending-python-install
+    fi
   fi
 fi
 
@@ -582,6 +733,10 @@ Resumo DevFlow $DEVFLOW_VERSION
   backups do proxy: $DEVFLOW_INSTALL_ROOT/backups/proxy
   estado operacional: $DEVFLOW_STATE_ROOT
   estado da configuração: $config_state
+  instalação parcial detectada: $PARTIAL_INSTALLATION_DETECTED
+  versão parcial: $PARTIAL_INSTALLATION_VERSION
+  commit parcial: $PARTIAL_INSTALLATION_COMMIT
+  etapa parcial: $PARTIAL_INSTALLATION_STAGE
 EOF
 devflow_print_port_evidence 80
 devflow_print_port_evidence 443
@@ -592,6 +747,25 @@ external_publication_ready=$DEVFLOW_EXTERNAL_PUBLICATION_READY
 frontend_loopback_port_available=$FRONTEND_LOOPBACK_PORT_AVAILABLE
 backend_loopback_port_available=$BACKEND_LOOPBACK_PORT_AVAILABLE
 postgres_public_port_exposed=$POSTGRES_PUBLIC_PORT_EXPOSED
+image_resolution_status=$IMAGE_RESOLUTION_STATUS
+resume_checkout_valid=$RESUME_CHECKOUT_VALID
+resume_configuration_valid=$RESUME_CONFIGURATION_VALID
+resume_transaction_valid=$RESUME_TRANSACTION_VALID
+compose_project=$DEVFLOW_PROJECT
+backend_service=backend
+backend_image_expected=$BACKEND_IMAGE_EXPECTED
+backend_image_resolved=$BACKEND_IMAGE_RESOLVED
+backend_image_present=$BACKEND_IMAGE_PRESENT
+backend_build_required=$BACKEND_BUILD_REQUIRED
+frontend_service=frontend
+frontend_image_expected=$FRONTEND_IMAGE_EXPECTED
+frontend_image_resolved=$FRONTEND_IMAGE_RESOLVED
+frontend_image_present=$FRONTEND_IMAGE_PRESENT
+frontend_build_required=$FRONTEND_BUILD_REQUIRED
+postgres_service=db
+postgres_image_resolved=$POSTGRES_IMAGE_RESOLVED
+postgres_image_present=$POSTGRES_IMAGE_PRESENT
+postgres_pull_required=$POSTGRES_PULL_REQUIRED
 EOF
 
 if [[ "$MODE" == check ]]; then
@@ -665,7 +839,20 @@ INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 touch "$INSTALL_LOG"
 chmod 0640 "$INSTALL_LOG"
 log INFO "Log sanitizado: $INSTALL_LOG" | tee -a "$INSTALL_LOG"
+if [[ "$RESUME_REQUESTED" == true && "$RESUME_TRANSACTION_VALID" == true \
+  && "$INSTALL_TRANSACTION_COMMIT" == "$release_sha" \
+  && "$INSTALL_TRANSACTION_VERSION" == "$DEVFLOW_RELEASE_VERSION" \
+  && "$INSTALL_TRANSACTION_SCOPE" == "$INSTALL_SCOPE" ]]; then
+  log INFO "Retomando transação registrada em $INSTALL_TRANSACTION_STAGE." | tee -a "$INSTALL_LOG"
+else
+  install_transaction_begin "$DEVFLOW_RELEASE_VERSION" "$release_sha" "$INSTALL_SCOPE"
+fi
+CURRENT_INSTALL_STAGE=01-preflight
+install_transaction_complete_stage 01-preflight | tee -a "$INSTALL_LOG"
+CURRENT_INSTALL_STAGE=02-directories
+install_transaction_complete_stage 02-directories | tee -a "$INSTALL_LOG"
 PROVIDER_APPLIED=false
+INSTALL_PROMOTED=false
 DEVFLOW_INSTALLATION_SCOPE="$INSTALL_SCOPE"
 DEVFLOW_APPLICATION_INSTALLED=false
 DEVFLOW_EXTERNAL_PUBLICATION_ENABLED=false
@@ -683,6 +870,9 @@ export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
 installation_failed() {
   local exit_code="${1:-$?}"
   trap - ERR INT TERM HUP
+  install_transaction_fail "${CURRENT_INSTALL_STAGE:-01-preflight}" | tee -a "$INSTALL_LOG" || true
+  DEVFLOW_APPLICATION_INSTALLED=false
+  export DEVFLOW_APPLICATION_INSTALLED
   if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
     DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
     load_devflow_env || true
@@ -697,6 +887,9 @@ installation_failed() {
     remove_devflow_edge_network_if_unused || true
   fi
   rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
+  if [[ "$INSTALL_PROMOTED" == true && -L "$DEVFLOW_INSTALL_ROOT/app" ]]; then
+    rm -f -- "$DEVFLOW_INSTALL_ROOT/app"
+  fi
   write_install_report failure || true
   log ERROR "A operação falhou (código $exit_code). Os dados existentes foram preservados; consulte $INSTALL_LOG." \
     | tee -a "$INSTALL_LOG" >&2
@@ -743,8 +936,9 @@ version_at_least "$installed_compose_version" 2.20 || die "Compose instalado inc
 
 export DEBIAN_FRONTEND=noninteractive
 packages=(openssl)
+packages+=(python3)
 if [[ "$INSTALL_SCOPE" == complete ]]; then
-  packages+=(certbot python3)
+  packages+=(certbot)
 fi
 missing_packages=()
 for package in "${packages[@]}"; do
@@ -764,6 +958,7 @@ if [[ "$INSTALL_SCOPE" == complete ]]; then
   fi
 fi
 
+CURRENT_INSTALL_STAGE=03-source
 release_dir="$DEVFLOW_INSTALL_ROOT/releases/$release_sha"
 if [[ ! -d "$release_dir" ]]; then
   install -d -m 0750 "$release_dir"
@@ -812,7 +1007,9 @@ DEVFLOW_RELEASE_REF="$source_ref"
 DEVFLOW_REPOSITORY_URL="$public_remote"
 DEVFLOW_UPDATE_CHANNEL=main
 export DEVFLOW_RELEASE_COMMIT DEVFLOW_RELEASE_REF DEVFLOW_REPOSITORY_URL DEVFLOW_UPDATE_CHANNEL
+install_transaction_complete_stage 03-source | tee -a "$INSTALL_LOG"
 
+CURRENT_INSTALL_STAGE=04-configuration
 if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   runtime_domain="${DOMAIN:-internal.local}"
   runtime_letsencrypt_email="$LETSENCRYPT_EMAIL"
@@ -828,6 +1025,7 @@ if [[ ! -f "$DEVFLOW_ENV_FILE" ]]; then
   cat > "$DEVFLOW_ENV_FILE" <<EOF
 # DevFlow runtime configuration — generated locally, never commit
 DEVFLOW_VERSION=$DEVFLOW_VERSION
+DEVFLOW_IMAGE_TAG=latest
 DEVFLOW_SOURCE_DIR=$operational_source_dir
 NODE_ENV=production
 PORT=3000
@@ -880,33 +1078,109 @@ EOF
   unset db_password jwt_secret bootstrap_token encryption_key backup_passphrase
 fi
 
+requested_super_admin_email="$SUPER_ADMIN_EMAIL"
+
 ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
 load_devflow_env
 validate_runtime_paths
+[[ "$SUPER_ADMIN_EMAIL" == "$requested_super_admin_email" ]] \
+  || die 'O e-mail informado diverge do Super Admin registrado na configuração parcial.'
 [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}" == "$SHARED_PROXY_ADAPTER" ]] \
   || die 'Adaptador compartilhado diverge da configuração gerada.'
 DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 export DEVFLOW_VERSION
-ensure_devflow_edge_network
 compose_files
 "${DEVFLOW_COMPOSE[@]}" config --quiet
-"${DEVFLOW_COMPOSE[@]}" build backend frontend
-read -r db_uid db_gid < <(docker run --rm --entrypoint sh postgres:16-alpine -c 'printf "%s %s\n" "$(id -u postgres)" "$(id -g postgres)"')
-backend_image="$("${DEVFLOW_COMPOSE[@]}" images -q backend)"
-[[ -n "$backend_image" ]] || die 'Não foi possível identificar a imagem do backend.'
+install_transaction_complete_stage 04-configuration | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=05-build-images
+BACKEND_IMAGE_EXPECTED="$(compose_service_image_expected backend)" \
+  || die 'O Compose não resolveu uma imagem única para backend.'
+FRONTEND_IMAGE_EXPECTED="$(compose_service_image_expected frontend)" \
+  || die 'O Compose não resolveu uma imagem única para frontend.'
+POSTGRES_IMAGE_EXPECTED="$(compose_service_image_expected db)" \
+  || die 'O Compose não resolveu uma imagem única para PostgreSQL.'
+BACKEND_IMAGE_RESOLVED="$(normalize_image_reference "$BACKEND_IMAGE_EXPECTED")"
+FRONTEND_IMAGE_RESOLVED="$(normalize_image_reference "$FRONTEND_IMAGE_EXPECTED")"
+POSTGRES_IMAGE_RESOLVED="$(normalize_image_reference "$POSTGRES_IMAGE_EXPECTED")"
+
+BACKEND_BUILD_REQUIRED=true
+FRONTEND_BUILD_REQUIRED=true
+POSTGRES_PULL_REQUIRED=true
+compose_image_matches_release "$BACKEND_IMAGE_RESOLVED" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
+  && BACKEND_BUILD_REQUIRED=false
+compose_image_matches_release "$FRONTEND_IMAGE_RESOLVED" "$release_sha" "$DEVFLOW_RELEASE_VERSION" \
+  && FRONTEND_BUILD_REQUIRED=false
+docker image inspect "$POSTGRES_IMAGE_RESOLVED" >/dev/null 2>&1 && POSTGRES_PULL_REQUIRED=false
+
+build_services=()
+[[ "$BACKEND_BUILD_REQUIRED" == false ]] || build_services+=(backend)
+[[ "$FRONTEND_BUILD_REQUIRED" == false ]] || build_services+=(frontend)
+if [[ ${#build_services[@]} -gt 0 ]]; then
+  "${DEVFLOW_COMPOSE[@]}" build "${build_services[@]}"
+fi
+[[ "$POSTGRES_PULL_REQUIRED" == false ]] || "${DEVFLOW_COMPOSE[@]}" pull db
+printf '%s\n' \
+  "backend_build_required=$BACKEND_BUILD_REQUIRED" \
+  "frontend_build_required=$FRONTEND_BUILD_REQUIRED" \
+  "postgres_pull_required=$POSTGRES_PULL_REQUIRED" | tee -a "$INSTALL_LOG"
+install_transaction_complete_stage 05-build-images | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=06-validate-images
+backend_image="$(resolve_compose_service_image backend)" || {
+  printf 'backend_image_expected=%s\nbackend_image_resolved=%s\nbackend_image_present=false\n' \
+    "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED"
+  list_existing_devflow_images || true
+  die 'A imagem resolvida do backend não existe localmente.'
+}
+frontend_image="$(resolve_compose_service_image frontend)" || {
+  printf 'frontend_image_expected=%s\nfrontend_image_resolved=%s\nfrontend_image_present=false\n' \
+    "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED"
+  list_existing_devflow_images || true
+  die 'A imagem resolvida do frontend não existe localmente.'
+}
+postgres_image="$(resolve_compose_service_image db)" || die 'A imagem resolvida do PostgreSQL não existe localmente.'
+BACKEND_IMAGE_PRESENT=true
+FRONTEND_IMAGE_PRESENT=true
+POSTGRES_IMAGE_PRESENT=true
+printf '%s\n' \
+  "compose_project=$DEVFLOW_PROJECT" \
+  'backend_service=backend' \
+  "backend_image_expected=$BACKEND_IMAGE_EXPECTED" \
+  "backend_image_resolved=$backend_image" \
+  'backend_image_present=true' \
+  'frontend_service=frontend' \
+  "frontend_image_expected=$FRONTEND_IMAGE_EXPECTED" \
+  "frontend_image_resolved=$frontend_image" \
+  'frontend_image_present=true' \
+  'postgres_service=db' \
+  "postgres_image_resolved=$postgres_image" \
+  'postgres_image_present=true' | tee -a "$INSTALL_LOG"
+read -r db_uid db_gid < <(docker run --rm --entrypoint sh "$postgres_image" -c 'printf "%s %s\n" "$(id -u postgres)" "$(id -g postgres)"')
 read -r backend_uid backend_gid < <(docker run --rm --entrypoint sh "$backend_image" -c 'printf "%s %s\n" "$(id -u devflow)" "$(id -g devflow)"')
 [[ "$db_uid" =~ ^[0-9]+$ && "$db_gid" =~ ^[0-9]+$ && "$backend_uid" =~ ^[0-9]+$ && "$backend_gid" =~ ^[0-9]+$ ]] \
   || die 'Não foi possível validar os usuários não-root dos containers.'
 chown "$db_uid:$db_gid" "$DEVFLOW_DATA_ROOT/postgres"
 chown "$backend_uid:$backend_gid" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
 chmod 0750 "$DEVFLOW_DATA_ROOT/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
+install_transaction_complete_stage 06-validate-images | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=07-create-networks
+ensure_devflow_edge_network
+install_transaction_complete_stage 07-create-networks | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=08-start-database
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+install_transaction_complete_stage 08-start-database | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=09-run-migrations
 "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps backend node scripts/migrate.js
 DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration aplicada.'
+install_transaction_complete_stage 09-run-migrations | tee -a "$INSTALL_LOG"
 
 CERTIFICATE_EXISTED_BEFORE=true
 if [[ "$INSTALL_SCOPE" == complete ]]; then
@@ -914,7 +1188,20 @@ if [[ "$INSTALL_SCOPE" == complete ]]; then
   [[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && CERTIFICATE_EXISTED_BEFORE=true
 fi
 
-"${DEVFLOW_COMPOSE[@]}" up -d backend frontend --wait
+CURRENT_INSTALL_STAGE=10-start-backend
+"${DEVFLOW_COMPOSE[@]}" up -d backend --wait
+install_transaction_complete_stage 10-start-backend | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=11-start-frontend
+"${DEVFLOW_COMPOSE[@]}" up -d frontend --wait
+install_transaction_complete_stage 11-start-frontend | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=12-bootstrap-super-admin
+[[ -s "$DEVFLOW_CONFIG_ROOT/bootstrap-token" && "$(stat -c '%a' "$DEVFLOW_CONFIG_ROOT/bootstrap-token")" == 600 ]] \
+  || die 'Token protegido do bootstrap do Super Admin está ausente ou inseguro.'
+install_transaction_complete_stage 12-bootstrap-super-admin | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=13-health
 curl --fail --silent --show-error --max-time 20 "http://127.0.0.1:$API_PORT/api/health" >/dev/null
 curl --fail --silent --show-error --max-time 20 "http://127.0.0.1:$HTTP_PORT/healthz" >/dev/null
 db_runtime_id="$("${DEVFLOW_COMPOSE[@]}" ps -q db)"
@@ -933,8 +1220,12 @@ if [[ "$INSTALL_SCOPE" == complete ]]; then
   DEVFLOW_FRONTEND_URL="https://$DOMAIN"
   DEVFLOW_BACKEND_URL="https://$DOMAIN/api"
 fi
+install_transaction_complete_stage 13-health | tee -a "$INSTALL_LOG"
+
+CURRENT_INSTALL_STAGE=14-write-final-state
 set_managed_env_value DEVFLOW_VERSION "$DEVFLOW_RELEASE_VERSION"
 ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app"
+INSTALL_PROMOTED=true
 rm -f "$DEVFLOW_INSTALL_ROOT/app.candidate"
 
 install -m 0644 "$release_dir/scripts/systemd/devflow-backup.service" /etc/systemd/system/devflow-backup.service
@@ -946,6 +1237,7 @@ DEVFLOW_APPLICATION_INSTALLED=true
 export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_EXTERNAL_PUBLICATION_ENABLED \
   DEVFLOW_PUBLIC_PROXY_MODIFIED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL
 write_install_report success
+install_transaction_complete_stage 14-write-final-state | tee -a "$INSTALL_LOG"
 trap - ERR INT TERM HUP
 
 if [[ "$INSTALL_SCOPE" == internal ]]; then

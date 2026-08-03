@@ -2,6 +2,28 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.4-alpha] - 2026-08-03
+
+### Corrigido
+
+- a identificação de imagens deixou de usar `docker compose images -q backend`, que retorna vazio antes da criação do container mesmo após uma build bem-sucedida;
+- backend, frontend e PostgreSQL agora são resolvidos pelo JSON do Compose, normalizados sem confundir registries e confirmados por `docker image inspect`;
+- backend e frontend possuem nomes explícitos e rótulos OCI de versão e commit para permitir reutilização comprovada;
+- `health.sh` diferencia presença das imagens, saúde dos containers, migration e saúde interna.
+
+### Retomada
+
+- `install.sh --resume` reconhece uma instalação parcial somente quando checkout, configuração e avanço de commit são seguros;
+- 14 etapas formais são persistidas atomicamente em `/opt/devflow/state/install-transaction.json`, sem segredos;
+- falhas preservam checkout, configuração e imagens válidas, removendo apenas recursos incompletos do DevFlow;
+- imagens antigas sem rótulos de proveniência são reconhecidas como presentes, mas reconstruídas uma vez para comprovar versão e commit.
+
+### Testes e homologação
+
+- 24 cenários cobrem resolução, normalização, imagens ausentes, Compose fora do diretório, retomada, estado transacional, rollback preservando imagens, ARM64 e Compose 5.3.1;
+- a falha real ocorreu em Ubuntu 24.04.4 ARM64 após construir `devflow-backend:latest` e `devflow-frontend:latest`; nenhum container DevFlow foi iniciado e o Full Password permaneceu inalterado;
+- a retomada real, migrations, containers e health ainda dependem de execução na VPS; nenhuma publicação externa foi realizada nesta correção local.
+
 ## [0.4.3-alpha] - 2026-08-02
 
 ### Adicionado

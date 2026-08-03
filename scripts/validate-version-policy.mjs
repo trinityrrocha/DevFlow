@@ -41,7 +41,7 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'backend/src/config/env.js'), `const version = z.string().default('${version}');\n`);
   writeFileSync(resolve(directory, 'backend/src/app.js'), 'const payload = { version: env.DEVFLOW_VERSION };\n');
   writeFileSync(resolve(directory, '.env.example'), `DEVFLOW_VERSION=${version}\n`);
-  writeFileSync(resolve(directory, 'docker-compose.yml'), `version: \${DEVFLOW_VERSION:-${version}}\n`);
+  writeFileSync(resolve(directory, 'docker-compose.yml'), `version: \${DEVFLOW_VERSION:-${version}}\nservices:\n  backend:\n    image: devflow-backend:\${DEVFLOW_IMAGE_TAG:-latest}\n  frontend:\n    image: devflow-frontend:\${DEVFLOW_IMAGE_TAG:-latest}\n`);
   writeFileSync(resolve(directory, 'docker-compose.maintenance.yml'), `version: \${DEVFLOW_VERSION:-${version}}\n`);
   writeFileSync(resolve(directory, 'README.md'), `Versão atual: **${version}**\n`);
   writeFileSync(resolve(directory, 'CHANGELOG.md'), `## [${version}]\n`);
@@ -53,6 +53,10 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/lib/common.sh'), 'source scripts/lib/version.sh\n');
   writeFileSync(resolve(directory, 'scripts/lib/version.sh'), '# fixture uses the tested library externally\n');
   writeFileSync(resolve(directory, 'scripts/lib/port-ownership.sh'), '# port ownership fixture\n');
+  writeFileSync(resolve(directory, 'scripts/lib/compose-images.sh'), '# compose image fixture\n');
+  writeFileSync(resolve(directory, 'scripts/lib/install-transaction.sh'), '# transaction fixture\n');
+  writeFileSync(resolve(directory, 'scripts/resolve-compose-image.py'), '# resolver fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-compose-images-resume.mjs'), '// image tests fixture\n');
   for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
@@ -72,10 +76,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.3-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.4-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.4-alpha');
+  writeFixture(patchFixture, '0.4.5-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');

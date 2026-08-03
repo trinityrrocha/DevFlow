@@ -101,6 +101,8 @@ devflow_validate_directory_version_consistency() {
   grep -Fqx "DEVFLOW_VERSION=$version" "$root/.env.example" || return 1
   grep -Fq "DEVFLOW_VERSION:-$version" "$root/docker-compose.yml" || return 1
   grep -Fq "DEVFLOW_VERSION:-$version" "$root/docker-compose.maintenance.yml" || return 1
+  grep -Fq 'image: devflow-backend:${DEVFLOW_IMAGE_TAG:-latest}' "$root/docker-compose.yml" || return 1
+  grep -Fq 'image: devflow-frontend:${DEVFLOW_IMAGE_TAG:-latest}' "$root/docker-compose.yml" || return 1
   grep -Fq "Versão atual: **$version**" "$root/README.md" || return 1
   grep -Fq "## [$version]" "$root/CHANGELOG.md" || return 1
   grep -Fq "Versão: \`$version\`" "$root/docs/implementation-status.md" || return 1
@@ -123,7 +125,9 @@ devflow_validate_checkout_version_consistency() {
     docker-compose.maintenance.yml README.md CHANGELOG.md docs/implementation-status.md \
     docs/infrastructure/vps-installation.md docs/roadmap.md docs/traceability.md \
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
-    scripts/publish.sh scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh; do
+    scripts/publish.sh scripts/resolve-compose-image.py scripts/validate-compose-images-resume.mjs \
+    scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
+    scripts/lib/compose-images.sh scripts/lib/install-transaction.sh; do
     git -C "$root" ls-files --error-unmatch "$tracked_file" >/dev/null 2>&1 || return 1
     expected_mode=100644
     [[ "$tracked_file" != scripts/*.sh || "$tracked_file" == scripts/lib/* ]] || expected_mode=100755
@@ -144,8 +148,9 @@ devflow_validate_git_tree_version_consistency() {
     backend/src/app.js .env.example docker-compose.yml docker-compose.maintenance.yml README.md \
     CHANGELOG.md docs/implementation-status.md docs/infrastructure/vps-installation.md \
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
-    scripts/version.sh scripts/health.sh scripts/publish.sh scripts/lib/common.sh scripts/lib/version.sh \
-    scripts/lib/port-ownership.sh \
+    scripts/version.sh scripts/health.sh scripts/publish.sh scripts/resolve-compose-image.py \
+    scripts/validate-compose-images-resume.mjs scripts/lib/common.sh scripts/lib/version.sh \
+    scripts/lib/port-ownership.sh scripts/lib/compose-images.sh scripts/lib/install-transaction.sh \
     | tar -x -C "$temporary"; then
     rm -rf -- "$temporary"
     return 1

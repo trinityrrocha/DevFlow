@@ -304,6 +304,7 @@ rollback_update() {
   (set_managed_env_value DEVFLOW_VERSION "$OLD_VERSION")
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar a versão no ambiente.'; rollback_failures=$((rollback_failures + 1)); }
   export DEVFLOW_VERSION="$OLD_VERSION"
+  export DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
   ln -sfn "$OLD_RELEASE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o link da release anterior.'; rollback_failures=$((rollback_failures + 1)); }
   rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
@@ -463,6 +464,7 @@ git -C "$SOURCE_DIR" merge --ff-only "$NEW_SHA"
 [[ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" == "$NEW_SHA" ]] || die 'Checkout não atingiu o commit esperado.'
 
 export DEVFLOW_VERSION="$NEW_VERSION"
+export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 "${DEVFLOW_COMPOSE[@]}" build backend frontend

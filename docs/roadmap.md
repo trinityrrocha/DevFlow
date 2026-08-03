@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.4-alpha` — imagens determinísticas e retomada segura
+
+- [x] resolver imagens pelo Compose e confirmar existência com `docker image inspect`;
+- [x] normalizar referências locais e Docker Hub sem conflar registries;
+- [x] persistir 14 etapas de instalação em estado transacional atômico;
+- [x] oferecer retomada explícita, preservando imagens e dados válidos;
+- [x] cobrir a regressão em 24 cenários automatizados;
+- [ ] retomar a instalação real e validar health na VPS ARM64.
+
 ## Marco `0.4.3-alpha` — instalação interna independente
 
 - [x] separar instalação interna e publicação HTTPS;
@@ -90,7 +99,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.3-alpha` consistente;
+- versão `0.4.4-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

@@ -21,12 +21,13 @@ Para instalação pública sem clone prévio, `scripts/bootstrap.sh` é o entryp
 | sem argumento / `--check` | diagnóstico sem mutação |
 | `--dry-run` | valida entradas e exibe o plano |
 | `--install` | primeira instalação, após confirmação |
+| `--resume` | retoma somente uma instalação interna parcial comprovadamente compatível |
 
-O instalador rejeita uma instalação existente. Toda atualização pertence exclusivamente a `scripts/update.sh`.
+O instalador rejeita uma instalação concluída. Toda atualização pertence exclusivamente a `scripts/update.sh`; `--resume` não atualiza instalações concluídas e só aceita um checkout parcial limpo, canônico e compatível por fast-forward.
 
 No bootstrap baixado, a ausência de modo abre o fluxo interativo de instalação. No instalador interno e no launcher do repositório, a ausência de modo permanece equivalente a `--check`.
 
-O fluxo é `detectar → validar → resumir → confirmar → aplicar → verificar → promover`. Qualquer incompatibilidade antes da confirmação interrompe a execução. Depois que a aplicação começa, falhas removem apenas o link candidato e registram relatório; dados existentes são preservados.
+O fluxo é `detectar → validar → resumir → confirmar → aplicar → verificar → promover`. As 14 etapas são gravadas atomicamente em `/opt/devflow/state/install-transaction.json`. Qualquer incompatibilidade antes da confirmação interrompe a execução. Depois que a aplicação começa, falhas removem apenas recursos incompletos do DevFlow e registram relatório; checkout, configuração, imagens válidas e dados são preservados.
 
 ## Plataformas e requisitos
 
@@ -71,7 +72,7 @@ O Docker Compose pode precisar de `/opt/fullpassword/.env` e de `env_file` adici
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/sites-available/devflow.conf` e link em `sites-enabled` (fallback `/etc/nginx/conf.d/devflow.conf`);
 - proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`;
-- estado operacional: `/opt/devflow/state/installation.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado;
+- estado operacional: `/opt/devflow/state/installation.json`, `install-transaction.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado;
 - relatório de proxy compartilhado: `/opt/devflow/logs/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.
@@ -80,6 +81,6 @@ Não são definidos `container_name` globais: os nomes derivados do projeto Comp
 
 ## Idempotência e reversibilidade
 
-Uma instalação existente exige o updater dedicado; o instalador nunca sobrescreve `app`. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA. O checkout operacional pertence a root, tem hooks desabilitados, usa HTTPS público sem credenciais e não é ambiente de desenvolvimento.
+Uma instalação concluída exige o updater dedicado; o instalador nunca sobrescreve `app`. Uma tentativa parcial pode ser retomada explicitamente, mas não é promovida até migration, serviços, bootstrap e health serem confirmados. Imagens são obtidas do Compose resolvido, validadas por `docker image inspect` e reutilizadas somente quando rótulos de versão/commit comprovam a release. Arquivos gerenciados carregam marcador de propriedade. Releases são diretórios imutáveis por SHA. O checkout operacional pertence a root, tem hooks desabilitados, usa HTTPS público sem credenciais e não é ambiente de desenvolvimento.
 
 O rollback transacional de dados, release e containers pertence ao updater. O instalador possui somente a restauração local necessária para uma troca atômica de `devflow.conf`. A aplicação continua classificada como alpha porque instalação e recuperação ainda precisam de laboratório Linux reproduzível.

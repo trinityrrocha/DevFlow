@@ -32,6 +32,7 @@ Uso:
   ./install.sh --dry-run --install-scope internal --super-admin-email EMAIL
   sudo ./install.sh --install [opções]
   sudo ./install.sh --install-internal --super-admin-email EMAIL
+  sudo ./install.sh --resume --super-admin-email EMAIL
   sudo ./install.sh [opções]
 
 Sem argumentos, coleta a configuração de forma interativa e solicita confirmação.
@@ -74,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) set_mode dry-run; shift ;;
     --install) set_mode install; shift ;;
     --install-internal) set_mode install; set_install_scope internal; shift ;;
+    --resume) set_mode resume; set_install_scope internal; shift ;;
     --install-scope) require_value "$1" "${2:-}"; set_install_scope "$2"; shift 2 ;;
     --provider) require_value "$1" "${2:-}"; INFRASTRUCTURE_PROVIDER="$2"; PROVIDER_EXPLICIT=true; shift 2 ;;
     --proxy-mode)
@@ -160,7 +162,7 @@ if [[ "$MODE" != check ]]; then
   [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'As portas do frontend e da API devem ser diferentes.'
 fi
 
-[[ "$MODE" != install || "$(id -u)" -eq 0 ]] \
+[[ "$MODE" != install && "$MODE" != resume || "$(id -u)" -eq 0 ]] \
   || die 'Execute a instalação com sudo ou como root.'
 
 TEMP_PARENT="$(readlink -f "${TMPDIR:-/tmp}" 2>/dev/null || true)"
@@ -241,7 +243,7 @@ Checkout validado:
   commit: $COMMIT
 EOF
 
-if [[ "$MODE" == install ]]; then
+if [[ "$MODE" == install || "$MODE" == resume ]]; then
   cat <<EOF
 Resumo da instalação pública:
   repositório: $REPOSITORY_URL
@@ -262,15 +264,15 @@ fi
 
 INSTALL_ARGS=("--$MODE")
 if [[ "$MODE" != check ]]; then
-  INSTALL_ARGS+=(--install-scope "$INSTALL_SCOPE" --provider "$INFRASTRUCTURE_PROVIDER" \
-    --super-admin-email "$SUPER_ADMIN_EMAIL" \
+  [[ "$MODE" == resume ]] || INSTALL_ARGS+=(--install-scope "$INSTALL_SCOPE")
+  INSTALL_ARGS+=(--provider "$INFRASTRUCTURE_PROVIDER" --super-admin-email "$SUPER_ADMIN_EMAIL" \
     --http-port "$HTTP_PORT" --api-port "$API_PORT")
   if [[ "$INSTALL_SCOPE" == complete ]]; then
     INSTALL_ARGS+=(--domain "$DOMAIN" --letsencrypt-email "$LETSENCRYPT_EMAIL")
   fi
 fi
 
-if [[ "$MODE" == install ]]; then
+if [[ "$MODE" == install || "$MODE" == resume ]]; then
   DEVFLOW_BOOTSTRAP_CONFIRMED=true DEVFLOW_BOOTSTRAP_REF="$SELECTED_REF" \
     "$CHECKOUT/scripts/install.sh" "${INSTALL_ARGS[@]}"
 else

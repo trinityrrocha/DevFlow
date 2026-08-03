@@ -6,6 +6,10 @@ COPY backend/package.json ./backend/package.json
 RUN pnpm install --filter @devflow/backend --prod --frozen-lockfile
 
 FROM node:22-alpine
+ARG DEVFLOW_BUILD_VERSION=unknown
+ARG DEVFLOW_BUILD_COMMIT=unknown
+LABEL org.opencontainers.image.version="$DEVFLOW_BUILD_VERSION" \
+      org.opencontainers.image.revision="$DEVFLOW_BUILD_COMMIT"
 RUN apk add --no-cache tini
 WORKDIR /app/backend
 ENV NODE_ENV=production
