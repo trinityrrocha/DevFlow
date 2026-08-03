@@ -1030,6 +1030,7 @@ EOF
 devflow_print_port_evidence 80
 devflow_print_port_evidence 443
 cat <<EOF
+installation_mode=$PROXY_MODE
 public_proxy_status=$DEVFLOW_PUBLIC_PROXY_STATUS
 internal_installation_ready=$DEVFLOW_INTERNAL_INSTALLATION_READY
 external_publication_ready=$DEVFLOW_EXTERNAL_PUBLICATION_READY
@@ -1239,7 +1240,8 @@ export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
 installation_failed() {
   local exit_code="${1:-$?}"
   trap - ERR INT TERM HUP
-  install_transaction_fail "${CURRENT_INSTALL_STAGE:-01-preflight}" | tee -a "$INSTALL_LOG" || true
+  install_transaction_fail "${CURRENT_INSTALL_STAGE:-01-preflight}" "${ROOT_CAUSE:-unexpected-command-failure}" \
+    | tee -a "$INSTALL_LOG" || true
   DEVFLOW_APPLICATION_INSTALLED=false
   export DEVFLOW_APPLICATION_INSTALLED
   if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
@@ -1537,8 +1539,23 @@ CURRENT_INSTALL_STAGE=06-validate-images
 resolve_compose_image_or_die backend backend "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED" backend_image
 resolve_compose_image_or_die frontend frontend "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED" frontend_image
 resolve_compose_image_or_die db PostgreSQL "$POSTGRES_IMAGE_EXPECTED" "$POSTGRES_IMAGE_RESOLVED" postgres_image
-validate_backend_migration_image | tee -a "$INSTALL_LOG" \
-  || die 'A imagem do backend não contém o diretório e a migration inicial esperados.'
+image_validation_status=0
+if validate_backend_migration_image "$backend_image" | tee -a "$INSTALL_LOG"; then
+  :
+else
+  image_validation_status="${PIPESTATUS[0]}"
+fi
+case "$image_validation_status" in
+  0) ;;
+  40|41)
+    ROOT_CAUSE=image-content-invalid
+    die 'A imagem do backend não contém os artefatos de migration esperados.'
+    ;;
+  *)
+    ROOT_CAUSE=image-validation-runtime-error
+    die 'O runtime Docker não conseguiu validar o conteúdo da imagem do backend.'
+    ;;
+esac
 BACKEND_IMAGE_PRESENT=true
 FRONTEND_IMAGE_PRESENT=true
 POSTGRES_IMAGE_PRESENT=true
@@ -1555,14 +1572,15 @@ printf '%s\n' \
   'postgres_service=db' \
   "postgres_image_resolved=$postgres_image" \
   'postgres_image_present=true' | tee -a "$INSTALL_LOG"
-read -r db_uid db_gid < <(docker run --rm --entrypoint sh "$postgres_image" -c 'printf "%s %s\n" "$(id -u postgres)" "$(id -g postgres)"')
-read -r backend_uid backend_gid < <(docker run --rm --entrypoint sh "$backend_image" -c 'printf "%s %s\n" "$(id -u devflow)" "$(id -g devflow)"')
+read -r db_uid db_gid < <(docker run --rm --network none --entrypoint sh "$postgres_image" -c 'printf "%s %s\n" "$(id -u postgres)" "$(id -g postgres)"')
+read -r backend_uid backend_gid < <(docker run --rm --network none --entrypoint sh "$backend_image" -c 'printf "%s %s\n" "$(id -u devflow)" "$(id -g devflow)"')
 [[ "$db_uid" =~ ^[0-9]+$ && "$db_gid" =~ ^[0-9]+$ && "$backend_uid" =~ ^[0-9]+$ && "$backend_gid" =~ ^[0-9]+$ ]] \
   || die 'Não foi possível validar os usuários não-root dos containers.'
 chown "$db_uid:$db_gid" "$DEVFLOW_DATA_ROOT/postgres"
 chown "$backend_uid:$backend_gid" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
 chmod 0750 "$DEVFLOW_DATA_ROOT/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads"
 install_transaction_complete_stage 06-validate-images | tee -a "$INSTALL_LOG"
+ROOT_CAUSE=unexpected-command-failure
 
 CURRENT_INSTALL_STAGE=07-create-networks
 ensure_devflow_edge_network

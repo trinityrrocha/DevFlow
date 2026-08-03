@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.7-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. O Compose runtime usa explicitamente `/opt/devflow/config/devflow.env`; a retomada real ainda deve ser homologada na VPS.
+> Versão `0.4.8-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. A validação da imagem ocorre sem Compose ou redes; a retomada real ainda deve ser homologada na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.7-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.8-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -87,17 +87,23 @@ sudo ./install.sh --resume \
   --super-admin-email contato@sti1.com.br
 ```
 
-Para a tentativa interrompida em `09-run-migrations`, o dry-run esperado inclui:
+Para a tentativa interrompida em `06-validate-images` pelo falso negativo corrigido na
+`0.4.8-alpha`, o dry-run esperado inclui:
 
 ```text
-database_container_ready=true
-database_healthy=true
-migrations_ready=false
+installation_mode=shared
+internal_installation_ready=true
+external_publication_ready=false
 backend_build_required=true
-frontend_build_required=false
-resume_from_stage=09-run-migrations
+frontend_build_required=true
+resume_from_stage=06-validate-images
 can_resume=true
 ```
+
+Os indicadores de build podem ser `false` quando as imagens locais já possuem todos os
+rótulos OCI da versão e do commit atuais. Imagens `0.4.7-alpha` válidas podem ser
+reconstruídas para receber os metadados de `0.4.8-alpha`; isso não apaga o volume do
+PostgreSQL nem inicia os containers antes das etapas correspondentes.
 
 O `--resume` exibe o menu numérico abaixo e não aceita frases livres:
 
@@ -110,7 +116,12 @@ Instalação incompleta encontrada.
 Escolha [1/2]:
 ```
 
-Após a escolha `1`, a imagem do backend precisa comprovar `/database/migrations/001_initial_schema.sql`; o PostgreSQL saudável e seu volume são preservados. Não execute `publish.sh` nem a migração de proxy neste ensaio.
+Após a escolha `1`, a imagem do backend comprova
+`/database/migrations/001_initial_schema.sql` por meio de um container efêmero com
+`--network none`. A validação não depende de redes do Compose, banco, proxy ou provider.
+Em caso de sucesso, o estado registra `completed_stage=06-validate-images` e
+`resume_from_stage=07-create-networks`; o volume do PostgreSQL permanece preservado. Não
+execute `publish.sh` nem a migração de proxy neste ensaio.
 
 Antes do dry-run, o diagnóstico sanitizado pode confirmar imports, argumentos e dependências sem abrir o `.env`:
 

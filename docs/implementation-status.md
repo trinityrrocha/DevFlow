@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-03. Versão: `0.4.7-alpha`.
+Data de corte: 2026-08-03. Versão: `0.4.8-alpha`.
 
 ## Provider Nginx do host
 
@@ -13,6 +13,8 @@ Na tentativa real de `0.4.4-alpha`, dry-run e resume encerraram com código `1` 
 No dry-run real de `0.4.5-alpha`, o logger confirmou que a renderização Compose falhava antes da resolução de imagens: o comando divergente não aplicava `/opt/devflow/config/devflow.env`, e `DB_PASSWORD` ficou ausente na interpolação. A `0.4.6-alpha` centraliza o comando Compose, separa validação estrutural de runtime, classifica configuração parcial e oferece recuperação somente sem evidência de dados. A imagem nunca foi a causa primária dessa tentativa.
 
 Na retomada real de `0.4.6-alpha`, o PostgreSQL chegou a `healthy`, mas a etapa `09-run-migrations` falhou com `ENOENT`: o `docker compose run` substituiu o `CMD` que definia `MIGRATIONS_DIR`, levando o Node a procurar `/app/database/migrations` enquanto a imagem continha `/database/migrations`. A `0.4.7-alpha` torna esse ambiente permanente, valida os arquivos dentro da imagem, centraliza o comando e preserva banco/frontend comprovados ao retomar da etapa 09. Essa correção ainda não foi executada na VPS.
+
+Na retomada de `0.4.7-alpha`, as imagens foram construídas e o backend foi comprovado externamente com `/database/migrations/001_initial_schema.sql`, mas a etapa 06 retornou falso negativo. O validador usava `docker compose run` antes da criação das redes e descartava stderr. A `0.4.8-alpha` usa a imagem resolvida em `docker run --network none`, classifica conteúdo e runtime separadamente e registra a causa no estado transacional. A retomada real ainda não foi repetida.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 
@@ -49,7 +51,7 @@ Os resultados efetivamente obtidos nesta rodada devem constar no relatório fina
 - construir imagens e iniciar todos os containers em Linux com Docker;
 - executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
 - executar migration em PostgreSQL real e confirmar `/api/health`;
-- executar dry-run e `--resume` com `0.4.7-alpha`, confirmar `resume_from_stage=09-run-migrations`, diretório `/database/migrations` e arquivar os relatórios sanitizados;
+- executar dry-run e `--resume` com `0.4.8-alpha`, confirmar a validação direta da imagem na etapa 06 e arquivar os relatórios sanitizados;
 - confirmar migration, bootstrap do Super Admin, health interno e estado transacional final na VPS ARM64;
 - confirmar na VPS todos os booleans do Compose, Nginx, loopback, health e rollback antes de considerar `migration_ready=true`;
 - confirmar `compose_cross_directory_supported=true`, `compose_merge_valid=true`, `changes_performed=false` e `installation_ready=true` no dry-run privilegiado;

@@ -1,5 +1,16 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.8-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Inspeção independente | `validate_backend_migration_image IMAGE` | `docker run --rm --network none`, sem Compose |
+| Conteúdo versus runtime | marcadores allowlisted e códigos distintos | status `failed` ou `runtime-error` sem falso negativo |
+| Modos/providers | função comum sem proxy, rede ou provider | mesmos 24 cenários para isolado e compartilhado |
+| Estado transacional | `rootCause` e `install_stage_next` | etapa 06 concluída retoma da 07; falha retoma da 06 |
+| Preservação | sem volumes, portas ou redes no validador | Full Password e 80/443 fora do escopo |
+| Regressões | `validate-image-validation.mjs` | 24 cenários automatizados |
+
 ## Instalação interna `0.4.7-alpha`
 
 | Requisito | Implementação | Evidência |

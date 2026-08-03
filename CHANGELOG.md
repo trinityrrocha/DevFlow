@@ -2,6 +2,22 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.8-alpha] - 2026-08-03
+
+### Corrigido
+
+- a validação dos artefatos de migration deixou de criar um container pelo Compose antes das redes e passa a inspecionar diretamente a imagem resolvida com `docker run --rm --network none`;
+- marcadores internos diferenciam diretório ausente, migration inicial ausente e falha do runtime Docker, evitando falsos negativos de conteúdo;
+- stdout é aceito somente por allowlist e stderr recebe sanitização antes do diagnóstico, sem ambiente, volumes ou redes do serviço;
+- install e update fornecem explicitamente a imagem já resolvida ao validador independente de provider;
+- o estado transacional registra `rootCause` e avança de `completed_stage=06-validate-images` para `resume_from_stage=07-create-networks`.
+
+### Testes e homologação
+
+- 24 cenários automatizados cobrem imagem válida/inválida, redes ausentes, modos compartilhado/isolado, providers, runtime Docker, sigilo, retomada, ARM64 e preservação do Full Password;
+- a imagem `devflow-backend:latest` da tentativa `0.4.7-alpha` foi comprovada correta diretamente na VPS; o falso negativo ocorreu antes da execução do comando interno;
+- Docker 29.6.1, Compose 5.3.1 e a retomada real da etapa 06 permanecem pendentes de repetição após esta publicação.
+
 ## [0.4.7-alpha] - 2026-08-03
 
 ### Corrigido

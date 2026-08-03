@@ -49,6 +49,19 @@ for (const path of shellFiles) {
 }
 
 const common = readFileSync(resolve(root, 'scripts/lib/common.sh'), 'utf8');
+const imageValidationStart = common.indexOf('validate_backend_migration_image()');
+const imageValidationEnd = common.indexOf('\nrun_devflow_migrations()', imageValidationStart);
+const imageValidationBody = common.slice(imageValidationStart, imageValidationEnd);
+if (imageValidationStart < 0 || imageValidationEnd < 0) {
+  failures.push('validador est\u00e1tico da imagem do backend n\u00e3o localizado');
+} else {
+  if (!imageValidationBody.includes('docker run --rm --network none')) {
+    failures.push('valida\u00e7\u00e3o est\u00e1tica da imagem n\u00e3o usa docker run sem rede');
+  }
+  if (/DEVFLOW_COMPOSE|docker\s+compose/u.test(imageValidationBody)) {
+    failures.push('valida\u00e7\u00e3o est\u00e1tica da imagem depende de Docker Compose');
+  }
+}
 for (const fragment of [
   'build_devflow_compose_command()',
   'docker compose --env-file "$env_file"',

@@ -470,8 +470,15 @@ export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 "${DEVFLOW_COMPOSE[@]}" build backend frontend
-validate_backend_migration_image \
-  || die 'A imagem candidata do backend não contém as migrations esperadas.'
+candidate_backend_image="$(resolve_compose_service_image backend)" \
+  || die 'A imagem candidata do backend não pôde ser resolvida após a build.'
+candidate_image_validation_status=0
+validate_backend_migration_image "$candidate_backend_image" || candidate_image_validation_status=$?
+case "$candidate_image_validation_status" in
+  0) ;;
+  40|41) die 'A imagem candidata do backend não contém os artefatos de migration esperados.' ;;
+  *) die 'O runtime Docker não conseguiu validar a imagem candidata do backend.' ;;
+esac
 
 UPDATE_PHASE=maintenance
 enter_maintenance "$CANDIDATE_DIR"

@@ -391,16 +391,79 @@ require_numeric_confirmation() {
 }
 
 validate_backend_migration_image() {
-  local status=0
-  "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --entrypoint sh backend -c \
-    'test -d /database/migrations && test -f /database/migrations/001_initial_schema.sql' \
-    >/dev/null 2>&1 || status=$?
-  if [[ "$status" -eq 0 ]]; then
-    printf '%s\n' 'migration_directory_present=true' 'initial_migration_present=true'
-    return 0
-  fi
-  printf '%s\n' 'migration_directory_present=false' 'initial_migration_present=false'
-  return "$status"
+  local backend_image="${1:-}" validation_root stdout_file stderr_file
+  local docker_exit_code=0 validation_marker= sanitized_line
+  validate_image_reference "$backend_image" || {
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=true' \
+      'docker_exit_code=not-run' \
+      'root_cause=image-validation-runtime-error'
+    return 42
+  }
+
+  validation_root="$(mktemp -d "${TMPDIR:-/tmp}/devflow-image-validation.XXXXXX")"
+  chmod 0700 "$validation_root"
+  stdout_file="$validation_root/stdout"
+  stderr_file="$validation_root/stderr"
+  : > "$stdout_file"
+  : > "$stderr_file"
+  chmod 0600 "$stdout_file" "$stderr_file"
+
+  docker run --rm --network none --entrypoint sh "$backend_image" -c '
+    if [ ! -d /database/migrations ]; then
+      printf "%s\n" "devflow_image_validation_result=migration-directory-missing"
+      exit 40
+    fi
+    if [ ! -f /database/migrations/001_initial_schema.sql ]; then
+      printf "%s\n" "devflow_image_validation_result=initial-migration-missing"
+      exit 41
+    fi
+    printf "%s\n" "devflow_image_validation_result=passed"
+  ' > "$stdout_file" 2> "$stderr_file" || docker_exit_code=$?
+
+  validation_marker="$(sed -nE 's/^devflow_image_validation_result=(passed|migration-directory-missing|initial-migration-missing)$/\1/p' "$stdout_file" | head -n1)"
+  case "$validation_marker:$docker_exit_code" in
+    passed:0)
+      printf '%s\n' \
+        'backend_image_validation_status=passed' \
+        'migration_directory_present=true' \
+        'initial_migration_present=true' \
+        'image_validation_runtime=docker-run' \
+        'image_validation_network=none'
+      rm -rf -- "$validation_root"
+      return 0
+      ;;
+    migration-directory-missing:40)
+      printf '%s\n' \
+        'backend_image_validation_status=failed' \
+        'migration_directory_present=false' \
+        'initial_migration_present=false' \
+        'root_cause=migration-directory-missing'
+      rm -rf -- "$validation_root"
+      return 40
+      ;;
+    initial-migration-missing:41)
+      printf '%s\n' \
+        'backend_image_validation_status=failed' \
+        'migration_directory_present=true' \
+        'initial_migration_present=false' \
+        'root_cause=initial-migration-missing'
+      rm -rf -- "$validation_root"
+      return 41
+      ;;
+  esac
+
+  printf '%s\n' \
+    'backend_image_validation_status=runtime-error' \
+    'image_validation_container_failed=true' \
+    "docker_exit_code=$docker_exit_code" \
+    'root_cause=image-validation-runtime-error'
+  while IFS= read -r sanitized_line; do
+    [[ -z "$sanitized_line" ]] || printf 'docker_stderr=%s\n' "$sanitized_line"
+  done < <(redact_stream < "$stderr_file" | head -n5)
+  rm -rf -- "$validation_root"
+  return 42
 }
 
 run_devflow_migrations() {

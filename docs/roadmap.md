@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.8-alpha` — validação direta das imagens
+
+- [x] remover a dependência de Compose e redes da inspeção do backend;
+- [x] executar a validação com `docker run --network none` sobre a imagem resolvida;
+- [x] distinguir conteúdo ausente de erro do runtime Docker;
+- [x] persistir `rootCause` e o próximo estágio transacional;
+- [x] cobrir os dois modos e os três providers em 24 cenários;
+- [ ] retomar a instalação real a partir de `06-validate-images` na VPS ARM64.
+
 ## Marco `0.4.7-alpha` — migrations e confirmações numéricas
 
 - [x] tornar `/database/migrations` permanente na imagem e no Compose;
@@ -126,7 +135,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.7-alpha` consistente;
+- versão `0.4.8-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

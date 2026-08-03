@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.7-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.8-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,7 +42,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.7-alpha
+./install.sh --check --ref main --expected-version 0.4.8-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -97,6 +97,8 @@ docker compose --env-file /opt/devflow/config/devflow.env \
 ```
 
 Use-o somente por meio dos scripts operacionais, que validam a imagem e registram o código de saída.
+
+Antes das redes existirem, a etapa `06-validate-images` inspeciona a imagem resolvida diretamente com `docker run --rm --network none`. Ela não utiliza Compose, banco, volumes, proxy ou provider e diferencia conteúdo ausente de erro do runtime Docker.
 
 Para investigar somente a inicialização, sem exibir valores de configuração ou aplicar mudanças:
 
