@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.9-alpha` — identidade instalada e estado versionado
+
+- [x] centralizar versão, commit, ref e repositório no checkout canônico;
+- [x] criar schema camelCase `schemaVersion: 1` com promoção atômica;
+- [x] criar reparador idempotente com backup protegido;
+- [x] reconciliar configuração, labels OCI e API sem reiniciar serviços;
+- [x] bloquear update e publicação quando o estado estiver inconsistente;
+- [ ] executar o reparo real e o dry-run de publicação na VPS ARM64.
+
 ## Marco `0.4.8-alpha` — validação direta das imagens
 
 - [x] remover a dependência de Compose e redes da inspeção do backend;
@@ -135,7 +144,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.8-alpha` consistente;
+- versão `0.4.9-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

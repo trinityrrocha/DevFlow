@@ -666,6 +666,7 @@ COMPOSE_STRUCTURE_STATUS=pending-docker-install
 if [[ "$MODE" != check ]]; then
   for required_file in database/migrations/001_initial_schema.sql backend/scripts/migrate.js \
     scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh \
+    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
     scripts/resolve-compose-image.py scripts/lib/compose-images.sh scripts/lib/install-transaction.sh; do
     [[ -f "$SOURCE_DIR/$required_file" && ! -L "$SOURCE_DIR/$required_file" ]] \
       || die "Componente interno obrigatório ausente ou inválido: $required_file"
@@ -1483,6 +1484,8 @@ ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
 load_devflow_env
 validate_runtime_paths
+DEVFLOW_RELEASE_COMMIT="$release_sha"
+export DEVFLOW_RELEASE_COMMIT
 devflow_inspect_private_env "$DEVFLOW_ENV_FILE" \
   || die 'A configuração privada gerada não atende ao contrato obrigatório.'
 [[ "$SUPER_ADMIN_EMAIL" == "$requested_super_admin_email" ]] \
@@ -1644,9 +1647,12 @@ install_transaction_complete_stage 13-health | tee -a "$INSTALL_LOG"
 
 CURRENT_INSTALL_STAGE=14-write-final-state
 set_managed_env_value DEVFLOW_VERSION "$DEVFLOW_RELEASE_VERSION"
+set_managed_env_value DEVFLOW_RELEASE_COMMIT "$release_sha"
 ln -sfn "$release_dir" "$DEVFLOW_INSTALL_ROOT/app"
 INSTALL_PROMOTED=true
 rm -f "$DEVFLOW_INSTALL_ROOT/app.candidate"
+DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"
+export DEVFLOW_APP_ROOT
 
 install -m 0644 "$release_dir/scripts/systemd/devflow-backup.service" /etc/systemd/system/devflow-backup.service
 install -m 0644 "$release_dir/scripts/systemd/devflow-backup.timer" /etc/systemd/system/devflow-backup.timer
@@ -1656,6 +1662,16 @@ provider_state_write "$INFRASTRUCTURE_PROVIDER" "${DOMAIN:-internal.local}" "$HT
 DEVFLOW_APPLICATION_INSTALLED=true
 export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_EXTERNAL_PUBLICATION_ENABLED \
   DEVFLOW_PUBLIC_PROXY_MODIFIED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL
+resolve_installed_release_identity "$operational_source_dir" main >/dev/null \
+  || die 'A identidade final do checkout canônico não pôde ser comprovada.'
+[[ "$INSTALLED_VERSION" == "$DEVFLOW_RELEASE_VERSION" && "$INSTALLED_COMMIT" == "$release_sha" ]] \
+  || die 'A identidade final diverge da release instalada.'
+reconcile_installed_release_runtime \
+  || die 'Versão, commit, imagens ou API divergem antes da gravação do estado final.'
+printf '%s\n' \
+  "final_state_version=$INSTALLED_VERSION" \
+  "final_state_commit=$INSTALLED_COMMIT" \
+  'final_state_identity_valid=true' | tee -a "$INSTALL_LOG"
 write_install_report success
 install_transaction_complete_stage 14-write-final-state | tee -a "$INSTALL_LOG"
 trap - ERR INT TERM HUP

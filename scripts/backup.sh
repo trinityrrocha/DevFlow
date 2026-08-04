@@ -9,6 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 DEVFLOW_ENV_FILE="$ENV_FILE"
 load_devflow_env
+DEVFLOW_IDENTITY_RELEASE_ROOT="$PROJECT_DIR"
+resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
+  || { echo 'Identidade instalada não comprovada; backup operacional bloqueado.' >&2; exit 1; }
+DEVFLOW_VERSION="$INSTALLED_VERSION"
+DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
 command -v flock >/dev/null 2>&1 || { echo 'flock é obrigatório para serializar backups.' >&2; exit 1; }
 exec 8>/run/lock/devflow-backup.lock
 flock -n 8 || { echo 'Outro backup DevFlow está em andamento.' >&2; exit 1; }
@@ -48,7 +54,7 @@ docker run --rm \
 
 db_sha="$(sha256sum "$TEMP_DIR/database.dump" | awk '{print $1}')"
 uploads_sha="$(sha256sum "$TEMP_DIR/uploads.tar.gz" | awk '{print $1}')"
-app_sha="$(cat "$PROJECT_DIR/.devflow-release" 2>/dev/null || git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || printf 'uncommitted')"
+app_sha="$INSTALLED_COMMIT"
 cat > "$TEMP_DIR/manifest.json" <<EOF
 {"format":"devflow-backup-v1","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","application_sha":"$app_sha","database_sha256":"$db_sha","uploads_sha256":"$uploads_sha"}
 EOF

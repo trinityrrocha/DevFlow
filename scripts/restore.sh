@@ -15,6 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 DEVFLOW_ENV_FILE="$ENV_FILE"
 load_devflow_env
+DEVFLOW_IDENTITY_RELEASE_ROOT="$PROJECT_DIR"
+resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
+  || { echo 'Identidade instalada não comprovada; restauração bloqueada.' >&2; exit 1; }
+DEVFLOW_VERSION="$INSTALLED_VERSION"
+DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 BACKUP_FILE="$(realpath "$1")"
 MAX_RESTORE_MB="${BACKUP_MAX_RESTORE_MB:-4096}"

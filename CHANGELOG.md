@@ -2,6 +2,22 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.9-alpha] - 2026-08-03
+
+### Corrigido
+
+- a identidade instalada passa a ser resolvida exclusivamente pelo checkout canônico protegido em `/opt/devflow/source`, eliminando o commit antigo recarregado do `.env` durante uma retomada;
+- `installation.json` adota `schemaVersion: 1`, nomes camelCase únicos, validação estrita e gravação atômica com `fsync` e permissões `root:root 600`;
+- o reparador idempotente cria backup protegido antes de migrar somente os metadados, sem reiniciar containers, executar migrations ou tocar no proxy;
+- health, version, backup, restore, diagnose, publish e update consultam a mesma identidade central; publicação e update permanecem bloqueados enquanto o estado estiver inconsistente;
+- update registra `previousInstalledCommit` e somente promove o commit candidato depois dos health checks; rollback valida e restaura a identidade anterior comprovada;
+- a API de health inclui o commit sanitizado e a reconciliação confirma versão e revision OCI de backend/frontend.
+
+### Homologação
+
+- 25 cenários obrigatórios mais o gate de publicação cobrem checkout, schema, backup, atomicidade, idempotência, modos, update, rollback e preservação;
+- a instalação interna `0.4.8-alpha` está saudável na VPS ARM64; o reparo real do commit legado e o dry-run da publicação externa permanecem pendentes.
+
 ## [0.4.8-alpha] - 2026-08-03
 
 ### Corrigido

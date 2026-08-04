@@ -82,7 +82,7 @@ const transactionProbe = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.8-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
+  install_transaction_begin 0.4.9-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
   install_transaction_complete_stage 06-validate-images
   grep -F '"resumeFromStage": "07-create-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
   install_transaction_fail 06-validate-images image-validation-runtime-error

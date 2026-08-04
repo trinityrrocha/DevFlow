@@ -62,8 +62,8 @@ Estrutura persistente do adaptador:
 ├── backups/proxy/                         # 0700 por transação
 ├── logs/                                  # diretório 0750; logs 0640
 └── state/
-    ├── installation.json                  # 0640
-    ├── version.json                       # 0640
+    ├── installation.json                  # 0600, root:root
+    ├── version.json                       # 0600, root:root
     └── proxy-adapter.json                 # 0640
 ```
 

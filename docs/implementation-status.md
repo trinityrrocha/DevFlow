@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-03. Versão: `0.4.8-alpha`.
+Data de corte: 2026-08-03. Versão: `0.4.9-alpha`.
 
 ## Provider Nginx do host
 
@@ -15,6 +15,8 @@ No dry-run real de `0.4.5-alpha`, o logger confirmou que a renderização Compos
 Na retomada real de `0.4.6-alpha`, o PostgreSQL chegou a `healthy`, mas a etapa `09-run-migrations` falhou com `ENOENT`: o `docker compose run` substituiu o `CMD` que definia `MIGRATIONS_DIR`, levando o Node a procurar `/app/database/migrations` enquanto a imagem continha `/database/migrations`. A `0.4.7-alpha` torna esse ambiente permanente, valida os arquivos dentro da imagem, centraliza o comando e preserva banco/frontend comprovados ao retomar da etapa 09. Essa correção ainda não foi executada na VPS.
 
 Na retomada de `0.4.7-alpha`, as imagens foram construídas e o backend foi comprovado externamente com `/database/migrations/001_initial_schema.sql`, mas a etapa 06 retornou falso negativo. O validador usava `docker compose run` antes da criação das redes e descartava stderr. A `0.4.8-alpha` usa a imagem resolvida em `docker run --network none`, classifica conteúdo e runtime separadamente e registra a causa no estado transacional. A retomada real ainda não foi repetida.
+
+A retomada `0.4.8-alpha` concluiu a instalação interna e todos os health checks na VPS ARM64. O estado final, porém, herdou o commit `0.4.6-alpha` do `.env` depois de `load_devflow_env`. A `0.4.9-alpha` resolve a identidade pelo checkout canônico, introduz schema e reparo atômico, reconcilia imagens/API e bloqueia update/publicação enquanto houver divergência. O reparo real ainda não foi executado na VPS.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 

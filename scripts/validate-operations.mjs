@@ -155,7 +155,8 @@ const updaterGates = [
   ['restauração', 'restore.sh'],
   ['log', 'UPDATE_LOG'],
   ['confirmação', 'require_numeric_confirmation application-update'],
-  ['estado de versão', 'write_version_state "$NEW_SHA"'],
+  ['estado instalado', 'persist_operational_installation_state'],
+  ['commit anterior transacional', 'previousInstalledCommit'],
 ];
 for (const [label, fragment] of updaterGates) {
   if (!update.includes(fragment)) throw new Error(`Gate ausente no updater: ${label}.`);

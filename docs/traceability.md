@@ -1,5 +1,17 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.9-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Fonte de verdade | `resolve_installed_release_identity` | HEAD limpo de `/opt/devflow/source`, remote e ref canônicos |
+| Contrato do estado | `schemaVersion: 1` em camelCase | validador Python estrito e escrita `fsync` + rename |
+| Reparo seguro | `repair-installation-state.sh` | backup `600`, menu numérico e nenhuma operação em containers |
+| Reconciliação | labels OCI e `/api/health` | version/revision de backend e frontend comparados ao checkout |
+| Update/rollback | `previousInstalledCommit` transacional | candidato gravado só após health; rollback valida o anterior |
+| Publicação | gate de estado consistente | `publish.sh --dry-run` falha fechado antes de qualquer mudança |
+| Regressões | `validate-installation-state.mjs` | 25 cenários obrigatórios e gate adicional de publicação |
+
 ## Instalação interna `0.4.8-alpha`
 
 | Requisito | Implementação | Evidência |

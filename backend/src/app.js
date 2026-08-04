@@ -59,6 +59,7 @@ app.get('/api/health', async (_req, res, next) => {
     res.json({
       status: 'ok',
       version: env.DEVFLOW_VERSION,
+      commit: env.DEVFLOW_RELEASE_COMMIT,
       environment: env.NODE_ENV,
       migration: migration.rows[0]?.version || null
     });

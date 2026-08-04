@@ -37,10 +37,20 @@ load_devflow_env
 validate_runtime_paths
 EXTERNAL_PUBLICATION_ENABLED=true
 INSTALLATION_SCOPE=complete
-if load_installation_state; then
+INSTALLATION_STATE_HEALTH=degraded
+REPAIR_AVAILABLE=false
+INSTALLED_STATE_PRESENT=false
+INSTALLED_STATE_SCHEMA_VALID=false
+INSTALLED_STATE_VERSION_MATCH=false
+INSTALLED_STATE_COMMIT_MATCH=false
+INSTALLED_STATE_SOURCE_COMMIT_MATCH=false
+if validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json"; then
+  INSTALLATION_STATE_HEALTH=healthy
   EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
   INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
   [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] || INTERNAL_ONLY=true
+else
+  INTERNAL_ONLY=true
 fi
 provider_resolve_installed
 provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
@@ -51,6 +61,12 @@ EXPECTED_VERSION="${DEVFLOW_EXPECTED_VERSION:-$(devflow_read_version_file "$DEVF
 devflow_semver_is_valid "$EXPECTED_VERSION" || die 'Versão esperada inválida.'
 export DEVFLOW_VERSION="$EXPECTED_VERSION"
 compose_files
+RUNTIME_IDENTITY_VALID=false
+reconcile_installed_release_runtime && RUNTIME_IDENTITY_VALID=true
+if [[ "$RUNTIME_IDENTITY_VALID" != true ]]; then
+  INSTALLATION_STATE_HEALTH=degraded
+  REPAIR_AVAILABLE=false
+fi
 
 failures=0
 INTERNAL_FRONTEND_HEALTHY=true
@@ -194,6 +210,15 @@ if [[ "$failures" -gt 0 ]]; then
     printf 'frontend_image_present=%s\n' "$FRONTEND_IMAGE_PRESENT"
     printf 'postgres_image_present=%s\n' "$POSTGRES_IMAGE_PRESENT"
     printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+    printf 'installed_state_present=%s\n' "$INSTALLED_STATE_PRESENT"
+    printf 'installed_state_schema_valid=%s\n' "$INSTALLED_STATE_SCHEMA_VALID"
+    printf 'installed_state_version_match=%s\n' "$INSTALLED_STATE_VERSION_MATCH"
+    printf 'installed_state_commit_match=%s\n' "$INSTALLED_STATE_COMMIT_MATCH"
+    printf 'source_commit_match=%s\n' "$INSTALLED_STATE_SOURCE_COMMIT_MATCH"
+    printf 'backend_image_commit_match=%s\n' "$BACKEND_IMAGE_COMMIT_MATCH"
+    printf 'frontend_image_commit_match=%s\n' "$FRONTEND_IMAGE_COMMIT_MATCH"
+    printf 'installation_state_health=%s\n' "$INSTALLATION_STATE_HEALTH"
+    printf 'repair_available=%s\n' "$REPAIR_AVAILABLE"
     [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
       && printf 'external_https_status=failed\n' || printf 'external_https_status=not-configured\n'
     printf 'overall_internal_health=unhealthy\n'
@@ -210,6 +235,15 @@ if [[ "$QUIET" == false ]]; then
   printf 'frontend_image_present=true\n'
   printf 'postgres_image_present=true\n'
   printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+  printf 'installed_state_present=%s\n' "$INSTALLED_STATE_PRESENT"
+  printf 'installed_state_schema_valid=%s\n' "$INSTALLED_STATE_SCHEMA_VALID"
+  printf 'installed_state_version_match=%s\n' "$INSTALLED_STATE_VERSION_MATCH"
+  printf 'installed_state_commit_match=%s\n' "$INSTALLED_STATE_COMMIT_MATCH"
+  printf 'source_commit_match=%s\n' "$INSTALLED_STATE_SOURCE_COMMIT_MATCH"
+  printf 'backend_image_commit_match=%s\n' "$BACKEND_IMAGE_COMMIT_MATCH"
+  printf 'frontend_image_commit_match=%s\n' "$FRONTEND_IMAGE_COMMIT_MATCH"
+  printf 'installation_state_health=%s\n' "$INSTALLATION_STATE_HEALTH"
+  printf 'repair_available=%s\n' "$REPAIR_AVAILABLE"
   [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
     && printf 'external_https_status=healthy\n' || printf 'external_https_status=not-configured\n'
   printf 'overall_internal_health=healthy\n'

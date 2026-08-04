@@ -11,7 +11,7 @@ const forbiddenNames = [
 const allowedNames = new Set(['.env.example']);
 const textExtensions = new Set([
   '', '.cjs', '.conf', '.css', '.html', '.js', '.json', '.jsx', '.md', '.mjs', '.service',
-  '.sh', '.sql', '.template', '.timer', '.txt', '.yaml', '.yml',
+  '.py', '.sh', '.sql', '.template', '.timer', '.txt', '.yaml', '.yml',
 ]);
 const secretPatterns = [
   ['private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],

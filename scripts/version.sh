@@ -30,18 +30,14 @@ done
 
 installed_version=unknown
 installed_commit=unknown
-config_loaded=false
 if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
   load_devflow_env
-  config_loaded=true
 fi
-if [[ -r "$DEVFLOW_INSTALL_ROOT/app/VERSION" ]]; then
-  installed_version="$(devflow_read_version_file "$DEVFLOW_INSTALL_ROOT/app/VERSION")" || die 'Versão instalada inválida.'
-elif [[ "$config_loaded" == true && "${DEVFLOW_VERSION:-}" != "" ]]; then
-  installed_version="${DEVFLOW_VERSION:-unknown}"
-fi
-if [[ -r "$DEVFLOW_INSTALL_ROOT/app/.devflow-release" ]]; then
-  installed_commit="$(tr -d '\r\n' < "$DEVFLOW_INSTALL_ROOT/app/.devflow-release")"
+if [[ -d "$DEVFLOW_INSTALL_ROOT/source/.git" ]]; then
+  resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
+    || die 'A identidade da release instalada não pôde ser comprovada.'
+  installed_version="$INSTALLED_VERSION"
+  installed_commit="$INSTALLED_COMMIT"
 fi
 [[ "$installed_version" == unknown ]] || devflow_semver_is_valid "$installed_version" || die 'Versão instalada inválida.'
 [[ "$installed_commit" == unknown || "$installed_commit" =~ ^[0-9a-f]{40}$ ]] \

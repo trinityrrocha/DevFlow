@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+BACKEND_IMAGE_VERSION_MATCH=false
+BACKEND_IMAGE_COMMIT_MATCH=false
+FRONTEND_IMAGE_VERSION_MATCH=false
+FRONTEND_IMAGE_COMMIT_MATCH=false
+API_VERSION_MATCH=false
+API_COMMIT_MATCH=unavailable
+CONFIGURATION_VERSION_MATCH=false
+
 DEVFLOW_IMAGE_RESOLVER="${DEVFLOW_IMAGE_RESOLVER:-$DEVFLOW_SOURCE_ROOT/scripts/resolve-compose-image.py}"
 
 validate_image_reference() {
@@ -100,6 +108,59 @@ compose_image_matches_release() {
   actual_commit="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)"
   actual_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image" 2>/dev/null || true)"
   [[ "$actual_commit" == "$expected_commit" && "$actual_version" == "$expected_version" ]]
+}
+
+reconcile_installed_release_runtime() {
+  local backend_image frontend_image api_payload api_version api_commit
+  BACKEND_IMAGE_VERSION_MATCH=false
+  BACKEND_IMAGE_COMMIT_MATCH=false
+  FRONTEND_IMAGE_VERSION_MATCH=false
+  FRONTEND_IMAGE_COMMIT_MATCH=false
+  API_VERSION_MATCH=false
+  API_COMMIT_MATCH=unavailable
+  CONFIGURATION_VERSION_MATCH=false
+
+  [[ -n "${INSTALLED_VERSION:-}" && -n "${INSTALLED_COMMIT:-}" ]] \
+    || resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
+    || return 1
+  [[ "${DEVFLOW_VERSION:-}" == "$INSTALLED_VERSION" ]] && CONFIGURATION_VERSION_MATCH=true
+  backend_image="$(resolve_compose_service_image backend 2>/dev/null || true)"
+  frontend_image="$(resolve_compose_service_image frontend 2>/dev/null || true)"
+  if [[ -n "$backend_image" ]]; then
+    [[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$backend_image" 2>/dev/null || true)" == "$INSTALLED_VERSION" ]] \
+      && BACKEND_IMAGE_VERSION_MATCH=true
+    [[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$backend_image" 2>/dev/null || true)" == "$INSTALLED_COMMIT" ]] \
+      && BACKEND_IMAGE_COMMIT_MATCH=true
+  fi
+  if [[ -n "$frontend_image" ]]; then
+    [[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$frontend_image" 2>/dev/null || true)" == "$INSTALLED_VERSION" ]] \
+      && FRONTEND_IMAGE_VERSION_MATCH=true
+    [[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$frontend_image" 2>/dev/null || true)" == "$INSTALLED_COMMIT" ]] \
+      && FRONTEND_IMAGE_COMMIT_MATCH=true
+  fi
+  api_payload="$(curl --fail --silent --show-error --max-time 10 \
+    "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}/api/health" 2>/dev/null || true)"
+  if [[ -n "$api_payload" ]]; then
+    api_version="$(printf '%s' "$api_payload" | python3 -c \
+      'import json,sys; value=json.load(sys.stdin).get("version", ""); print(value if isinstance(value, str) else "")' \
+      2>/dev/null || true)"
+    api_commit="$(printf '%s' "$api_payload" | python3 -c \
+      'import json,sys; value=json.load(sys.stdin).get("commit", ""); print(value if isinstance(value, str) else "")' \
+      2>/dev/null || true)"
+    [[ "$api_version" == "$INSTALLED_VERSION" ]] && API_VERSION_MATCH=true
+    if [[ -n "$api_commit" ]]; then
+      API_COMMIT_MATCH=false
+      [[ "$api_commit" == "$INSTALLED_COMMIT" ]] && API_COMMIT_MATCH=true
+    fi
+  fi
+  export BACKEND_IMAGE_VERSION_MATCH BACKEND_IMAGE_COMMIT_MATCH \
+    FRONTEND_IMAGE_VERSION_MATCH FRONTEND_IMAGE_COMMIT_MATCH API_VERSION_MATCH \
+    API_COMMIT_MATCH CONFIGURATION_VERSION_MATCH
+  [[ "$CONFIGURATION_VERSION_MATCH" == true \
+    && "$BACKEND_IMAGE_VERSION_MATCH" == true && "$BACKEND_IMAGE_COMMIT_MATCH" == true \
+    && "$FRONTEND_IMAGE_VERSION_MATCH" == true && "$FRONTEND_IMAGE_COMMIT_MATCH" == true \
+    && "$API_VERSION_MATCH" == true \
+    && ( "$API_COMMIT_MATCH" == true || "$API_COMMIT_MATCH" == unavailable ) ]]
 }
 
 list_existing_devflow_images() {

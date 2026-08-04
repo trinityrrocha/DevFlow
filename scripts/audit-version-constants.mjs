@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const historicalVersions = /0\.(?:2\.0|3\.[0-3]|4\.[0-7])-alpha/g;
+const historicalVersions = /0\.(?:2\.0|3\.[0-3]|4\.[0-8])-alpha/g;
 const excludedDirectories = new Set(['.git', 'node_modules', 'dist', 'coverage']);
 const findings = [];
 

@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/fullpassword-proxy.sh
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 OUTPUT=
 while [[ $# -gt 0 ]]; do
@@ -72,6 +74,21 @@ if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
   echo "domain=${DEVFLOW_DOMAIN:-unknown}"
 else
   echo 'env_file=absent'
+fi
+echo
+echo '[installed release identity]'
+if resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null 2>&1; then
+  printf 'installed_version=%s\ninstalled_commit=%s\ninstalled_ref=%s\ninstalled_repository=%s\n' \
+    "$INSTALLED_VERSION" "$INSTALLED_COMMIT" "$INSTALLED_REF" "$INSTALLED_REPOSITORY"
+else
+  echo 'installed_release_identity=unproven'
+fi
+if validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json" >/dev/null 2>&1; then
+  echo 'installation_state_health=healthy'
+  echo 'repair_available=false'
+else
+  echo 'installation_state_health=degraded'
+  printf 'repair_available=%s\n' "${REPAIR_AVAILABLE:-false}"
 fi
 echo
 echo '[migrations]'

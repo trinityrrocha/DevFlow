@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.8-alpha`: `fullpassword_nginx` em 80/443 bloqueia somente a publicação externa. A instalação interna em loopback é um estágio independente. A validação da imagem ocorre sem Compose ou redes; a retomada real ainda deve ser homologada na VPS.
+> Versão `0.4.9-alpha`: a instalação interna `0.4.8-alpha` foi homologada. Antes da publicação externa, o estado legado deve ser reconciliado com o checkout canônico sem reiniciar containers.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.8-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.9-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -156,7 +156,35 @@ sudo /opt/devflow/app/scripts/health.sh
 
 O resultado interno saudável apresenta `backend_image_present=true`, `frontend_image_present=true`, `postgres_image_present=true`, `database_healthy=true`, `migrations_current=true`, `internal_backend_healthy=true`, `internal_frontend_healthy=true`, `external_publication_enabled=false`, `external_https_status=not-configured` e `overall_internal_health=healthy`.
 
-## 5. Publicação externa posterior
+## 5. Reparar o estado legado antes da publicação
+
+A release imutável `0.4.8-alpha` em `/opt/devflow/app` não contém o reparador criado
+em `0.4.9-alpha`. Portanto, execute o script diretamente no checkout recém-clonado em
+`~/DevFlow`; ele inspeciona `/opt/devflow/source` como fonte de verdade e não promove nem
+modifica o código instalado:
+
+```bash
+cd ~/DevFlow
+sudo ./scripts/repair-installation-state.sh --check
+sudo ./scripts/repair-installation-state.sh --repair
+```
+
+Escolha `1` somente depois de confirmar `actual_version`, `actual_commit`, labels OCI e
+`application_healthy=true`. O reparo cria um backup `root:root 600` em
+`/opt/devflow/backups/state`, grava o JSON por rename atômico e não reinicia containers.
+
+Valide com o health da mesma revisão operacional:
+
+```bash
+sudo ./scripts/health.sh --internal
+sudo cat /opt/devflow/state/installation.json
+```
+
+Depois de uma atualização futura para uma release que contenha o reparador, o caminho
+`/opt/devflow/app/scripts/repair-installation-state.sh` também estará disponível. Não copie
+scripts isolados para dentro de uma release imutável.
+
+## 6. Publicação externa posterior
 
 ```bash
 sudo /opt/devflow/app/scripts/publish.sh --dry-run \
@@ -166,6 +194,11 @@ sudo /opt/devflow/app/scripts/publish.sh --dry-run \
 ```
 
 O publicador exige aplicação interna saudável, DNS, propriedade comprovada de 80/443 e provider pronto. Ele não reinstala a aplicação nem executa migrations. Enquanto `fullpassword_nginx` ocupar as portas, essa operação permanecerá bloqueada.
+
+O dry-run deve incluir `application_installed=true`,
+`installation_state_consistent=true`, `internal_health=healthy`,
+`external_publication_ready=false` e `proxy_migration_required=true`. Não execute o modo
+de publicação real nem a migração do proxy nesta etapa.
 
 Use instalação completa somente quando o provider puder publicar com segurança. Um `fullpassword_nginx` comprovado não é selecionado como adaptador: ele bloqueia o estágio externo e mantém o estágio interno disponível. Caddy, proprietários desconhecidos e evidências divergentes permanecem fail-closed para publicação.
 

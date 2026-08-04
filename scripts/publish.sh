@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 # shellcheck source=providers/provider-contract.sh
 . "$SCRIPT_DIR/providers/provider-contract.sh"
+# shellcheck source=lib/compose-images.sh
+. "$SCRIPT_DIR/lib/compose-images.sh"
 
 MODE=publish
 PROVIDER=host-nginx
@@ -56,12 +58,20 @@ validate_port "$API_PORT"
 [[ "$HTTP_PORT" != "$API_PORT" ]] || die 'Portas locais devem ser diferentes.'
 load_devflow_env
 validate_runtime_paths
-load_installation_state || die 'Estado de instalação ausente ou inválido.'
+validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json" \
+  || die 'Estado de instalação inconsistente; execute repair-installation-state.sh antes de publicar.'
 [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == true ]] || die 'A aplicação interna ainda não está instalada.'
 [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == false ]] || die 'A publicação externa já está habilitada.'
 [[ "$DEVFLOW_INSTALLATION_STATE_PROVIDER" == "$PROVIDER" ]] || die 'Provider solicitado diverge do provider planejado.'
 [[ "${DEVFLOW_HTTP_PORT:-}" == "$HTTP_PORT" && "${DEVFLOW_API_PORT:-}" == "$API_PORT" ]] \
   || die 'Portas solicitadas divergem da instalação interna.'
+DEVFLOW_VERSION="$INSTALLED_VERSION"
+DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_APP_ROOT
+compose_files
+reconcile_installed_release_runtime \
+  || die 'Identidade de release, imagens ou API divergem; publicação externa bloqueada.'
 resolved_addresses="$(getent ahosts "$DOMAIN" | awk '{print $1}' | sort -u)"
 [[ -n "$resolved_addresses" ]] || die "O domínio $DOMAIN não resolve no DNS."
 local_addresses="$(ip -o addr show scope global 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4}' | sort -u)"
@@ -87,8 +97,12 @@ devflow_detect_public_port_ownership
 devflow_print_port_evidence 80
 devflow_print_port_evidence 443
 printf 'public_proxy_status=%s\n' "$DEVFLOW_PUBLIC_PROXY_STATUS"
+printf 'application_installed=true\n'
+printf 'installation_state_consistent=true\n'
+printf 'internal_health=healthy\n'
 printf 'internal_installation_ready=true\n'
 printf 'external_publication_ready=%s\n' "$DEVFLOW_EXTERNAL_PUBLICATION_READY"
+printf 'proxy_migration_required=%s\n' "$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED"
 if [[ "$provider_status" -eq 4 ]]; then
   die 'Publicação bloqueada: proxy Docker conhecido exige migração controlada separada.'
 elif [[ "$provider_status" -eq 3 ]]; then
@@ -142,7 +156,7 @@ publication_failed() {
     certbot delete --cert-name "$DOMAIN" --non-interactive >/dev/null 2>&1 || true
   fi
   install -m 0600 "$ENV_BACKUP" "$DEVFLOW_ENV_FILE" || true
-  install -m 0640 "$STATE_BACKUP" "$DEVFLOW_STATE_ROOT/installation.json" || true
+  install -m 0600 "$STATE_BACKUP" "$DEVFLOW_STATE_ROOT/installation.json" || true
   install -m 0640 "$PROVIDER_STATE_BACKUP" "$DEVFLOW_PROVIDER_STATE_FILE" || true
   load_devflow_env || true
   DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"
@@ -173,9 +187,11 @@ provider_health "$DOMAIN" "$HTTP_PORT" "$API_PORT"
 curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/api/health" >/dev/null
 curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/" >/dev/null
 
-DEVFLOW_RELEASE_COMMIT="$(tr -d '\r\n' < "$DEVFLOW_INSTALL_ROOT/app/.devflow-release")"
-DEVFLOW_RELEASE_REF="$(installation_state_value ref "$STATE_BACKUP")"
-DEVFLOW_REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'
+resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
+  || die 'A identidade instalada deixou de ser comprovável durante a publicação.'
+DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+DEVFLOW_RELEASE_REF="$INSTALLED_REF"
+DEVFLOW_REPOSITORY_URL="$INSTALLED_REPOSITORY"
 DEVFLOW_UPDATE_CHANNEL=main
 DEVFLOW_INSTALLATION_SCOPE=complete
 DEVFLOW_APPLICATION_INSTALLED=true

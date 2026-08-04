@@ -64,6 +64,49 @@ devflow_validate_checkout_identity() {
   [[ -f "$root/VERSION" && ! -L "$root/VERSION" ]] || return 1
 }
 
+resolve_installed_release_identity() {
+  local source_dir="${1:-${DEVFLOW_INSTALL_ROOT:-/opt/devflow}/source}"
+  local expected_ref="${2:-main}" release_root
+  local installed_version installed_commit installed_repository installed_ref current_branch
+
+  [[ "$source_dir" == /* && -d "$source_dir/.git" && ! -L "$source_dir/.git" ]] || return 20
+  installed_repository="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
+  [[ "$installed_repository" == "$DEVFLOW_CANONICAL_REPOSITORY_URL" ]] || return 21
+  [[ -z "$(git -C "$source_dir" status --porcelain 2>/dev/null || printf invalid)" ]] || return 22
+  installed_commit="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
+  [[ "$installed_commit" =~ ^[0-9a-f]{40}$ ]] || return 23
+  git -C "$source_dir" cat-file -e "$installed_commit^{commit}" 2>/dev/null || return 23
+  current_branch="$(git -C "$source_dir" branch --show-current 2>/dev/null || true)"
+  if [[ "$expected_ref" == main ]]; then
+    [[ "$current_branch" == main ]] || return 24
+    installed_ref=main
+  else
+    devflow_ref_is_valid "$expected_ref" || return 24
+    [[ -z "$current_branch" && "$(git -C "$source_dir" rev-parse "$expected_ref^{commit}" 2>/dev/null || true)" == "$installed_commit" ]] \
+      || return 24
+    installed_ref="$expected_ref"
+  fi
+  installed_version="$(devflow_validate_directory_version_consistency "$source_dir")" || return 25
+
+  release_root="${DEVFLOW_IDENTITY_RELEASE_ROOT:-${DEVFLOW_APP_ROOT:-${DEVFLOW_INSTALL_ROOT:-/opt/devflow}/app}}"
+  if [[ -e "$release_root" ]]; then
+    [[ -r "$release_root/VERSION" && -r "$release_root/.devflow-release" ]] || return 26
+    [[ "$(devflow_read_version_file "$release_root/VERSION" 2>/dev/null || true)" == "$installed_version" ]] || return 26
+    [[ "$(tr -d '\r\n' < "$release_root/.devflow-release")" == "$installed_commit" ]] || return 26
+  fi
+
+  INSTALLED_VERSION="$installed_version"
+  INSTALLED_COMMIT="$installed_commit"
+  INSTALLED_REF="$installed_ref"
+  INSTALLED_REPOSITORY="$installed_repository"
+  export INSTALLED_VERSION INSTALLED_COMMIT INSTALLED_REF INSTALLED_REPOSITORY
+  printf '%s\n' \
+    "installed_version=$INSTALLED_VERSION" \
+    "installed_commit=$INSTALLED_COMMIT" \
+    "installed_ref=$INSTALLED_REF" \
+    "installed_repository=$INSTALLED_REPOSITORY"
+}
+
 devflow_read_version_file() {
   local file="${1:-}" line_count version
   [[ -n "$file" && -f "$file" && ! -L "$file" && -r "$file" ]] || return 1
@@ -127,6 +170,8 @@ devflow_validate_checkout_version_consistency() {
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
     scripts/publish.sh scripts/resolve-compose-image.py scripts/validate-compose-images-resume.mjs \
     scripts/validate-install-startup.mjs scripts/validate-compose-env.mjs scripts/audit-compose-command.mjs \
+    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
+    scripts/validate-installation-state.mjs \
     scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
     scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh; do
     git -C "$root" ls-files --error-unmatch "$tracked_file" >/dev/null 2>&1 || return 1
@@ -152,6 +197,8 @@ devflow_validate_git_tree_version_consistency() {
     scripts/version.sh scripts/health.sh scripts/publish.sh scripts/resolve-compose-image.py \
     scripts/validate-compose-images-resume.mjs scripts/validate-install-startup.mjs \
     scripts/validate-compose-env.mjs scripts/audit-compose-command.mjs \
+    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
+    scripts/validate-installation-state.mjs \
     scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
     scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh \
     | tar -x -C "$temporary"; then

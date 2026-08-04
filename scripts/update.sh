@@ -12,6 +12,8 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
 # shellcheck source=providers/provider-contract.sh
 . "$SCRIPT_DIR/providers/provider-contract.sh"
+# shellcheck source=lib/compose-images.sh
+. "$SCRIPT_DIR/lib/compose-images.sh"
 
 CHECK_ONLY=false
 EXPECTED_UPDATE_VERSION=
@@ -88,16 +90,15 @@ remote_url="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
 OLD_RELEASE_DIR="$(readlink -f "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
 validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release instalada'
 [[ "$OLD_RELEASE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* ]] || die 'A release instalada está fora de /opt/devflow/releases.'
-OLD_SHA="$(tr -d '\r\n' < "$OLD_RELEASE_DIR/.devflow-release" 2>/dev/null || true)"
-[[ "$OLD_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'Commit da release instalada não pôde ser confirmado.'
+DEVFLOW_INSTALLED_SOURCE_DIR="$SOURCE_DIR"
+DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
+validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json" \
+  || die 'Estado instalado inconsistente; execute repair-installation-state.sh antes de atualizar.'
+OLD_SHA="$INSTALLED_COMMIT"
+OLD_VERSION="$INSTALLED_VERSION"
 SOURCE_OLD_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
 [[ "$SOURCE_OLD_SHA" == "$OLD_SHA" ]] \
   || die 'O checkout operacional não corresponde exatamente à release instalada.'
-if [[ -r "$OLD_RELEASE_DIR/VERSION" ]]; then
-  OLD_VERSION="$(tr -d '\r\n' < "$OLD_RELEASE_DIR/VERSION")"
-else
-  OLD_VERSION="${DEVFLOW_VERSION:-unknown}"
-fi
 devflow_semver_is_valid "$OLD_VERSION" || die 'Versão instalada inválida.'
 [[ "${DEVFLOW_VERSION:-}" == "$OLD_VERSION" ]] \
   || die 'DEVFLOW_VERSION diverge da release instalada; corrija a configuração antes de atualizar.'
@@ -119,6 +120,14 @@ if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
   fi
 fi
 provider_validate || die 'Validacao do provider instalado falhou.'
+DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR"
+DEVFLOW_VERSION="$OLD_VERSION"
+DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
+export DEVFLOW_APP_ROOT DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_INSTALLED_SOURCE_DIR \
+  DEVFLOW_IDENTITY_RELEASE_ROOT
+compose_files
+reconcile_installed_release_runtime \
+  || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
 
 TEMP_REMOTE_REPO=
 if [[ "$CHECK_ONLY" == true ]]; then
@@ -208,6 +217,52 @@ BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
 ROLLBACK_RESULT=not-required
 EDGE_NETWORK_PREEXISTED=true
+UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
+
+write_update_transaction() {
+  local state="$1" temporary
+  temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.update-transaction.XXXXXX")"
+  {
+    printf '{\n'
+    printf '  "schemaVersion": 1,\n'
+    printf '  "timestamp": "%s",\n' "$(timestamp)"
+    printf '  "state": "%s",\n' "$state"
+    printf '  "previousInstalledVersion": "%s",\n' "$OLD_VERSION"
+    printf '  "previousInstalledCommit": "%s",\n' "$OLD_SHA"
+    printf '  "candidateVersion": "%s",\n' "$NEW_VERSION"
+    printf '  "candidateCommit": "%s"\n' "$NEW_SHA"
+    printf '}\n'
+  } > "$temporary"
+  chmod 0600 "$temporary"
+  python3 -m json.tool "$temporary" >/dev/null || { rm -f -- "$temporary"; return 1; }
+  sync -f "$temporary" 2>/dev/null || true
+  mv -f -- "$temporary" "$UPDATE_TRANSACTION_FILE"
+}
+
+persist_operational_installation_state() {
+  local result=success
+  [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true ]] && result=published
+  DEVFLOW_INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
+  DEVFLOW_APPLICATION_INSTALLED=true
+  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
+  DEVFLOW_INFRASTRUCTURE_PROVIDER="$DEVFLOW_INSTALLATION_STATE_PROVIDER"
+  DEVFLOW_FRONTEND_URL="$DEVFLOW_INSTALLATION_STATE_FRONTEND_URL"
+  DEVFLOW_BACKEND_URL="$DEVFLOW_INSTALLATION_STATE_BACKEND_URL"
+  DEVFLOW_PROXY_MIGRATION_REQUIRED="$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED"
+  DEVFLOW_FULLPASSWORD_MODIFIED="$DEVFLOW_INSTALLATION_STATE_FULLPASSWORD_MODIFIED"
+  DEVFLOW_PUBLIC_PROXY_MODIFIED="$DEVFLOW_INSTALLATION_STATE_PUBLIC_PROXY_MODIFIED"
+  DEVFLOW_PROXY_MIGRATION_EXECUTED="$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED"
+  DEVFLOW_CERTIFICATE_ISSUED="$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED"
+  DEVFLOW_MIGRATION_VERSION="${DEVFLOW_MIGRATION_VERSION:-$DEVFLOW_INSTALLATION_STATE_MIGRATION}"
+  DEVFLOW_UPDATE_CHANNEL=main
+  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+    DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
+    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL DEVFLOW_PROXY_MIGRATION_REQUIRED \
+    DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
+    DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED \
+    DEVFLOW_MIGRATION_VERSION DEVFLOW_UPDATE_CHANNEL
+  write_install_report "$result"
+}
 
 write_update_report() {
   local result="$1"
@@ -295,9 +350,15 @@ restore_proxy_for() {
 }
 
 rollback_update() {
-  local rollback_failures=0
+  local rollback_failures=0 recorded_previous_commit
   set +e
   log ERROR "Falha na fase $UPDATE_PHASE. Iniciando rollback automático."
+  recorded_previous_commit="$(installation_state_value previousInstalledCommit "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)"
+  if [[ "$recorded_previous_commit" != "$OLD_SHA" ]] \
+    || ! git -C "$SOURCE_DIR" cat-file -e "$recorded_previous_commit^{commit}" 2>/dev/null; then
+    log ERROR 'previousInstalledCommit transacional não corresponde à release anterior comprovada.'
+    return 1
+  fi
 
   enter_maintenance "$CANDIDATE_DIR"
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível confirmar a página de manutenção durante o rollback.'; rollback_failures=$((rollback_failures + 1)); }
@@ -305,6 +366,8 @@ rollback_update() {
   UPDATE_PHASE=rollback-code
   (set_managed_env_value DEVFLOW_VERSION "$OLD_VERSION")
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar a versão no ambiente.'; rollback_failures=$((rollback_failures + 1)); }
+  (set_managed_env_value DEVFLOW_RELEASE_COMMIT "$recorded_previous_commit")
+  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o commit no ambiente.'; rollback_failures=$((rollback_failures + 1)); }
   export DEVFLOW_VERSION="$OLD_VERSION"
   export DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
   ln -sfn "$OLD_RELEASE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
@@ -375,10 +438,22 @@ rollback_update() {
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
-    DEVFLOW_VERSION="$OLD_VERSION" write_version_state "$OLD_SHA" || rollback_failures=$((rollback_failures + 1))
+    DEVFLOW_VERSION="$OLD_VERSION"
+    DEVFLOW_RELEASE_COMMIT="$recorded_previous_commit"
+    DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
+    export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
+    set_compose_for "$OLD_RELEASE_DIR"
+    DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
+      'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
+      2>/dev/null || true)"
+    resolve_installed_release_identity "$SOURCE_DIR" main >/dev/null \
+      && [[ "$INSTALLED_COMMIT" == "$recorded_previous_commit" ]] \
+      && persist_operational_installation_state \
+      || rollback_failures=$((rollback_failures + 1))
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
+    write_update_transaction rolled-back || rollback_failures=$((rollback_failures + 1))
     ROLLBACK_RESULT=success
     log WARN "Rollback concluído. DevFlow retornou a $OLD_VERSION ($OLD_SHA)."
   else
@@ -415,6 +490,8 @@ update_failed() {
 trap update_failed EXIT
 trap 'exit 130' INT TERM
 
+write_update_transaction prepared \
+  || die 'Não foi possível registrar a identidade transacional da atualização.'
 log INFO 'Criando backup pré-update.'
 BACKUP_OUTPUT="$(DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
   DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
@@ -503,6 +580,7 @@ DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
 
 UPDATE_PHASE=promotion
 set_managed_env_value DEVFLOW_VERSION "$NEW_VERSION"
+set_managed_env_value DEVFLOW_RELEASE_COMMIT "$NEW_SHA"
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
 
 UPDATE_PHASE=proxy
@@ -520,10 +598,22 @@ install -m 0644 "$CANDIDATE_DIR/scripts/systemd/devflow-backup.timer" /etc/syste
 systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
 BACKUP_TIMER_PAUSED=false
-write_version_state "$NEW_SHA"
+DEVFLOW_VERSION="$NEW_VERSION"
+DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
+DEVFLOW_IDENTITY_RELEASE_ROOT="$CANDIDATE_DIR"
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
+resolve_installed_release_identity "$SOURCE_DIR" main >/dev/null \
+  || die 'Checkout canônico não confirma a release candidata promovida.'
+[[ "$INSTALLED_COMMIT" == "$NEW_SHA" && "$INSTALLED_VERSION" == "$NEW_VERSION" ]] \
+  || die 'Identidade promovida diverge da release candidata.'
+reconcile_installed_release_runtime \
+  || die 'Imagens ou API divergem da identidade candidata após o health.'
+persist_operational_installation_state \
+  || die 'Estado instalado não pôde ser gravado com a identidade candidata.'
 provider_state_write "$DEVFLOW_INFRASTRUCTURE_PROVIDER" "$DEVFLOW_DOMAIN" \
   "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}"
 ROLLBACK_RESULT=not-required
+write_update_transaction completed
 write_update_report success
 ROLLBACK_ARMED=false
 trap - EXIT ERR INT TERM

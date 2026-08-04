@@ -78,7 +78,7 @@ Antes da criação da configuração privada, somente a estrutura Compose é val
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/sites-available/devflow.conf` e link em `sites-enabled` (fallback `/etc/nginx/conf.d/devflow.conf`);
 - proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`;
-- estado operacional: `/opt/devflow/state/installation.json`, `install-transaction.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado;
+- estado operacional: `/opt/devflow/state/installation.json`, `install-transaction.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado. `installation.json` usa schema canônico v1, gravação atômica e modo `0600` com propriedade `root:root`;
 - relatório de proxy compartilhado: `/opt/devflow/logs/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.
