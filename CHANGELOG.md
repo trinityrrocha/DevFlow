@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.11-alpha] - 2026-08-04
+
+### Corrigido
+
+- `installation.json` passa ao schema v2 estrito com somente os 17 campos operacionais definitivos; versão, commit, ref e repositório são derivados exclusivamente de `/opt/devflow/source`;
+- `publish.sh` passa a ser seguro por padrão e oferece `--check`, `--dry-run`, `--publish` e `--rollback`, com backup persistente do estado, rollback automático em falha parcial e remoção seletiva apenas do certificado criado pela transação;
+- o provider `host-nginx` valida layouts `sites-available/sites-enabled` e `conf.d`, Certbot, renewal timer, hook, certificado, `nginx -t`, reload e restauração;
+- o vhost compartilhado cobre WebSocket, uploads, restore, downloads, CSP, HSTS, rate limit, timeouts, buffers e gzip;
+- `health.sh` expõe prontidão de provider, proxy, publicação, certificado, renovação, rollback, identidade, estado e adapter, além de `overall_health`;
+- `update-operation.sh` estabelece o contrato reutilizável `check-update`, `download-update`, `validate-update`, `install-update` e `rollback-update`; o rollback manual reutiliza a transação e o backup autenticado do updater.
+
+### Validação
+
+- 48 checks finais não mutantes cobrem publicação, rollback, provider, certificados, release, estado, atualização, host Nginx, proxy e health;
+- a prova local é estrutural/simulada; emissão TLS, portas públicas, reload e rollback completos ainda devem ser executados na VPS de homologação antes de classificar o modo compartilhado como homologado em ambiente real.
+
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
 ## [0.4.10-alpha] - 2026-08-03

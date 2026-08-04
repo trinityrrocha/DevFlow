@@ -10,7 +10,7 @@ O entrypoint da raiz encaminha para `scripts/install.sh`. Ambos usam Bash estrit
 
 `--install-internal` instala código, configuração privada, PostgreSQL, migrations, backend, frontend, Super Admin, backup e health local. Frontend e backend usam somente `127.0.0.1`; esse estágio não chama funções mutáveis do provider.
 
-`scripts/publish.sh` é o estágio externo posterior. Ele exige estado interno saudável, valida DNS e propriedade de 80/443, configura o provider, emite TLS e confirma HTTPS. Não reinstala a release e não executa migrations.
+`scripts/publish.sh` é o estágio externo posterior. Sem modo, ele apenas verifica. `--publish` exige estado interno saudável, valida DNS e propriedade de 80/443, configura o provider, emite TLS e confirma HTTPS; `--rollback` restaura o pacote persistente da última publicação. Não reinstala a release e não executa migrations.
 
 `--install` continua significando instalação completa. Se um proxy Docker conhecido ocupar 80/443, o instalador apresenta explicitamente instalar internamente, cancelar ou consultar a migração; nenhuma opção é escolhida automaticamente.
 
@@ -78,7 +78,7 @@ Antes da criação da configuração privada, somente a estrutura Compose é val
 - backups: `/opt/devflow/backups`;
 - proxy do host: `/etc/nginx/sites-available/devflow.conf` e link em `sites-enabled` (fallback `/etc/nginx/conf.d/devflow.conf`);
 - proxy Full Password: `/opt/devflow/config/nginx/devflow.conf` e override `/opt/devflow/config/proxy/fullpassword-nginx.override.yml`;
-- estado operacional: `/opt/devflow/state/installation.json`, `install-transaction.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado. `installation.json` usa schema canônico v1, gravação atômica e modo `0600` com propriedade `root:root`;
+- estado operacional: `/opt/devflow/state/installation.json`, `install-transaction.json`, `version.json` e `infrastructure-provider.json`; `proxy-adapter.json` permanece apenas para o provider legado. `installation.json` usa schema canônico v2 exato, gravação atômica e modo `0600` com propriedade `root:root`;
 - relatório de proxy compartilhado: `/opt/devflow/logs/shared-proxy-diagnostic.log`;
 - redes: `devflow_edge` para borda e `devflow_internal` para PostgreSQL/backend;
 - containers gerados pelo Compose: prefixo previsível `devflow-`.

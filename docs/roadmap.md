@@ -1,5 +1,13 @@
 # Roadmap inicial
 
+## Marco `0.4.11-alpha` — fechamento operacional do modo compartilhado
+
+- [x] estabelecer `installation.json` schema v2 sem campos legados;
+- [x] tornar publicação explícita e adicionar rollback persistente;
+- [x] ampliar health, HTTPS, renewal e provider host-nginx;
+- [x] criar contrato operacional reutilizável de atualização;
+- [ ] executar homologação privilegiada completa na VPS Linux.
+
 ## Marco `0.4.10-alpha` — reconciliação transacional da release instalada
 
 - [x] separar reconciliação de imagens do update e do reparo somente de metadados;
@@ -153,7 +161,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.10-alpha` consistente;
+- versão `0.4.11-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

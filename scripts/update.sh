@@ -16,10 +16,12 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/compose-images.sh"
 
 CHECK_ONLY=false
+ROLLBACK_REQUESTED=false
 EXPECTED_UPDATE_VERSION=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true; shift ;;
+    --rollback) ROLLBACK_REQUESTED=true; shift ;;
     --expected-version)
       [[ -n "${2:-}" ]] || die '--expected-version exige um valor.'
       EXPECTED_UPDATE_VERSION="$2"
@@ -41,6 +43,10 @@ EOF
   esac
 done
 
+[[ "$ROLLBACK_REQUESTED" == false || "$CHECK_ONLY" == false ]] \
+  || die '--rollback e --check sao mutuamente exclusivos.'
+[[ "$ROLLBACK_REQUESTED" == false || -z "$EXPECTED_UPDATE_VERSION" ]] \
+  || die '--expected-version nao se aplica ao rollback.'
 [[ -z "$EXPECTED_UPDATE_VERSION" ]] || devflow_semver_is_valid "$EXPECTED_UPDATE_VERSION" \
   || die 'Versão explicitamente esperada não atende ao contrato SemVer.'
 
@@ -130,7 +136,7 @@ reconcile_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
 
 TEMP_REMOTE_REPO=
-if [[ "$CHECK_ONLY" == true ]]; then
+if [[ "$ROLLBACK_REQUESTED" == false && "$CHECK_ONLY" == true ]]; then
   TEMP_REMOTE_REPO="$(mktemp -d "${TMPDIR:-/tmp}/devflow-update-check.XXXXXX")"
   cleanup_remote_check() { rm -rf -- "$TEMP_REMOTE_REPO"; }
   trap cleanup_remote_check EXIT INT TERM
@@ -140,7 +146,7 @@ if [[ "$CHECK_ONLY" == true ]]; then
   REMOTE_REPO="$TEMP_REMOTE_REPO"
   REMOTE_REF=FETCH_HEAD
   UPDATE_LOG=not-created-check-only
-else
+elif [[ "$ROLLBACK_REQUESTED" == false ]]; then
   install -d -m 0750 "$DEVFLOW_LOG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/releases"
   UPDATE_LOG="$DEVFLOW_LOG_ROOT/update-$(date -u +%Y%m%dT%H%M%SZ).log"
   touch "$UPDATE_LOG"
@@ -152,6 +158,7 @@ else
 fi
 
 log INFO "Iniciando verificação de atualização a partir de $OLD_VERSION ($OLD_SHA)."
+if [[ "$ROLLBACK_REQUESTED" == false ]]; then
 NEW_SHA="$(git -C "$REMOTE_REPO" rev-parse "$REMOTE_REF")"
 [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'Commit remoto inválido.'
 git -C "$REMOTE_REPO" merge-base --is-ancestor "$OLD_SHA" "$NEW_SHA" \
@@ -204,20 +211,52 @@ require_numeric_confirmation application-update \
   "A atualização do DevFlow de $OLD_VERSION para $NEW_VERSION está pronta." \
   'ATUALIZAR DEVFLOW'
 
+else
+  install -d -m 0750 "$DEVFLOW_LOG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/releases"
+  UPDATE_LOG="$DEVFLOW_LOG_ROOT/update-rollback-$(date -u +%Y%m%dT%H%M%SZ).log"
+  touch "$UPDATE_LOG"
+  chmod 0640 "$UPDATE_LOG"
+  exec > >(redact_stream | tee -a "$UPDATE_LOG") 2>&1
+fi
+
 NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
 NGINX_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
-CANDIDATE_DIR="$DEVFLOW_INSTALL_ROOT/releases/$NEW_SHA"
+UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
+if [[ "$ROLLBACK_REQUESTED" == true ]]; then
+  [[ "$(installation_state_value state "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" == completed ]] \
+    || die 'A ultima atualizacao nao possui transacao concluida apta a rollback.'
+  CURRENT_VERSION="$OLD_VERSION"
+  CURRENT_SHA="$OLD_SHA"
+  CURRENT_RELEASE_DIR="$OLD_RELEASE_DIR"
+  NEW_VERSION="$(installation_state_value candidateVersion "$UPDATE_TRANSACTION_FILE")"
+  NEW_SHA="$(installation_state_value candidateCommit "$UPDATE_TRANSACTION_FILE")"
+  [[ "$NEW_VERSION" == "$CURRENT_VERSION" && "$NEW_SHA" == "$CURRENT_SHA" ]] \
+    || die 'A transacao nao corresponde a release atualmente instalada.'
+  OLD_VERSION="$(installation_state_value previousInstalledVersion "$UPDATE_TRANSACTION_FILE")"
+  OLD_SHA="$(installation_state_value previousInstalledCommit "$UPDATE_TRANSACTION_FILE")"
+  OLD_RELEASE_DIR="$(installation_state_value previousReleaseDirectory "$UPDATE_TRANSACTION_FILE")"
+  BACKUP_FILE="$(installation_state_value backupFile "$UPDATE_TRANSACTION_FILE")"
+  validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release anterior'
+  validate_safe_absolute_path "$BACKUP_FILE" 'Backup da atualizacao'
+  [[ "$OLD_RELEASE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* && -d "$OLD_RELEASE_DIR" ]] \
+    || die 'Release anterior registrada esta ausente.'
+  [[ "$BACKUP_FILE" == "$DEVFLOW_INSTALL_ROOT/backups/"* && -s "$BACKUP_FILE" ]] \
+    || die 'Backup da atualizacao esta ausente.'
+  CANDIDATE_DIR="$CURRENT_RELEASE_DIR"
+else
+  CANDIDATE_DIR="$DEVFLOW_INSTALL_ROOT/releases/$NEW_SHA"
+  BACKUP_FILE=
+fi
 CANDIDATE_TEMP=
-CANDIDATE_CREATED=false
-BACKUP_FILE=
-ROLLBACK_ARMED=false
+CANDIDATE_CREATED="$ROLLBACK_REQUESTED"
+ROLLBACK_ARMED="$ROLLBACK_REQUESTED"
 MAINTENANCE_ACTIVE=false
-SOURCE_ADVANCED=false
+SOURCE_ADVANCED="$ROLLBACK_REQUESTED"
 BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
+[[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
 EDGE_NETWORK_PREEXISTED=true
-UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
 
 write_update_transaction() {
   local state="$1" temporary
@@ -230,7 +269,9 @@ write_update_transaction() {
     printf '  "previousInstalledVersion": "%s",\n' "$OLD_VERSION"
     printf '  "previousInstalledCommit": "%s",\n' "$OLD_SHA"
     printf '  "candidateVersion": "%s",\n' "$NEW_VERSION"
-    printf '  "candidateCommit": "%s"\n' "$NEW_SHA"
+    printf '  "candidateCommit": "%s",\n' "$NEW_SHA"
+    printf '  "previousReleaseDirectory": "%s",\n' "$OLD_RELEASE_DIR"
+    printf '  "backupFile": "%s"\n' "${BACKUP_FILE:-pending}"
     printf '}\n'
   } > "$temporary"
   chmod 0600 "$temporary"
@@ -240,28 +281,22 @@ write_update_transaction() {
 }
 
 persist_operational_installation_state() {
-  local result=success
-  [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true ]] && result=published
   DEVFLOW_INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
   DEVFLOW_APPLICATION_INSTALLED=true
+  DEVFLOW_APPLICATION_HEALTHY=true
   DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
   DEVFLOW_INFRASTRUCTURE_PROVIDER="$DEVFLOW_INSTALLATION_STATE_PROVIDER"
   DEVFLOW_FRONTEND_URL="$DEVFLOW_INSTALLATION_STATE_FRONTEND_URL"
   DEVFLOW_BACKEND_URL="$DEVFLOW_INSTALLATION_STATE_BACKEND_URL"
-  DEVFLOW_PROXY_MIGRATION_REQUIRED="$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED"
-  DEVFLOW_FULLPASSWORD_MODIFIED="$DEVFLOW_INSTALLATION_STATE_FULLPASSWORD_MODIFIED"
-  DEVFLOW_PUBLIC_PROXY_MODIFIED="$DEVFLOW_INSTALLATION_STATE_PUBLIC_PROXY_MODIFIED"
   DEVFLOW_PROXY_MIGRATION_EXECUTED="$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED"
   DEVFLOW_CERTIFICATE_ISSUED="$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED"
   DEVFLOW_MIGRATION_VERSION="${DEVFLOW_MIGRATION_VERSION:-$DEVFLOW_INSTALLATION_STATE_MIGRATION}"
-  DEVFLOW_UPDATE_CHANNEL=main
-  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY \
     DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
-    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL DEVFLOW_PROXY_MIGRATION_REQUIRED \
-    DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
+    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
     DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED \
-    DEVFLOW_MIGRATION_VERSION DEVFLOW_UPDATE_CHANNEL
-  write_install_report "$result"
+    DEVFLOW_MIGRATION_VERSION
+  write_installation_state
 }
 
 write_update_report() {
@@ -489,6 +524,19 @@ update_failed() {
 }
 trap update_failed EXIT
 trap 'exit 130' INT TERM
+
+if [[ "$ROLLBACK_REQUESTED" == true ]]; then
+  require_numeric_confirmation application-update-rollback \
+    "A release $CURRENT_VERSION sera revertida para $OLD_VERSION usando o backup validado da atualizacao." \
+    'REVERTER ATUALIZACAO'
+  manual_rollback_status=0
+  rollback_update || manual_rollback_status=$?
+  ROLLBACK_ARMED=false
+  [[ "$manual_rollback_status" -eq 0 ]] || die 'Rollback manual da atualizacao nao foi concluido.'
+  write_update_report manual-rollback
+  trap - EXIT ERR INT TERM
+  exit 0
+fi
 
 write_update_transaction prepared \
   || die 'Não foi possível registrar a identidade transacional da atualização.'

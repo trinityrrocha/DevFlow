@@ -540,9 +540,8 @@ installation_state_schema_valid() {
   python3 "$validator" validate "$state_file" >/dev/null 2>&1
 }
 
-write_install_report() {
-  local result="$1" report="$DEVFLOW_STATE_ROOT/installation.json" validator
-  [[ "$result" == success || "$result" == published ]] || return 1
+write_installation_state() {
+  local report="$DEVFLOW_STATE_ROOT/installation.json" validator
   resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
     || return 1
   [[ "${DEVFLOW_VERSION:-$INSTALLED_VERSION}" == "$INSTALLED_VERSION" ]] || return 1
@@ -552,28 +551,22 @@ write_install_report() {
   install -d -m 0750 "$DEVFLOW_STATE_ROOT"
   {
     printf '{\n'
-    printf '  "schemaVersion": 1,\n'
-    printf '  "timestamp": "%s",\n' "$(timestamp)"
-    printf '  "version": "%s",\n' "$INSTALLED_VERSION"
-    printf '  "commit": "%s",\n' "$INSTALLED_COMMIT"
-    printf '  "ref": "%s",\n' "$INSTALLED_REF"
-    printf '  "repository": "%s",\n' "$INSTALLED_REPOSITORY"
-    printf '  "updateChannel": "%s",\n' "${DEVFLOW_UPDATE_CHANNEL:-${UPDATE_CHANNEL:-main}}"
-    printf '  "result": "%s",\n' "$result"
+    printf '  "schemaVersion": 2,\n'
     printf '  "installationScope": "%s",\n' "${DEVFLOW_INSTALLATION_SCOPE:-unknown}"
-    printf '  "applicationInstalled": %s,\n' "${DEVFLOW_APPLICATION_INSTALLED:-false}"
-    printf '  "externalPublicationEnabled": %s,\n' "${DEVFLOW_EXTERNAL_PUBLICATION_ENABLED:-false}"
     printf '  "provider": "%s",\n' "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-unknown}"
-    printf '  "frontendUrl": "%s",\n' "${DEVFLOW_FRONTEND_URL:-http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}}"
-    printf '  "backendUrl": "%s",\n' "${DEVFLOW_BACKEND_URL:-http://127.0.0.1:${DEVFLOW_API_PORT:-13000}}"
-    printf '  "proxyMigrationRequired": %s,\n' "${DEVFLOW_PROXY_MIGRATION_REQUIRED:-false}"
-    printf '  "fullpasswordModified": %s,\n' "${DEVFLOW_FULLPASSWORD_MODIFIED:-false}"
-    printf '  "publicProxyModified": %s,\n' "${DEVFLOW_PUBLIC_PROXY_MODIFIED:-false}"
+    printf '  "proxyMode": "%s",\n' "${DEVFLOW_PROXY_MODE:-unknown}"
+    printf '  "installedVersion": "%s",\n' "$INSTALLED_VERSION"
+    printf '  "installedCommit": "%s",\n' "$INSTALLED_COMMIT"
+    printf '  "installedRef": "%s",\n' "$INSTALLED_REF"
+    printf '  "repository": "%s",\n' "$INSTALLED_REPOSITORY"
+    printf '  "applicationInstalled": %s,\n' "${DEVFLOW_APPLICATION_INSTALLED:-false}"
+    printf '  "applicationHealthy": %s,\n' "${DEVFLOW_APPLICATION_HEALTHY:-false}"
+    printf '  "externalPublicationEnabled": %s,\n' "${DEVFLOW_EXTERNAL_PUBLICATION_ENABLED:-false}"
     printf '  "proxyMigrationExecuted": %s,\n' "${DEVFLOW_PROXY_MIGRATION_EXECUTED:-false}"
     printf '  "certificateIssued": %s,\n' "${DEVFLOW_CERTIFICATE_ISSUED:-false}"
-    printf '  "proxyMode": "%s",\n' "${DEVFLOW_PROXY_MODE:-unknown}"
-    printf '  "sharedProxyAdapter": "%s",\n' "${DEVFLOW_SHARED_PROXY_ADAPTER:-none}"
     printf '  "domain": "%s",\n' "${DEVFLOW_DOMAIN:-unknown}"
+    printf '  "frontendUrl": "%s",\n' "${DEVFLOW_FRONTEND_URL:-http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}}"
+    printf '  "backendUrl": "%s",\n' "${DEVFLOW_BACKEND_URL:-http://127.0.0.1:${DEVFLOW_API_PORT:-13000}}"
     printf '  "migration": "%s"\n' "${DEVFLOW_MIGRATION_VERSION:-unknown}"
     printf '}\n'
   } | python3 "$validator" write "$report"
@@ -604,27 +597,28 @@ prepare_installation_state_operational_values() {
   local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
   DEVFLOW_INSTALLATION_SCOPE="$(installation_state_legacy_value "$state_file" internal installationScope)"
   DEVFLOW_APPLICATION_INSTALLED="$(installation_state_legacy_value "$state_file" true applicationInstalled)"
+  DEVFLOW_APPLICATION_HEALTHY="$(installation_state_legacy_value "$state_file" false applicationHealthy)"
   DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$(installation_state_legacy_value "$state_file" false externalPublicationEnabled)"
+  if [[ "$DEVFLOW_EXTERNAL_PUBLICATION_ENABLED" == true ]]; then
+    DEVFLOW_INSTALLATION_SCOPE=complete
+    DEVFLOW_CERTIFICATE_ISSUED=true
+  else
+    DEVFLOW_INSTALLATION_SCOPE=internal
+    DEVFLOW_CERTIFICATE_ISSUED=false
+  fi
   DEVFLOW_INFRASTRUCTURE_PROVIDER="$(installation_state_legacy_value "$state_file" "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-host-nginx}" provider infrastructure_provider)"
   DEVFLOW_FRONTEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}" frontendUrl)"
   DEVFLOW_BACKEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}" backendUrl)"
-  DEVFLOW_PROXY_MIGRATION_REQUIRED="$(installation_state_legacy_value "$state_file" true proxyMigrationRequired)"
-  DEVFLOW_FULLPASSWORD_MODIFIED="$(installation_state_legacy_value "$state_file" false fullpasswordModified)"
-  DEVFLOW_PUBLIC_PROXY_MODIFIED="$(installation_state_legacy_value "$state_file" false publicProxyModified)"
   DEVFLOW_PROXY_MIGRATION_EXECUTED="$(installation_state_legacy_value "$state_file" false proxyMigrationExecuted)"
-  DEVFLOW_CERTIFICATE_ISSUED="$(installation_state_legacy_value "$state_file" false certificateIssued)"
   DEVFLOW_PROXY_MODE="$(installation_state_legacy_value "$state_file" "${DEVFLOW_PROXY_MODE:-shared}" proxyMode proxy_mode)"
-  DEVFLOW_SHARED_PROXY_ADAPTER="$(installation_state_legacy_value "$state_file" "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" sharedProxyAdapter shared_proxy_adapter)"
   DEVFLOW_DOMAIN="$(installation_state_legacy_value "$state_file" "${DEVFLOW_DOMAIN:-internal.local}" domain)"
   DEVFLOW_MIGRATION_VERSION="$(installation_state_legacy_value "$state_file" 001_initial_schema.sql migration)"
-  DEVFLOW_UPDATE_CHANNEL=main
   export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+    DEVFLOW_APPLICATION_HEALTHY \
     DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
-    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL DEVFLOW_PROXY_MIGRATION_REQUIRED \
-    DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
+    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
     DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_PROXY_MODE \
-    DEVFLOW_SHARED_PROXY_ADAPTER DEVFLOW_DOMAIN DEVFLOW_MIGRATION_VERSION \
-    DEVFLOW_UPDATE_CHANNEL
+    DEVFLOW_DOMAIN DEVFLOW_MIGRATION_VERSION
 }
 
 load_installation_state() {
@@ -632,52 +626,46 @@ load_installation_state() {
   [[ -r "$state_file" ]] || return 1
   installation_state_schema_valid "$state_file" || return 1
   DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION="$(installation_state_value schemaVersion "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_VERSION="$(installation_state_value version "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_COMMIT="$(installation_state_value commit "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_REF="$(installation_state_value ref "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_VERSION="$(installation_state_value installedVersion "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_COMMIT="$(installation_state_value installedCommit "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_REF="$(installation_state_value installedRef "$state_file")"
   DEVFLOW_INSTALLATION_STATE_REPOSITORY="$(installation_state_value repository "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_UPDATE_CHANNEL="$(installation_state_value updateChannel "$state_file")"
   DEVFLOW_INSTALLATION_STATE_SCOPE="$(installation_state_value installationScope "$state_file")"
   DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED="$(installation_state_value applicationInstalled "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY="$(installation_state_value applicationHealthy "$state_file")"
   DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED="$(installation_state_value externalPublicationEnabled "$state_file")"
   DEVFLOW_INSTALLATION_STATE_PROVIDER="$(installation_state_value provider "$state_file")"
   DEVFLOW_INSTALLATION_STATE_FRONTEND_URL="$(installation_state_value frontendUrl "$state_file")"
   DEVFLOW_INSTALLATION_STATE_BACKEND_URL="$(installation_state_value backendUrl "$state_file")"
   DEVFLOW_INSTALLATION_STATE_DOMAIN="$(installation_state_value domain "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED="$(installation_state_value proxyMigrationRequired "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_FULLPASSWORD_MODIFIED="$(installation_state_value fullpasswordModified "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_PUBLIC_PROXY_MODIFIED="$(installation_state_value publicProxyModified "$state_file")"
   DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED="$(installation_state_value proxyMigrationExecuted "$state_file")"
   DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED="$(installation_state_value certificateIssued "$state_file")"
   DEVFLOW_INSTALLATION_STATE_PROXY_MODE="$(installation_state_value proxyMode "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_SHARED_PROXY_ADAPTER="$(installation_state_value sharedProxyAdapter "$state_file")"
   DEVFLOW_INSTALLATION_STATE_MIGRATION="$(installation_state_value migration "$state_file")"
-  [[ "$DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION" == 1 ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION" == 2 ]] || return 1
   devflow_semver_is_valid "$DEVFLOW_INSTALLATION_STATE_VERSION" || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 1
   devflow_ref_is_valid "$DEVFLOW_INSTALLATION_STATE_REF" || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_REPOSITORY" == "$DEVFLOW_CANONICAL_REPOSITORY_URL" ]] || return 1
-  [[ "$DEVFLOW_INSTALLATION_STATE_UPDATE_CHANNEL" == main ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_SCOPE" == internal || "$DEVFLOW_INSTALLATION_STATE_SCOPE" == complete ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == true || "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == false ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY" == true || "$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY" == false ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true || "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == false ]] || return 1
-  [[ "$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED" == true || "$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED" == false ]] || return 1
-  for state_boolean in DEVFLOW_INSTALLATION_STATE_FULLPASSWORD_MODIFIED \
-    DEVFLOW_INSTALLATION_STATE_PUBLIC_PROXY_MODIFIED DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED \
+  for state_boolean in DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED \
     DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED; do
     [[ "${!state_boolean}" == true || "${!state_boolean}" == false ]] || return 1
   done
   provider_validate_name "$DEVFLOW_INSTALLATION_STATE_PROVIDER" >/dev/null 2>&1 || return 1
   export DEVFLOW_INSTALLATION_STATE_SCOPE DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED \
+    DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY \
     DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED DEVFLOW_INSTALLATION_STATE_PROVIDER \
     DEVFLOW_INSTALLATION_STATE_FRONTEND_URL DEVFLOW_INSTALLATION_STATE_BACKEND_URL \
-    DEVFLOW_INSTALLATION_STATE_DOMAIN DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_REQUIRED \
+    DEVFLOW_INSTALLATION_STATE_DOMAIN \
     DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION DEVFLOW_INSTALLATION_STATE_VERSION \
     DEVFLOW_INSTALLATION_STATE_COMMIT DEVFLOW_INSTALLATION_STATE_REF \
-    DEVFLOW_INSTALLATION_STATE_REPOSITORY DEVFLOW_INSTALLATION_STATE_UPDATE_CHANNEL \
-    DEVFLOW_INSTALLATION_STATE_FULLPASSWORD_MODIFIED DEVFLOW_INSTALLATION_STATE_PUBLIC_PROXY_MODIFIED \
+    DEVFLOW_INSTALLATION_STATE_REPOSITORY \
     DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED \
-    DEVFLOW_INSTALLATION_STATE_PROXY_MODE DEVFLOW_INSTALLATION_STATE_SHARED_PROXY_ADAPTER \
+    DEVFLOW_INSTALLATION_STATE_PROXY_MODE \
     DEVFLOW_INSTALLATION_STATE_MIGRATION
 }
 
@@ -700,6 +688,8 @@ validate_installed_state_consistency() {
     return 1
   }
   INSTALLED_STATE_SCHEMA_VALID=true
+  [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == true \
+    && "$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY" == true ]] || return 1
   resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" \
     "$DEVFLOW_INSTALLATION_STATE_REF" >/dev/null || return 1
   INSTALLED_STATE_SOURCE_COMMIT_MATCH=true

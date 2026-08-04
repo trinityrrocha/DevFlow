@@ -8,6 +8,22 @@ Desde `0.4.0-alpha`, o atualizador carrega `/opt/devflow/state/infrastructure-pr
 
 `install.sh` executa somente a primeira instalação. Ele não aceita modo de atualização nem modifica uma instalação existente. Toda consulta e aplicação de novas versões pertence a `scripts/update.sh`.
 
+Para integrações futuras, `scripts/update-operation.sh` oferece um contrato estável sem
+duplicar o executor transacional:
+
+```bash
+sudo /opt/devflow/app/scripts/update-operation.sh check-update
+sudo /opt/devflow/app/scripts/update-operation.sh download-update
+sudo /opt/devflow/app/scripts/update-operation.sh validate-update
+sudo /opt/devflow/app/scripts/update-operation.sh install-update
+sudo /opt/devflow/app/scripts/update-operation.sh rollback-update
+```
+
+As três primeiras operações consultam uma cópia temporária isolada e não instalam nada.
+`install-update` delega ao updater completo. `rollback-update` exige uma transação concluída
+que contenha a release anterior e o backup autenticado; qualquer ausência ou divergência
+interrompe em modo fail-closed.
+
 O desenvolvimento, os commits e o push da `main` acontecem apenas no Windows. A VPS mantém um checkout operacional protegido em `/opt/devflow/source`, usado exclusivamente para leitura de `origin/main` e materialização de releases. Não edite, desenvolva ou crie commits nesse checkout.
 
 ## Reconciliação sem atualização

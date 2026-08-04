@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.10-alpha`: a instalação interna `0.4.8-alpha` está saudável, mas suas imagens e o estado precisam ser reconciliados com o checkout canônico antes da publicação externa.
+> Versão `0.4.11-alpha`: reconcilie a release e migre o estado para o schema v2 antes da publicação externa; a homologação real exige executar todos os gates abaixo na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.10-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.11-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -196,10 +196,23 @@ sudo /opt/devflow/app/scripts/publish.sh --dry-run \
 
 O publicador exige aplicação interna saudável, DNS, propriedade comprovada de 80/443 e provider pronto. Ele não reinstala a aplicação nem executa migrations. Enquanto `fullpassword_nginx` ocupar as portas, essa operação permanecerá bloqueada.
 
-O dry-run deve incluir `application_installed=true`,
-`installation_state_consistent=true`, `internal_health=healthy`,
-`external_publication_ready=false` e `proxy_migration_required=true`. Não execute o modo
-de publicação real nem a migração do proxy nesta etapa.
+O dry-run deve comprovar DNS, 80/443, provider, vhost, Certbot, plano de renovação,
+WebSocket, headers, CSP, HSTS, rate limit, HTTP e possibilidade de rollback. HTTPS permanece
+`not-configured` até a emissão ou reutilização do certificado. Depois da migração controlada
+e de todos os gates, publique explicitamente e valide o health:
+
+```bash
+sudo /opt/devflow/app/scripts/publish.sh --publish \
+  --provider host-nginx \
+  --domain dev.sti1.com.br \
+  --letsencrypt-email contato@sti1.com.br
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+O health final deve informar `external_publication_enabled=true`,
+`external_https_status=healthy`, `certificate_status=valid`, `renewal_status=healthy` e
+`overall_health=healthy`. Ensaie o rollback em janela controlada com
+`sudo /opt/devflow/app/scripts/publish.sh --rollback` e repita o dry-run antes de republicar.
 
 Use instalação completa somente quando o provider puder publicar com segurança. Um `fullpassword_nginx` comprovado não é selecionado como adaptador: ele bloqueia o estágio externo e mantém o estágio interno disponível. Caddy, proprietários desconhecidos e evidências divergentes permanecem fail-closed para publicação.
 

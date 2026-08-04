@@ -1227,6 +1227,7 @@ PROVIDER_APPLIED=false
 INSTALL_PROMOTED=false
 DEVFLOW_INSTALLATION_SCOPE="$INSTALL_SCOPE"
 DEVFLOW_APPLICATION_INSTALLED=false
+DEVFLOW_APPLICATION_HEALTHY=false
 DEVFLOW_EXTERNAL_PUBLICATION_ENABLED=false
 DEVFLOW_FRONTEND_URL="http://127.0.0.1:$HTTP_PORT"
 DEVFLOW_BACKEND_URL="http://127.0.0.1:$API_PORT"
@@ -1234,7 +1235,7 @@ DEVFLOW_FULLPASSWORD_MODIFIED=false
 DEVFLOW_PUBLIC_PROXY_MODIFIED=false
 DEVFLOW_PROXY_MIGRATION_EXECUTED=false
 DEVFLOW_CERTIFICATE_ISSUED=false
-export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY \
   DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
   DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
   DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED
@@ -1245,7 +1246,8 @@ installation_failed() {
   install_transaction_fail "${CURRENT_INSTALL_STAGE:-01-preflight}" "${ROOT_CAUSE:-unexpected-command-failure}" \
     | tee -a "$INSTALL_LOG" || true
   DEVFLOW_APPLICATION_INSTALLED=false
-  export DEVFLOW_APPLICATION_INSTALLED
+  DEVFLOW_APPLICATION_HEALTHY=false
+  export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY
   if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
     DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"
     load_devflow_env || true
@@ -1265,7 +1267,6 @@ installation_failed() {
   if [[ "$INSTALL_PROMOTED" == true && -L "$DEVFLOW_INSTALL_ROOT/app" ]]; then
     rm -f -- "$DEVFLOW_INSTALL_ROOT/app"
   fi
-  write_install_report failure || true
   log ERROR "A operação falhou (código $exit_code). Os dados existentes foram preservados; consulte $INSTALL_LOG." \
     | tee -a "$INSTALL_LOG" >&2
   exit "$exit_code"
@@ -1640,7 +1641,7 @@ if [[ "$INSTALL_SCOPE" == complete ]]; then
   curl --fail --silent --show-error --max-time 20 "https://$DOMAIN/" >/dev/null
   DEVFLOW_EXTERNAL_PUBLICATION_ENABLED=true
   DEVFLOW_PUBLIC_PROXY_MODIFIED=true
-  [[ "$CERTIFICATE_EXISTED_BEFORE" == true ]] || DEVFLOW_CERTIFICATE_ISSUED=true
+  DEVFLOW_CERTIFICATE_ISSUED=true
   DEVFLOW_FRONTEND_URL="https://$DOMAIN"
   DEVFLOW_BACKEND_URL="https://$DOMAIN/api"
 fi
@@ -1661,7 +1662,8 @@ systemctl daemon-reload
 systemctl enable --now devflow-backup.timer
 provider_state_write "$INFRASTRUCTURE_PROVIDER" "${DOMAIN:-internal.local}" "$HTTP_PORT" "$API_PORT"
 DEVFLOW_APPLICATION_INSTALLED=true
-export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_EXTERNAL_PUBLICATION_ENABLED \
+DEVFLOW_APPLICATION_HEALTHY=true
+export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY DEVFLOW_EXTERNAL_PUBLICATION_ENABLED \
   DEVFLOW_PUBLIC_PROXY_MODIFIED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL
 resolve_installed_release_identity "$operational_source_dir" main >/dev/null \
   || die 'A identidade final do checkout canônico não pôde ser comprovada.'
@@ -1673,7 +1675,7 @@ printf '%s\n' \
   "final_state_version=$INSTALLED_VERSION" \
   "final_state_commit=$INSTALLED_COMMIT" \
   'final_state_identity_valid=true' | tee -a "$INSTALL_LOG"
-write_install_report success
+write_installation_state
 install_transaction_complete_stage 14-write-final-state | tee -a "$INSTALL_LOG"
 trap - ERR INT TERM HUP
 

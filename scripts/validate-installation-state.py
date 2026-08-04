@@ -13,21 +13,18 @@ from urllib.parse import urlparse
 
 
 REQUIRED_KEYS = {
-    "schemaVersion", "timestamp", "version", "commit", "ref", "repository",
-    "updateChannel", "result", "installationScope", "applicationInstalled",
-    "externalPublicationEnabled", "provider", "frontendUrl", "backendUrl",
-    "proxyMigrationRequired", "fullpasswordModified", "publicProxyModified",
-    "proxyMigrationExecuted", "certificateIssued", "proxyMode",
-    "sharedProxyAdapter", "domain", "migration",
+    "schemaVersion", "installationScope", "provider", "proxyMode",
+    "installedVersion", "installedCommit", "installedRef", "repository",
+    "applicationInstalled", "applicationHealthy", "externalPublicationEnabled",
+    "proxyMigrationExecuted", "certificateIssued", "domain", "frontendUrl",
+    "backendUrl", "migration",
 }
 BOOLEAN_KEYS = {
-    "applicationInstalled", "externalPublicationEnabled", "proxyMigrationRequired",
-    "fullpasswordModified", "publicProxyModified", "proxyMigrationExecuted",
-    "certificateIssued",
+    "applicationInstalled", "applicationHealthy", "externalPublicationEnabled",
+    "proxyMigrationExecuted", "certificateIssued",
 }
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
-TIMESTAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 DOMAIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
 CANONICAL_REPOSITORY = "https://github.com/trinityrrocha/DevFlow.git"
 
@@ -55,38 +52,44 @@ def validate(document: object) -> dict[str, object]:
         fail(f"missing keys: {','.join(sorted(missing))}")
     if unknown:
         fail(f"unknown keys: {','.join(sorted(unknown))}")
-    if document["schemaVersion"] != 1:
-        fail("schemaVersion must be 1")
-    if not isinstance(document["timestamp"], str) or not TIMESTAMP.fullmatch(document["timestamp"]):
-        fail("timestamp must be UTC")
-    if not isinstance(document["version"], str) or not SEMVER.fullmatch(document["version"]):
-        fail("version is invalid")
-    if not isinstance(document["commit"], str) or not COMMIT.fullmatch(document["commit"]):
-        fail("commit is invalid")
-    if document["ref"] != "main" and not (
-        isinstance(document["ref"], str) and document["ref"].startswith("v")
-        and SEMVER.fullmatch(document["ref"][1:])
+    if document["schemaVersion"] != 2:
+        fail("schemaVersion must be 2")
+    if not isinstance(document["installedVersion"], str) or not SEMVER.fullmatch(document["installedVersion"]):
+        fail("installedVersion is invalid")
+    if not isinstance(document["installedCommit"], str) or not COMMIT.fullmatch(document["installedCommit"]):
+        fail("installedCommit is invalid")
+    if document["installedRef"] != "main" and not (
+        isinstance(document["installedRef"], str) and document["installedRef"].startswith("v")
+        and SEMVER.fullmatch(document["installedRef"][1:])
     ):
-        fail("ref is invalid")
+        fail("installedRef is invalid")
     if document["repository"] != CANONICAL_REPOSITORY:
         fail("repository is not canonical")
-    if document["updateChannel"] != "main":
-        fail("updateChannel must be main")
-    if document["result"] not in {"success", "published"}:
-        fail("result is invalid")
     if document["installationScope"] not in {"internal", "complete"}:
         fail("installationScope is invalid")
     if document["provider"] not in {"host-nginx", "isolated-nginx", "legacy-docker-nginx"}:
         fail("provider is invalid")
     if document["proxyMode"] not in {"isolated", "shared"}:
         fail("proxyMode is invalid")
-    if document["sharedProxyAdapter"] not in {"none", "host-nginx", "fullpassword-nginx"}:
-        fail("sharedProxyAdapter is invalid")
     for key in BOOLEAN_KEYS:
         if not isinstance(document[key], bool):
             fail(f"{key} must be boolean")
+    if document["applicationHealthy"] and not document["applicationInstalled"]:
+        fail("applicationHealthy requires applicationInstalled")
+    if document["externalPublicationEnabled"] != (document["installationScope"] == "complete"):
+        fail("installationScope and externalPublicationEnabled diverge")
+    if document["certificateIssued"] != document["externalPublicationEnabled"]:
+        fail("certificateIssued must represent the active external certificate")
+    if document["externalPublicationEnabled"] and not document["applicationHealthy"]:
+        fail("external publication requires a healthy application")
+    expected_proxy_mode = "isolated" if document["provider"] == "isolated-nginx" else "shared"
+    if document["proxyMode"] != expected_proxy_mode:
+        fail("provider and proxyMode diverge")
     for key in ("frontendUrl", "backendUrl"):
         validate_url(document[key], key)
+    expected_scheme = "https" if document["externalPublicationEnabled"] else "http"
+    if any(urlparse(document[key]).scheme != expected_scheme for key in ("frontendUrl", "backendUrl")):
+        fail("URLs do not match the publication scope")
     if not isinstance(document["domain"], str) or not DOMAIN.fullmatch(document["domain"]):
         fail("domain is invalid")
     if not isinstance(document["migration"], str) or not document["migration"] or len(document["migration"]) > 255:

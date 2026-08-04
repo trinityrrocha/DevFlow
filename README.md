@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.10-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.11-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes; a homologação final exige executar os gates em uma VPS Linux. O sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,7 +42,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.10-alpha
+./install.sh --check --ref main --expected-version 0.4.11-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -109,7 +109,7 @@ sudo ./scripts/repair-installation-state.sh --repair
 ```
 
 O reparador usa `/opt/devflow/source` como fonte de verdade, preserva o JSON anterior em
-`/opt/devflow/backups/state` e grava o schema oficial `schemaVersion: 1` atomicamente. O
+`/opt/devflow/backups/state` e grava o schema oficial `schemaVersion: 2` atomicamente. O
 update e a publicação externa permanecem bloqueados enquanto o estado estiver degradado.
 
 Quando as labels OCI das imagens também divergirem, use a reconciliação transacional:
@@ -151,6 +151,10 @@ sudo /opt/devflow/app/scripts/publish.sh --dry-run \
   --domain devflow.exemplo.com \
   --letsencrypt-email tls@exemplo.com
 ```
+
+Depois que todos os gates do dry-run passarem, publique somente com o modo explícito
+`--publish`. A última publicação pode ser desfeita com `scripts/publish.sh --rollback`;
+ambas as operações exigem confirmação numérica e mantêm log sanitizado.
 
 Parâmetros de configuração podem ser fornecidos ao bootstrap sem clone prévio:
 

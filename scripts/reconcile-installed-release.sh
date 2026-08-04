@@ -368,7 +368,7 @@ reconcile_installed_release_runtime \
 [[ "$API_COMMIT_MATCH" == true || "$API_COMMIT_MATCH" == unsupported-by-installed-release ]] \
   || die 'Commit da API não pôde ser reconciliado.'
 else
-  log INFO 'Imagens e configuração já correspondem à release; promovendo somente o estado schema v1.'
+  log INFO 'Imagens e configuração já correspondem à release; promovendo somente o estado schema v2.'
 fi
 DEVFLOW_APP_ROOT="$INSTALLED_RELEASE_DIR" DEVFLOW_IDENTITY_RELEASE_ROOT="$INSTALLED_RELEASE_DIR" \
   "$SCRIPT_DIR/health.sh" --internal --quiet \
@@ -376,12 +376,11 @@ DEVFLOW_APP_ROOT="$INSTALLED_RELEASE_DIR" DEVFLOW_IDENTITY_RELEASE_ROOT="$INSTAL
 
 write_reconciliation_state state running || die 'Fase de estado não pôde ser registrada.'
 prepare_installation_state_operational_values "$STATE_FILE"
-state_result=success
-[[ "$DEVFLOW_EXTERNAL_PUBLICATION_ENABLED" == true ]] && state_result=published
+DEVFLOW_APPLICATION_HEALTHY=true
 DEVFLOW_MIGRATION_VERSION="$MIGRATION_ACTUAL"
-export DEVFLOW_MIGRATION_VERSION
+export DEVFLOW_APPLICATION_HEALTHY DEVFLOW_MIGRATION_VERSION
 STATE_MUTATED=true
-write_install_report "$state_result" || die 'Estado schema v1 não pôde ser promovido atomicamente.'
+write_installation_state || die 'Estado schema v2 não pôde ser promovido atomicamente.'
 
 DEVFLOW_APP_ROOT="$INSTALLED_RELEASE_DIR" DEVFLOW_IDENTITY_RELEASE_ROOT="$INSTALLED_RELEASE_DIR" \
   "$SCRIPT_DIR/health.sh" --internal --quiet \

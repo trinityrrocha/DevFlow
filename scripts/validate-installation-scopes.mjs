@@ -70,7 +70,7 @@ check('Docker owner proven', fullpassword.stdout.includes('docker_mapping_detect
 check('unknown owner remains fail-closed', unknown.status === 0 && unknown.stdout.includes('status=owner-unproven') && unknown.stdout.includes('ready=false'));
 check('internal installation is explicit', install.includes('--install-internal') && install.includes('set_install_scope internal')
   && fullpassword.stdout.includes('internal=true'));
-check('external publication is independently blocked', publish.includes('provider_status') && publish.includes('Publicação bloqueada')
+check('external publication is independently blocked', publish.includes('provider_status') && publish.includes('publicação bloqueada')
   && install.includes('instalação interna pronta, publicação externa bloqueada') && install.includes('exit 0'));
 check('loopback ports are configured', sharedCompose.includes('127.0.0.1') && sharedCompose.includes('DEVFLOW_HTTP_PORT:-18080') && sharedCompose.includes('DEVFLOW_API_PORT:-13000'));
 check('occupied frontend port is rejected', install.includes('FRONTEND_LOOPBACK_PORT_AVAILABLE=false'));
@@ -78,9 +78,9 @@ check('occupied backend port is rejected', install.includes('BACKEND_LOOPBACK_PO
 const dbSection = compose.match(/\n  db:\n([\s\S]*?)(?=\n  backend:)/)?.[1] || '';
 check('PostgreSQL has no host publication', dbSection.includes('expose:') && !dbSection.includes('ports:') && install.includes('postgres_public_port_exposed=true'));
 check('Full Password remains untouched internally', install.includes('DEVFLOW_FULLPASSWORD_MODIFIED=false') && install.includes('não alterar Nginx, 80/443, certificados, Full Password'));
-check('internal state is recorded', common.includes('"installationScope"') && common.includes('"externalPublicationEnabled"') && common.includes('"proxyMigrationRequired"'));
+check('internal state is recorded', common.includes('"installationScope"') && common.includes('"externalPublicationEnabled"') && common.includes('"applicationHealthy"'));
 check('internal health ignores absent HTTPS', health.includes('external_https_status=not-configured') && health.includes('overall_internal_health=healthy'));
-check('later publication does not migrate', publish.includes('Não reinstala a aplicação') && !publish.includes('scripts/migrate.js'));
+check('later publication does not migrate', publish.includes('nunca executam migrations') && !publish.includes('scripts/migrate.js'));
 check('internal rollback is DevFlow-scoped', install.includes('compose_files') && install.includes('down --remove-orphans') && install.includes('if [[ "$PROVIDER_APPLIED" == true ]]'));
 check('repeated installation is blocked', install.includes('Uma instalação já existe') && install.includes('use scripts/update.sh'));
 check('interrupted installation has signal rollback traps', install.includes('trap installation_failed ERR')

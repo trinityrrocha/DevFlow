@@ -214,6 +214,7 @@ provider_validate() {
   systemctl is-active --quiet nginx || return 1
   host_nginx_select_layout
   [[ -r "$HOST_NGINX_AVAILABLE" ]]
+  [[ "$HOST_NGINX_LAYOUT" != sites || ( -L "$HOST_NGINX_ENABLED" && "$(readlink -f "$HOST_NGINX_ENABLED")" == "$HOST_NGINX_AVAILABLE" ) ]]
 }
 
 provider_health() {
@@ -226,11 +227,11 @@ provider_health() {
   curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$backend_port/api/health" >/dev/null || return 1
   openssl x509 -in "/etc/letsencrypt/live/$domain/fullchain.pem" -noout -checkhost "$domain" >/dev/null 2>&1 || return 1
   certbot certificates --cert-name "$domain" >/dev/null 2>&1 || return 1
+  [[ -r "/etc/letsencrypt/renewal/$domain.conf" ]] || return 1
   [[ -x /etc/letsencrypt/renewal-hooks/deploy/devflow-nginx-reload ]] || return 1
-  if systemctl list-unit-files certbot.timer >/dev/null 2>&1; then
-    systemctl is-enabled --quiet certbot.timer || return 1
-    systemctl is-active --quiet certbot.timer || return 1
-  fi
+  systemctl list-unit-files certbot.timer >/dev/null 2>&1 || return 1
+  systemctl is-enabled --quiet certbot.timer || return 1
+  systemctl is-active --quiet certbot.timer || return 1
 }
 
 provider_update() {

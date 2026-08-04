@@ -38,28 +38,22 @@ const publish = read('scripts/publish.sh');
 const composeImages = read('scripts/lib/compose-images.sh');
 
 const stateDocument = (commit, overrides = {}) => ({
-  schemaVersion: 1,
-  timestamp: '2026-08-04T00:05:07Z',
-  version: read('VERSION').trim(),
-  commit,
-  ref: 'main',
-  repository: 'https://github.com/trinityrrocha/DevFlow.git',
-  updateChannel: 'main',
-  result: 'success',
+  schemaVersion: 2,
   installationScope: 'internal',
-  applicationInstalled: true,
-  externalPublicationEnabled: false,
   provider: 'host-nginx',
-  frontendUrl: 'http://127.0.0.1:18080',
-  backendUrl: 'http://127.0.0.1:13000',
-  proxyMigrationRequired: true,
-  fullpasswordModified: false,
-  publicProxyModified: false,
+  proxyMode: 'shared',
+  installedVersion: read('VERSION').trim(),
+  installedCommit: commit,
+  installedRef: 'main',
+  repository: 'https://github.com/trinityrrocha/DevFlow.git',
+  applicationInstalled: true,
+  applicationHealthy: true,
+  externalPublicationEnabled: false,
   proxyMigrationExecuted: false,
   certificateIssued: false,
-  proxyMode: 'shared',
-  sharedProxyAdapter: 'host-nginx',
   domain: 'internal.local',
+  frontendUrl: 'http://127.0.0.1:18080',
+  backendUrl: 'http://127.0.0.1:13000',
   migration: '001_initial_schema.sql',
   ...overrides,
 });
@@ -90,7 +84,7 @@ try {
   const oldStateWrite = writeState(stateDocument(oldCommit));
   check(`commit antigo [status=${oldStateWrite.status} stderr=${oldStateWrite.stderr.trim()}]`,
     oldStateWrite.status === 0 && readFileSync(stateFile, 'utf8').includes(oldCommit));
-  check('versão correta com commit incorreto', stateDocument(oldCommit).version === read('VERSION').trim()
+  check('versão correta com commit incorreto', stateDocument(oldCommit).installedVersion === read('VERSION').trim()
     && oldCommit !== commit);
   check('checkout ausente', identityProbe(resolve(temporary, 'missing')).status === 20);
   writeFileSync(resolve(source, 'dirty.fixture'), 'dirty\n');
@@ -108,7 +102,7 @@ try {
   check('API com versão correta', composeImages.includes('API_VERSION_MATCH=true')
     && read('backend/src/app.js').includes('commit: env.DEVFLOW_RELEASE_COMMIT'));
 
-  check('estado inválido', writeState(stateDocument(commit, { schemaVersion: 2 })).status !== 0);
+  check('estado inválido', writeState(stateDocument(commit, { schemaVersion: 1 })).status !== 0);
   writeFileSync(stateFile, '{broken-json\n');
   check('JSON corrompido', run(python, [validator, 'validate', stateFile]).status !== 0);
   check('backup do estado', repair.includes('$DEVFLOW_INSTALL_ROOT/backups/state')
@@ -125,7 +119,7 @@ try {
   check('modo sem TTY', read('scripts/lib/common.sh').includes('is_interactive_terminal')
     && repair.includes('require_numeric_confirmation'));
   check('instalação isolada', writeState(stateDocument(commit, {
-    provider: 'isolated-nginx', proxyMode: 'isolated', sharedProxyAdapter: 'none',
+    provider: 'isolated-nginx', proxyMode: 'isolated',
   })).status === 0);
   check('instalação compartilhada', writeState(stateDocument(commit)).status === 0);
   check('update', update.includes('resolve_installed_release_identity')
@@ -134,8 +128,7 @@ try {
     && update.includes('recorded_previous_commit'));
   check('health degradado', health.includes('installation_state_health=%s')
     && health.includes('repair_available=%s'));
-  check('Full Password preservado', read('scripts/lib/common.sh').includes('DEVFLOW_FULLPASSWORD_MODIFIED')
-    && !repair.includes('fullpassword_nginx') && !repair.includes('/opt/fullpassword'));
+  check('Full Password preservado', !repair.includes('fullpassword_nginx') && !repair.includes('/opt/fullpassword'));
   check('portas 80/443 intocadas', !/\b(?:80|443)\b/u.test(repair));
   check('banco e containers não reiniciados', !/(?:docker|DEVFLOW_COMPOSE).*\b(?:restart|start|stop|up|down)\b/u.test(repair)
     && !repair.includes('run_devflow_migrations'));

@@ -84,7 +84,7 @@ for (const fragment of ['--install-internal', '--install-scope', 'planned-intern
 for (const fragment of ['docker ps', 'docker inspect', 'docker port', 'ss -H -ltnp', 'owner-unproven']) {
   if (!portOwnership.includes(fragment)) throw new Error(`Evidência de propriedade incompleta: ${fragment}.`);
 }
-for (const fragment of ['health.sh" --internal --quiet', 'provider_dry_run', 'provider_activate', 'write_install_report published']) {
+for (const fragment of ['health.sh" --internal --quiet', 'provider_dry_run', 'provider_activate', 'write_installation_state', '--publish', '--rollback']) {
   if (!publish.includes(fragment)) throw new Error(`Publicador posterior incompleto: ${fragment}.`);
 }
 if (publish.includes('scripts/migrate.js') || !rootPackage.scripts['validate:installation-scopes']) {

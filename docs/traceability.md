@@ -1,5 +1,18 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.11-alpha` — modo compartilhado
+
+| Requisito | Evidência |
+|---|---|
+| Fonte única da release | `/opt/devflow/source` via `scripts/lib/version.sh` |
+| Estado definitivo | schema v2 exato em `scripts/validate-installation-state.py` |
+| Publicação | `scripts/publish.sh --check/--dry-run/--publish/--rollback` |
+| HTTPS e renovação | provider `host-nginx`, Certbot, timer e hook validados |
+| Rollback de publicação | `publication-transaction.json` e backups persistentes |
+| Health completo | onze flags de prontidão e `overall_health` |
+| Contrato de update | `scripts/update-operation.sh` com cinco operações |
+| Testes não mutantes | `scripts/validate-shared-mode-final.mjs` |
+
 ## Instalação interna `0.4.10-alpha`
 
 | Requisito | Implementação | Evidência |
@@ -17,7 +30,7 @@
 | Requisito | Implementação | Evidência |
 |---|---|---|
 | Fonte de verdade | `resolve_installed_release_identity` | HEAD limpo de `/opt/devflow/source`, remote e ref canônicos |
-| Contrato do estado | `schemaVersion: 1` em camelCase | validador Python estrito e escrita `fsync` + rename |
+| Contrato do estado | `schemaVersion: 2` com 17 campos definitivos | validador Python estrito e escrita `fsync` + rename |
 | Reparo seguro | `repair-installation-state.sh` | backup `600`, menu numérico e nenhuma operação em containers |
 | Reconciliação | labels OCI e `/api/health` | version/revision de backend e frontend comparados ao checkout |
 | Update/rollback | `previousInstalledCommit` transacional | candidato gravado só após health; rollback valida o anterior |
@@ -264,7 +277,7 @@ Gates VPS pendentes: check/dry-run reais, instalação do Nginx, Certbot, health
 | Atualização anônima | remote operacional HTTPS público validado em `../scripts/update.sh` |
 | Sem segredos atuais | `../scripts/repository-audit.mjs` |
 | Sem segredos históricos | `../scripts/history-audit.mjs` |
-| Metadados instalados | `/opt/devflow/state/installation.json` e `version.json` registram versão, commit, ref, URL, data e canal |
+| Metadados instalados | `/opt/devflow/source` é a fonte; `installation.json` registra identidade, escopo, saúde, provider, publicação, URLs e migration |
 | Licença | ausência declarada no README; direitos autorais padrão, sem licença escolhida automaticamente |
 
 ## Documento 002

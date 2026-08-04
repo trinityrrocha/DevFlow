@@ -56,8 +56,8 @@ check('labels OCI reconciliadas', reconcile.includes('compose_image_matches_rele
   && compose.includes('DEVFLOW_BUILD_COMMIT')
   && backendDockerfile.includes('org.opencontainers.image.revision')
   && frontendDockerfile.includes('org.opencontainers.image.revision'));
-check('estado schema v1', reconcile.includes('write_install_report "$state_result"')
-  && common.includes('"schemaVersion": 1'));
+check('estado schema v2', reconcile.includes('write_installation_state')
+  && common.includes('"schemaVersion": 2'));
 check('API sem suporte a commit', images.includes('unsupported-by-installed-release')
   && images.includes("! grep -Fq 'commit: env.DEVFLOW_RELEASE_COMMIT'"));
 check('API com commit correto', images.includes('[[ "$api_commit" == "$INSTALLED_COMMIT" ]] && API_COMMIT_MATCH=true'));

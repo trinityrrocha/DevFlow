@@ -68,6 +68,28 @@ if [[ "$RUNTIME_IDENTITY_VALID" != true ]]; then
   REPAIR_AVAILABLE=false
 fi
 
+PROVIDER_READY=false
+PROXY_READY=false
+PUBLICATION_READY=false
+PUBLIC_API_READY=false
+PUBLIC_FRONTEND_READY=false
+CERTIFICATE_READY=false
+RENEWAL_READY=false
+ROLLBACK_READY=false
+RELEASE_IDENTITY_VALID="$RUNTIME_IDENTITY_VALID"
+INSTALLATION_STATE_VALID=false
+[[ "$INSTALLATION_STATE_HEALTH" == healthy ]] && INSTALLATION_STATE_VALID=true
+PROXY_MODE_VALID=false
+[[ "$DEVFLOW_PROXY_MODE" == isolated || "$DEVFLOW_PROXY_MODE" == shared ]] && PROXY_MODE_VALID=true
+HOST_NGINX_VALID=false
+SHARED_ADAPTER_VALID=false
+if [[ "$DEVFLOW_PROXY_MODE" == shared && "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx \
+  && "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == host-nginx ]]; then
+  SHARED_ADAPTER_VALID=true
+elif [[ "$DEVFLOW_PROXY_MODE" == isolated && "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == isolated-nginx ]]; then
+  SHARED_ADAPTER_VALID=true
+fi
+
 failures=0
 INTERNAL_FRONTEND_HEALTHY=true
 INTERNAL_BACKEND_HEALTHY=true
@@ -169,11 +191,13 @@ fi
 
 if [[ "$INTERNAL_ONLY" == false ]]; then
   if curl --fail --silent --show-error --max-time 20 "https://${DEVFLOW_DOMAIN}/api/health" >/dev/null; then
+    PUBLIC_API_READY=true
     report PASS public_api "https://${DEVFLOW_DOMAIN}/api/health"
   else
     report FAIL public_api 'indisponível'
   fi
   if curl --fail --silent --show-error --max-time 20 "https://${DEVFLOW_DOMAIN}/" >/dev/null; then
+    PUBLIC_FRONTEND_READY=true
     report PASS public_frontend "https://${DEVFLOW_DOMAIN}/"
   else
     report FAIL public_frontend 'indisponível'
@@ -189,14 +213,65 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
         && report PASS fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN" \
         || report FAIL fullpassword "https://$FULLPASSWORD_ORIGINAL_DOMAIN indisponível"
     else
-      provider_health "$DEVFLOW_DOMAIN" "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}" \
-        && report PASS provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER" \
-        || report FAIL provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER"
+      if provider_health "$DEVFLOW_DOMAIN" "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}"; then
+        PROVIDER_READY=true
+        PROXY_READY=true
+        HOST_NGINX_VALID=true
+        report PASS provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER"
+      else
+        report FAIL provider "$DEVFLOW_INFRASTRUCTURE_PROVIDER"
+      fi
     fi
   else
     edge_id="$("${DEVFLOW_COMPOSE[@]}" ps -q edge 2>/dev/null || true)"
     edge_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$edge_id" 2>/dev/null || true)"
-    [[ "$edge_state" == healthy ]] && report PASS proxy "edge $edge_state" || report FAIL proxy "edge $edge_state"
+    if [[ "$edge_state" == healthy ]]; then
+      PROVIDER_READY=true
+      PROXY_READY=true
+      report PASS proxy "edge $edge_state"
+    else
+      report FAIL proxy "edge $edge_state"
+    fi
+  fi
+
+  if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx ]]; then
+    if [[ -r "/etc/letsencrypt/live/$DEVFLOW_DOMAIN/fullchain.pem" ]] \
+    && openssl x509 -in "/etc/letsencrypt/live/$DEVFLOW_DOMAIN/fullchain.pem" -noout -checkhost "$DEVFLOW_DOMAIN" >/dev/null 2>&1; then
+      CERTIFICATE_READY=true
+      report PASS certificate valid
+    else
+      report FAIL certificate invalid
+    fi
+    if [[ -r "/etc/letsencrypt/renewal/$DEVFLOW_DOMAIN.conf" \
+      && -x /etc/letsencrypt/renewal-hooks/deploy/devflow-nginx-reload ]] \
+      && systemctl is-enabled --quiet certbot.timer \
+      && systemctl is-active --quiet certbot.timer; then
+      RENEWAL_READY=true
+      report PASS renewal automatic
+    else
+      report FAIL renewal unavailable
+    fi
+    publication_transaction="$DEVFLOW_STATE_ROOT/publication-transaction.json"
+    publication_backup="$(installation_state_value backupDirectory "$publication_transaction" 2>/dev/null || true)"
+    if [[ "$(installation_state_value status "$publication_transaction" 2>/dev/null || true)" == completed \
+      && "$publication_backup" == "$DEVFLOW_STATE_ROOT/publication-backups/"* \
+      && -f "$publication_backup/devflow.env" \
+      && -f "$publication_backup/installation.json" \
+      && -f "$publication_backup/infrastructure-provider.json" ]]; then
+      ROLLBACK_READY=true
+      report PASS publication_rollback "$publication_backup"
+    else
+      report FAIL publication_rollback unavailable
+    fi
+  elif [[ "$failures" -eq 0 ]]; then
+    CERTIFICATE_READY=true
+    RENEWAL_READY=true
+    ROLLBACK_READY=true
+  fi
+  if [[ "$PROVIDER_READY" == true && "$PROXY_READY" == true && "$CERTIFICATE_READY" == true \
+    && "$RENEWAL_READY" == true && "$ROLLBACK_READY" == true \
+    && "$PUBLIC_API_READY" == true && "$PUBLIC_FRONTEND_READY" == true ]]; then
+    PUBLICATION_READY=true
   fi
 fi
 
@@ -219,9 +294,23 @@ if [[ "$failures" -gt 0 ]]; then
     printf 'frontend_image_commit_match=%s\n' "$FRONTEND_IMAGE_COMMIT_MATCH"
     printf 'installation_state_health=%s\n' "$INSTALLATION_STATE_HEALTH"
     printf 'repair_available=%s\n' "$REPAIR_AVAILABLE"
+    printf 'provider_ready=%s\n' "$PROVIDER_READY"
+    printf 'proxy_ready=%s\n' "$PROXY_READY"
+    printf 'publication_ready=%s\n' "$PUBLICATION_READY"
+    printf 'certificate_ready=%s\n' "$CERTIFICATE_READY"
+    printf 'renewal_ready=%s\n' "$RENEWAL_READY"
+    printf 'rollback_ready=%s\n' "$ROLLBACK_READY"
+    printf 'release_identity_valid=%s\n' "$RELEASE_IDENTITY_VALID"
+    printf 'installation_state_valid=%s\n' "$INSTALLATION_STATE_VALID"
+    printf 'proxy_mode_valid=%s\n' "$PROXY_MODE_VALID"
+    printf 'host_nginx_valid=%s\n' "$HOST_NGINX_VALID"
+    printf 'shared_adapter_valid=%s\n' "$SHARED_ADAPTER_VALID"
+    [[ "$CERTIFICATE_READY" == true ]] && printf 'certificate_status=valid\n' || printf 'certificate_status=invalid\n'
+    [[ "$RENEWAL_READY" == true ]] && printf 'renewal_status=healthy\n' || printf 'renewal_status=unhealthy\n'
     [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
       && printf 'external_https_status=failed\n' || printf 'external_https_status=not-configured\n'
     printf 'overall_internal_health=unhealthy\n'
+    printf 'overall_health=unhealthy\n'
     printf 'health_status=unhealthy failures=%s\n' "$failures"
   fi
   exit 1
@@ -244,8 +333,22 @@ if [[ "$QUIET" == false ]]; then
   printf 'frontend_image_commit_match=%s\n' "$FRONTEND_IMAGE_COMMIT_MATCH"
   printf 'installation_state_health=%s\n' "$INSTALLATION_STATE_HEALTH"
   printf 'repair_available=%s\n' "$REPAIR_AVAILABLE"
+  printf 'provider_ready=%s\n' "$PROVIDER_READY"
+  printf 'proxy_ready=%s\n' "$PROXY_READY"
+  printf 'publication_ready=%s\n' "$PUBLICATION_READY"
+  printf 'certificate_ready=%s\n' "$CERTIFICATE_READY"
+  printf 'renewal_ready=%s\n' "$RENEWAL_READY"
+  printf 'rollback_ready=%s\n' "$ROLLBACK_READY"
+  printf 'release_identity_valid=%s\n' "$RELEASE_IDENTITY_VALID"
+  printf 'installation_state_valid=%s\n' "$INSTALLATION_STATE_VALID"
+  printf 'proxy_mode_valid=%s\n' "$PROXY_MODE_VALID"
+  printf 'host_nginx_valid=%s\n' "$HOST_NGINX_VALID"
+  printf 'shared_adapter_valid=%s\n' "$SHARED_ADAPTER_VALID"
+  [[ "$CERTIFICATE_READY" == true ]] && printf 'certificate_status=valid\n' || printf 'certificate_status=not-configured\n'
+  [[ "$RENEWAL_READY" == true ]] && printf 'renewal_status=healthy\n' || printf 'renewal_status=not-configured\n'
   [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] \
     && printf 'external_https_status=healthy\n' || printf 'external_https_status=not-configured\n'
   printf 'overall_internal_health=healthy\n'
+  printf 'overall_health=healthy\n'
   printf 'health_status=healthy version=%s migration=%s scope=%s\n' "$EXPECTED_VERSION" "$migration" "$INSTALLATION_SCOPE"
 fi

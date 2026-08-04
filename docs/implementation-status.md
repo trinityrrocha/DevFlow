@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-03. Versão: `0.4.10-alpha`.
+Data de corte: 2026-08-04. Versão: `0.4.11-alpha`.
 
 ## Provider Nginx do host
 
@@ -19,6 +19,8 @@ Na retomada de `0.4.7-alpha`, as imagens foram construídas e o backend foi comp
 A retomada `0.4.8-alpha` concluiu a instalação interna e todos os health checks na VPS ARM64. O estado final, porém, herdou o commit `0.4.6-alpha` do `.env` depois de `load_devflow_env`. A `0.4.9-alpha` resolve a identidade pelo checkout canônico, introduz schema e reparo atômico, reconcilia imagens/API e bloqueia update/publicação enquanto houver divergência. O reparo real ainda não foi executado na VPS.
 
 O check real do reparador `0.4.9-alpha` confirmou que backend e frontend tinham a versão correta, mas revision OCI antiga; por isso o reparo somente do JSON foi corretamente bloqueado. A `0.4.10-alpha` adiciona reconciliação transacional das duas imagens a partir do checkout canônico `0.4.8-alpha`, preservando banco, migration, proxy, Full Password e imagens anteriores. A execução real ainda está pendente.
+
+A `0.4.11-alpha` fecha localmente os contratos de estado v2, publicação explícita, HTTPS/renovação, rollback persistente, health ampliado e operações reutilizáveis de atualização. Os testes locais são não mutantes e não substituem o ensaio privilegiado na VPS: DNS, 80/443, emissão/reuso de certificado, reload do Nginx, tráfego HTTP/HTTPS/WebSocket e rollback real continuam como gate obrigatório antes da homologação operacional do modo compartilhado.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 

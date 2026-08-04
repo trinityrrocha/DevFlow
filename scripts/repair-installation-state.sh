@@ -48,8 +48,8 @@ DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
 export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR
 compose_files
 
-recorded_version="$(installation_state_legacy_value "$STATE_FILE" unknown version)"
-recorded_commit="$(installation_state_legacy_value "$STATE_FILE" unknown commit)"
+recorded_version="$(installation_state_legacy_value "$STATE_FILE" unknown installedVersion version)"
+recorded_commit="$(installation_state_legacy_value "$STATE_FILE" unknown installedCommit commit)"
 state_schema_valid=false
 state_identity_consistent=false
 installation_state_schema_valid "$STATE_FILE" && state_schema_valid=true
@@ -117,8 +117,10 @@ chown root:root "$backup_file"
 sync -f "$backup_file" 2>/dev/null || true
 
 prepare_installation_state_operational_values "$STATE_FILE"
+DEVFLOW_APPLICATION_HEALTHY=true
+export DEVFLOW_APPLICATION_HEALTHY
 
-write_install_report success || die 'A gravação atômica do estado corrigido falhou.'
+write_installation_state || die 'A gravação atômica do estado corrigido falhou.'
 validate_installed_state_consistency "$STATE_FILE" >/dev/null \
   || die 'O estado corrigido não corresponde ao checkout canônico.'
 [[ "$(stat -c '%a:%u:%g' "$STATE_FILE")" == 600:0:0 ]] \
