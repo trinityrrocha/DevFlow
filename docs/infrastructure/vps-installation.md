@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.9-alpha`: a instalação interna `0.4.8-alpha` foi homologada. Antes da publicação externa, o estado legado deve ser reconciliado com o checkout canônico sem reiniciar containers.
+> Versão `0.4.10-alpha`: a instalação interna `0.4.8-alpha` está saudável, mas suas imagens e o estado precisam ser reconciliados com o checkout canônico antes da publicação externa.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.9-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.10-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -156,22 +156,22 @@ sudo /opt/devflow/app/scripts/health.sh
 
 O resultado interno saudável apresenta `backend_image_present=true`, `frontend_image_present=true`, `postgres_image_present=true`, `database_healthy=true`, `migrations_current=true`, `internal_backend_healthy=true`, `internal_frontend_healthy=true`, `external_publication_enabled=false`, `external_https_status=not-configured` e `overall_internal_health=healthy`.
 
-## 5. Reparar o estado legado antes da publicação
+## 5. Reconciliar imagens e estado legado antes da publicação
 
-A release imutável `0.4.8-alpha` em `/opt/devflow/app` não contém o reparador criado
-em `0.4.9-alpha`. Portanto, execute o script diretamente no checkout recém-clonado em
-`~/DevFlow`; ele inspeciona `/opt/devflow/source` como fonte de verdade e não promove nem
-modifica o código instalado:
+A release imutável `0.4.8-alpha` em `/opt/devflow/app` não contém a ferramenta operacional
+mais nova. Execute-a diretamente no checkout atualizado em `~/DevFlow`; o contexto de build
+continua sendo exclusivamente `/opt/devflow/source`, portanto a aplicação não é atualizada:
 
 ```bash
 cd ~/DevFlow
-sudo ./scripts/repair-installation-state.sh --check
-sudo ./scripts/repair-installation-state.sh --repair
+sudo ./scripts/reconcile-installed-release.sh --check
+sudo ./scripts/reconcile-installed-release.sh --reconcile
 ```
 
-Escolha `1` somente depois de confirmar `actual_version`, `actual_commit`, labels OCI e
-`application_healthy=true`. O reparo cria um backup `root:root 600` em
-`/opt/devflow/backups/state`, grava o JSON por rename atômico e não reinicia containers.
+Escolha `1` somente depois de confirmar identidade canônica, banco saudável, migration atual e
+`reconciliation_available=true`. A operação cria imagens candidatas, valida labels/conteúdo,
+mantém tags das imagens anteriores e recria somente backend/frontend. O estado anterior é
+preservado em `/opt/devflow/backups/state` e promovido por rename atômico apenas após health.
 
 Valide com o health da mesma revisão operacional:
 
@@ -180,9 +180,10 @@ sudo ./scripts/health.sh --internal
 sudo cat /opt/devflow/state/installation.json
 ```
 
-Depois de uma atualização futura para uma release que contenha o reparador, o caminho
-`/opt/devflow/app/scripts/repair-installation-state.sh` também estará disponível. Não copie
-scripts isolados para dentro de uma release imutável.
+Para uma API `0.4.8-alpha` sem campo `commit`, o resultado esperado é
+`api_commit_match=unsupported-by-installed-release`; versão da API e labels OCI continuam
+obrigatórias. Não copie scripts para dentro da release imutável e não execute update,
+publicação externa ou migração de proxy nesta etapa.
 
 ## 6. Publicação externa posterior
 

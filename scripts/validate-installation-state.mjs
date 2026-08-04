@@ -134,7 +134,7 @@ try {
     && update.includes('recorded_previous_commit'));
   check('health degradado', health.includes('installation_state_health=%s')
     && health.includes('repair_available=%s'));
-  check('Full Password preservado', repair.includes('DEVFLOW_FULLPASSWORD_MODIFIED')
+  check('Full Password preservado', read('scripts/lib/common.sh').includes('DEVFLOW_FULLPASSWORD_MODIFIED')
     && !repair.includes('fullpassword_nginx') && !repair.includes('/opt/fullpassword'));
   check('portas 80/443 intocadas', !/\b(?:80|443)\b/u.test(repair));
   check('banco e containers não reiniciados', !/(?:docker|DEVFLOW_COMPOSE).*\b(?:restart|start|stop|up|down)\b/u.test(repair)

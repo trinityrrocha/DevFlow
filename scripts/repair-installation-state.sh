@@ -48,21 +48,8 @@ DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
 export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR
 compose_files
 
-legacy_value() {
-  local fallback="$1" key value
-  shift
-  for key in "$@"; do
-    value="$(installation_state_value "$key" "$STATE_FILE" 2>/dev/null || true)"
-    if [[ -n "$value" ]]; then
-      printf '%s\n' "$value"
-      return 0
-    fi
-  done
-  printf '%s\n' "$fallback"
-}
-
-recorded_version="$(legacy_value unknown version)"
-recorded_commit="$(legacy_value unknown commit)"
+recorded_version="$(installation_state_legacy_value "$STATE_FILE" unknown version)"
+recorded_commit="$(installation_state_legacy_value "$STATE_FILE" unknown commit)"
 state_schema_valid=false
 state_identity_consistent=false
 installation_state_schema_valid "$STATE_FILE" && state_schema_valid=true
@@ -129,29 +116,7 @@ install -m 0600 "$STATE_FILE" "$backup_file"
 chown root:root "$backup_file"
 sync -f "$backup_file" 2>/dev/null || true
 
-DEVFLOW_INSTALLATION_SCOPE="$(legacy_value internal installationScope)"
-DEVFLOW_APPLICATION_INSTALLED="$(legacy_value true applicationInstalled)"
-DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$(legacy_value false externalPublicationEnabled)"
-DEVFLOW_INFRASTRUCTURE_PROVIDER="$(legacy_value "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-host-nginx}" provider infrastructure_provider)"
-DEVFLOW_FRONTEND_URL="$(legacy_value "http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}" frontendUrl)"
-DEVFLOW_BACKEND_URL="$(legacy_value "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}" backendUrl)"
-DEVFLOW_PROXY_MIGRATION_REQUIRED="$(legacy_value true proxyMigrationRequired)"
-DEVFLOW_FULLPASSWORD_MODIFIED="$(legacy_value false fullpasswordModified)"
-DEVFLOW_PUBLIC_PROXY_MODIFIED="$(legacy_value false publicProxyModified)"
-DEVFLOW_PROXY_MIGRATION_EXECUTED="$(legacy_value false proxyMigrationExecuted)"
-DEVFLOW_CERTIFICATE_ISSUED="$(legacy_value false certificateIssued)"
-DEVFLOW_PROXY_MODE="$(legacy_value "${DEVFLOW_PROXY_MODE:-shared}" proxyMode proxy_mode)"
-DEVFLOW_SHARED_PROXY_ADAPTER="$(legacy_value "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" sharedProxyAdapter shared_proxy_adapter)"
-DEVFLOW_DOMAIN="$(legacy_value "${DEVFLOW_DOMAIN:-internal.local}" domain)"
-DEVFLOW_MIGRATION_VERSION="$(legacy_value 001_initial_schema.sql migration)"
-DEVFLOW_UPDATE_CHANNEL=main
-export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
-  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
-  DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL DEVFLOW_PROXY_MIGRATION_REQUIRED \
-  DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
-  DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_PROXY_MODE \
-  DEVFLOW_SHARED_PROXY_ADAPTER DEVFLOW_DOMAIN DEVFLOW_MIGRATION_VERSION \
-  DEVFLOW_UPDATE_CHANNEL
+prepare_installation_state_operational_values "$STATE_FILE"
 
 write_install_report success || die 'A gravação atômica do estado corrigido falhou.'
 validate_installed_state_consistency "$STATE_FILE" >/dev/null \

@@ -50,6 +50,8 @@ require_linux
 require_root
 command -v flock >/dev/null 2>&1 || die 'flock é obrigatório para impedir publicações concorrentes.'
 command -v ip >/dev/null 2>&1 || die 'iproute2 é obrigatório para validar o DNS local.'
+exec 8>/run/lock/devflow-release-reconcile.lock
+flock -n 8 || die 'Reconciliação da release instalada em andamento; publicação bloqueada.'
 [[ "$PROVIDER" == host-nginx ]] || die 'Esta versão publica posteriormente somente pelo provider host-nginx.'
 validate_domain "$DOMAIN"
 validate_email "$LETSENCRYPT_EMAIL"

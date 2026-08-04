@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.9-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
+Versão atual: **0.4.10-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes e ainda dependem de homologação em VPS; o sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,7 +42,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.9-alpha
+./install.sh --check --ref main --expected-version 0.4.10-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -111,6 +111,18 @@ sudo ./scripts/repair-installation-state.sh --repair
 O reparador usa `/opt/devflow/source` como fonte de verdade, preserva o JSON anterior em
 `/opt/devflow/backups/state` e grava o schema oficial `schemaVersion: 1` atomicamente. O
 update e a publicação externa permanecem bloqueados enquanto o estado estiver degradado.
+
+Quando as labels OCI das imagens também divergirem, use a reconciliação transacional:
+
+```bash
+sudo ./scripts/reconcile-installed-release.sh --check
+sudo ./scripts/reconcile-installed-release.sh --reconcile
+```
+
+Ela executa o código operacional do checkout atual, mas constrói exclusivamente a partir de
+`/opt/devflow/source`. Somente backend e frontend são recriados; PostgreSQL, migrations,
+proxy e Full Password permanecem fora do escopo. As imagens anteriores recebem tags de
+backup e são restauradas automaticamente se qualquer gate posterior falhar.
 
 Para investigar somente a inicialização, sem exibir valores de configuração ou aplicar mudanças:
 

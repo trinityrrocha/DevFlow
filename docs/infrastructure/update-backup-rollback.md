@@ -10,6 +10,23 @@ Desde `0.4.0-alpha`, o atualizador carrega `/opt/devflow/state/infrastructure-pr
 
 O desenvolvimento, os commits e o push da `main` acontecem apenas no Windows. A VPS mantém um checkout operacional protegido em `/opt/devflow/source`, usado exclusivamente para leitura de `origin/main` e materialização de releases. Não edite, desenvolva ou crie commits nesse checkout.
 
+## Reconciliação sem atualização
+
+`scripts/reconcile-installed-release.sh` corrige imagens e estado que divergiram do commit já
+instalado. Ele não consulta nem promove `origin/main`, não altera o symlink da release e não
+executa migrations. O código da ferramenta pode vir de `~/DevFlow`, mas versão, commit e
+contexto de build são sempre resolvidos em `/opt/devflow/source`.
+
+O fluxo constrói tags candidatas, valida labels OCI e conteúdo, guarda os IDs anteriores,
+retifica somente `DEVFLOW_RELEASE_COMMIT`, recria backend/frontend com `--no-deps`, confirma
+container/mount/migration do PostgreSQL e só então promove `installation.json`. Em falha,
+retorna as tags e os dois containers, restaura ambiente e JSON e registra o resultado em
+`/opt/devflow/state/reconciliation.json`. Logs sanitizados ficam em
+`/opt/devflow/logs/reconciliation-<timestamp>.log`.
+
+Reconcile, update, reparo de estado e publicação externa usam locks incompatíveis. Nenhum
+deles pode iniciar enquanto outro estiver no trecho protegido.
+
 ## Identidade de versão
 
 `VERSION` é a fonte canônica. Backend, frontend, Compose e documentação devem usar o mesmo SemVer. A leitura, comparação e validação de consistência são centralizadas em `scripts/lib/version.sh`; `main` é dinâmica e uma versão fixa só é exigida com `--expected-version`. Consulte o ambiente sem alterações:

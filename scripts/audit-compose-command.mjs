@@ -22,6 +22,7 @@ const fullPasswordOnly = new Set([
 const versionProbeAllowed = new Set([
   'scripts/install.sh',
   'scripts/update.sh',
+  'scripts/reconcile-installed-release.sh',
   'scripts/diagnose.sh',
   'scripts/migrate-proxy-to-host-nginx.sh',
 ]);

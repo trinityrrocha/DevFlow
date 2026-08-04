@@ -1,6 +1,6 @@
 {
   "name": "@devflow/frontend",
-  "version": "0.4.9-alpha",
+  "version": "0.4.10-alpha",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,6 +1,6 @@
 # Primeiro deployment de homologação
 
-> Em `0.4.9-alpha`, reconcilie primeiro o estado instalado com `/opt/devflow/source`. A detecção de `fullpassword_nginx` não autoriza integração nem impede o estágio interno.
+> Em `0.4.10-alpha`, reconcilie imagens e estado com `/opt/devflow/source` quando as revisions OCI divergirem. A detecção de `fullpassword_nginx` não autoriza integração nem impede o estágio interno.
 
 ## Gate antes da VPS
 
@@ -48,7 +48,7 @@ sudo /opt/devflow/app/scripts/backup.sh
 Verifique:
 
 - todos os serviços necessários estão `healthy`;
-- `/api/health` informa `0.4.9-alpha`, commit instalado e migration `001_initial_schema.sql`;
+- `/api/health` informa a versão instalada, commit quando suportado e migration `001_initial_schema.sql`;
 - em coexistência, `health.sh` confirma `nginx -t`, `dev.sti1.com.br`, `pw.sti1.com.br` e ausência do PostgreSQL na rede de borda;
 - o certificado corresponde ao domínio;
 - o Super Admin troca a senha e configura MFA;

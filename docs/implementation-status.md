@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-03. Versão: `0.4.9-alpha`.
+Data de corte: 2026-08-03. Versão: `0.4.10-alpha`.
 
 ## Provider Nginx do host
 
@@ -17,6 +17,8 @@ Na retomada real de `0.4.6-alpha`, o PostgreSQL chegou a `healthy`, mas a etapa 
 Na retomada de `0.4.7-alpha`, as imagens foram construídas e o backend foi comprovado externamente com `/database/migrations/001_initial_schema.sql`, mas a etapa 06 retornou falso negativo. O validador usava `docker compose run` antes da criação das redes e descartava stderr. A `0.4.8-alpha` usa a imagem resolvida em `docker run --network none`, classifica conteúdo e runtime separadamente e registra a causa no estado transacional. A retomada real ainda não foi repetida.
 
 A retomada `0.4.8-alpha` concluiu a instalação interna e todos os health checks na VPS ARM64. O estado final, porém, herdou o commit `0.4.6-alpha` do `.env` depois de `load_devflow_env`. A `0.4.9-alpha` resolve a identidade pelo checkout canônico, introduz schema e reparo atômico, reconcilia imagens/API e bloqueia update/publicação enquanto houver divergência. O reparo real ainda não foi executado na VPS.
+
+O check real do reparador `0.4.9-alpha` confirmou que backend e frontend tinham a versão correta, mas revision OCI antiga; por isso o reparo somente do JSON foi corretamente bloqueado. A `0.4.10-alpha` adiciona reconciliação transacional das duas imagens a partir do checkout canônico `0.4.8-alpha`, preservando banco, migration, proxy, Full Password e imagens anteriores. A execução real ainda está pendente.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 
@@ -50,6 +52,7 @@ Os resultados efetivamente obtidos nesta rodada devem constar no relatório fina
 
 ## Pendente para homologação na VPS
 
+- executar `reconcile-installed-release.sh --check` e `--reconcile` sobre a instalação `0.4.8-alpha`, arquivando log, estado e tags de rollback;
 - construir imagens e iniciar todos os containers em Linux com Docker;
 - executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
 - executar migration em PostgreSQL real e confirmar `/api/health`;

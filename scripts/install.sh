@@ -666,7 +666,8 @@ COMPOSE_STRUCTURE_STATUS=pending-docker-install
 if [[ "$MODE" != check ]]; then
   for required_file in database/migrations/001_initial_schema.sql backend/scripts/migrate.js \
     scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh \
-    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
+    scripts/repair-installation-state.sh scripts/reconcile-installed-release.sh \
+    scripts/validate-installation-state.py \
     scripts/resolve-compose-image.py scripts/lib/compose-images.sh scripts/lib/install-transaction.sh; do
     [[ -f "$SOURCE_DIR/$required_file" && ! -L "$SOURCE_DIR/$required_file" ]] \
       || die "Componente interno obrigatório ausente ou inválido: $required_file"

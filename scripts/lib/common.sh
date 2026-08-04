@@ -587,6 +587,46 @@ installation_state_value() {
   sed -nE "s/^[[:space:]]*\"$key\"[[:space:]]*:[[:space:]]*(\"([^\"]*)\"|(true|false)|[0-9]+),?[[:space:]]*$/\\2\\3/p" "$state_file"
 }
 
+installation_state_legacy_value() {
+  local state_file="$1" fallback="$2" key value
+  shift 2
+  for key in "$@"; do
+    value="$(installation_state_value "$key" "$state_file" 2>/dev/null || true)"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done
+  printf '%s\n' "$fallback"
+}
+
+prepare_installation_state_operational_values() {
+  local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
+  DEVFLOW_INSTALLATION_SCOPE="$(installation_state_legacy_value "$state_file" internal installationScope)"
+  DEVFLOW_APPLICATION_INSTALLED="$(installation_state_legacy_value "$state_file" true applicationInstalled)"
+  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$(installation_state_legacy_value "$state_file" false externalPublicationEnabled)"
+  DEVFLOW_INFRASTRUCTURE_PROVIDER="$(installation_state_legacy_value "$state_file" "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-host-nginx}" provider infrastructure_provider)"
+  DEVFLOW_FRONTEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}" frontendUrl)"
+  DEVFLOW_BACKEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}" backendUrl)"
+  DEVFLOW_PROXY_MIGRATION_REQUIRED="$(installation_state_legacy_value "$state_file" true proxyMigrationRequired)"
+  DEVFLOW_FULLPASSWORD_MODIFIED="$(installation_state_legacy_value "$state_file" false fullpasswordModified)"
+  DEVFLOW_PUBLIC_PROXY_MODIFIED="$(installation_state_legacy_value "$state_file" false publicProxyModified)"
+  DEVFLOW_PROXY_MIGRATION_EXECUTED="$(installation_state_legacy_value "$state_file" false proxyMigrationExecuted)"
+  DEVFLOW_CERTIFICATE_ISSUED="$(installation_state_legacy_value "$state_file" false certificateIssued)"
+  DEVFLOW_PROXY_MODE="$(installation_state_legacy_value "$state_file" "${DEVFLOW_PROXY_MODE:-shared}" proxyMode proxy_mode)"
+  DEVFLOW_SHARED_PROXY_ADAPTER="$(installation_state_legacy_value "$state_file" "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" sharedProxyAdapter shared_proxy_adapter)"
+  DEVFLOW_DOMAIN="$(installation_state_legacy_value "$state_file" "${DEVFLOW_DOMAIN:-internal.local}" domain)"
+  DEVFLOW_MIGRATION_VERSION="$(installation_state_legacy_value "$state_file" 001_initial_schema.sql migration)"
+  DEVFLOW_UPDATE_CHANNEL=main
+  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
+    DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
+    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL DEVFLOW_PROXY_MIGRATION_REQUIRED \
+    DEVFLOW_FULLPASSWORD_MODIFIED DEVFLOW_PUBLIC_PROXY_MODIFIED \
+    DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_PROXY_MODE \
+    DEVFLOW_SHARED_PROXY_ADAPTER DEVFLOW_DOMAIN DEVFLOW_MIGRATION_VERSION \
+    DEVFLOW_UPDATE_CHANNEL
+}
+
 load_installation_state() {
   local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}" state_boolean
   [[ -r "$state_file" ]] || return 1

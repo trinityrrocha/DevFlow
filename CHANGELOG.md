@@ -2,6 +2,21 @@
 
 Todas as alterações relevantes do DevFlow são registradas neste arquivo.
 
+## [0.4.10-alpha] - 2026-08-03
+
+### Corrigido
+
+- criada reconciliação transacional separada para reconstruir somente backend/frontend a partir de `/opt/devflow/source`, sem promover o código operacional mais novo para a release instalada;
+- imagens candidatas recebem versão e revision OCI canônicas, passam por validação isolada e substituem apenas os dois serviços da aplicação;
+- IDs e tags anteriores, configuração privada e estado JSON são preservados para rollback automático; container, mount e migration do PostgreSQL são verificados antes e depois;
+- APIs de releases legadas sem campo `commit` são classificadas como `unsupported-by-installed-release`, sem relaxar a validação de versão ou das imagens;
+- publicação externa, update e reparo de estado são serializados contra a reconciliação, que não altera proxy, Full Password, portas públicas ou migrations.
+
+### Homologação
+
+- 20 cenários obrigatórios cobrem promoção, rollback, preservação, modos, API legada, idempotência e bloqueio de publicação;
+- a execução real de `--reconcile` na instalação `0.4.8-alpha` permanece pendente na VPS ARM64.
+
 ## [0.4.9-alpha] - 2026-08-03
 
 ### Corrigido

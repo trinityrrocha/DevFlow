@@ -60,7 +60,7 @@ fi
 `, { mode: 0o755 });
 chmodSync(fakePython, 0o755);
 
-const required = (envPath, password = 'safe-fixture-value') => `DEVFLOW_VERSION=0.4.9-alpha
+const required = (envPath, password = 'safe-fixture-value') => `DEVFLOW_VERSION=0.4.10-alpha
 DEVFLOW_RELEASE_COMMIT=0000000000000000000000000000000000000000
 DEVFLOW_ENV_FILE=${bashPath(envPath)}
 DEVFLOW_DOMAIN=internal.local

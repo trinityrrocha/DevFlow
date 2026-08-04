@@ -111,7 +111,7 @@ compose_image_matches_release() {
 }
 
 reconcile_installed_release_runtime() {
-  local backend_image frontend_image api_payload api_version api_commit
+  local backend_image frontend_image api_payload api_version api_commit installed_source
   BACKEND_IMAGE_VERSION_MATCH=false
   BACKEND_IMAGE_COMMIT_MATCH=false
   FRONTEND_IMAGE_VERSION_MATCH=false
@@ -123,6 +123,7 @@ reconcile_installed_release_runtime() {
   [[ -n "${INSTALLED_VERSION:-}" && -n "${INSTALLED_COMMIT:-}" ]] \
     || resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
     || return 1
+  installed_source="${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}"
   [[ "${DEVFLOW_VERSION:-}" == "$INSTALLED_VERSION" ]] && CONFIGURATION_VERSION_MATCH=true
   backend_image="$(resolve_compose_service_image backend 2>/dev/null || true)"
   frontend_image="$(resolve_compose_service_image frontend 2>/dev/null || true)"
@@ -151,6 +152,9 @@ reconcile_installed_release_runtime() {
     if [[ -n "$api_commit" ]]; then
       API_COMMIT_MATCH=false
       [[ "$api_commit" == "$INSTALLED_COMMIT" ]] && API_COMMIT_MATCH=true
+    elif [[ -r "$installed_source/backend/src/app.js" ]] \
+      && ! grep -Fq 'commit: env.DEVFLOW_RELEASE_COMMIT' "$installed_source/backend/src/app.js"; then
+      API_COMMIT_MATCH=unsupported-by-installed-release
     fi
   fi
   export BACKEND_IMAGE_VERSION_MATCH BACKEND_IMAGE_COMMIT_MATCH \
@@ -160,7 +164,7 @@ reconcile_installed_release_runtime() {
     && "$BACKEND_IMAGE_VERSION_MATCH" == true && "$BACKEND_IMAGE_COMMIT_MATCH" == true \
     && "$FRONTEND_IMAGE_VERSION_MATCH" == true && "$FRONTEND_IMAGE_COMMIT_MATCH" == true \
     && "$API_VERSION_MATCH" == true \
-    && ( "$API_COMMIT_MATCH" == true || "$API_COMMIT_MATCH" == unavailable ) ]]
+    && ( "$API_COMMIT_MATCH" == true || "$API_COMMIT_MATCH" == unsupported-by-installed-release ) ]]
 }
 
 list_existing_devflow_images() {

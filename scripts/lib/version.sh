@@ -170,8 +170,9 @@ devflow_validate_checkout_version_consistency() {
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
     scripts/publish.sh scripts/resolve-compose-image.py scripts/validate-compose-images-resume.mjs \
     scripts/validate-install-startup.mjs scripts/validate-compose-env.mjs scripts/audit-compose-command.mjs \
-    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
-    scripts/validate-installation-state.mjs \
+    scripts/repair-installation-state.sh scripts/reconcile-installed-release.sh \
+    scripts/validate-installation-state.py scripts/validate-installation-state.mjs \
+    scripts/validate-installed-release-reconciliation.mjs \
     scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
     scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh; do
     git -C "$root" ls-files --error-unmatch "$tracked_file" >/dev/null 2>&1 || return 1
@@ -197,8 +198,9 @@ devflow_validate_git_tree_version_consistency() {
     scripts/version.sh scripts/health.sh scripts/publish.sh scripts/resolve-compose-image.py \
     scripts/validate-compose-images-resume.mjs scripts/validate-install-startup.mjs \
     scripts/validate-compose-env.mjs scripts/audit-compose-command.mjs \
-    scripts/repair-installation-state.sh scripts/validate-installation-state.py \
-    scripts/validate-installation-state.mjs \
+    scripts/repair-installation-state.sh scripts/reconcile-installed-release.sh \
+    scripts/validate-installation-state.py scripts/validate-installation-state.mjs \
+    scripts/validate-installed-release-reconciliation.mjs \
     scripts/lib/common.sh scripts/lib/version.sh scripts/lib/port-ownership.sh \
     scripts/lib/compose-images.sh scripts/lib/install-transaction.sh scripts/lib/install-startup.sh \
     | tar -x -C "$temporary"; then

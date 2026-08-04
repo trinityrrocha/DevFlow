@@ -1,5 +1,17 @@
 # Rastreabilidade — Documento 001
 
+## Instalação interna `0.4.10-alpha`
+
+| Requisito | Implementação | Evidência |
+|---|---|---|
+| Release permanece instalada | build usa `/opt/devflow/source` | nenhum merge, checkout, update ou cópia de código |
+| Promoção restrita | `up --no-deps ... backend frontend` | PostgreSQL não é recriado e mount/ID são comparados |
+| Identidade das imagens | tags candidatas e labels OCI | version/revision iguais ao checkout canônico |
+| API legada | `unsupported-by-installed-release` | ausência de commit aceita somente quando o código instalado não suporta o campo |
+| Rollback | IDs e tags anteriores mais backups protegidos | env, containers e JSON restaurados em falha |
+| Concorrência | locks de reconcile, update e state repair | publicação externa usa o mesmo lock exclusivo |
+| Regressões | `validate-installed-release-reconciliation.mjs` | 20 cenários obrigatórios |
+
 ## Instalação interna `0.4.9-alpha`
 
 | Requisito | Implementação | Evidência |

@@ -19,6 +19,23 @@ sudo /opt/devflow/app/scripts/diagnose.sh --output /tmp/devflow-diagnostic.txt
 
 O relatório omite valores de ambiente, credenciais, anexos e dados pessoais. Revise-o antes de compartilhar mesmo assim.
 
+## Revision OCI diverge do checkout instalado
+
+Se a versão das imagens estiver correta, mas `backend_image_commit_match=false` ou
+`frontend_image_commit_match=false`, não edite `installation.json` e não execute update.
+Use o checkout operacional mais novo somente como executor:
+
+```bash
+cd ~/DevFlow
+sudo ./scripts/reconcile-installed-release.sh --check
+sudo ./scripts/reconcile-installed-release.sh --reconcile
+```
+
+Confirme `reconciliation_available=true` antes de escolher `1`. O script não usa `down`,
+não recria banco, não executa migrations e não toca no proxy. Se ocorrer rollback, preserve
+`/opt/devflow/state/reconciliation.json`, o log sanitizado e as tags
+`devflow-reconcile-backup-*`; não execute prune.
+
 Para uma resposta operacional objetiva e a identidade das releases:
 
 ```bash

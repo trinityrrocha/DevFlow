@@ -1,5 +1,14 @@
 # Roadmap inicial
 
+## Marco `0.4.10-alpha` — reconciliação transacional da release instalada
+
+- [x] separar reconciliação de imagens do update e do reparo somente de metadados;
+- [x] construir backend/frontend exclusivamente a partir do checkout canônico instalado;
+- [x] preservar PostgreSQL, migration, proxy, Full Password e imagens anteriores;
+- [x] promover labels OCI, configuração e estado com rollback automático;
+- [x] classificar API legada sem commit e bloquear publicação concorrente;
+- [ ] executar check, reconciliação e falha induzida na VPS ARM64.
+
 ## Marco `0.4.9-alpha` — identidade instalada e estado versionado
 
 - [x] centralizar versão, commit, ref e repositório no checkout canônico;
@@ -144,7 +153,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.9-alpha` consistente;
+- versão `0.4.10-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;
