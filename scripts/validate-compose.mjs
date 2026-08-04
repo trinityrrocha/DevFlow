@@ -3,64 +3,43 @@ import process from 'node:process';
 import YAML from 'yaml';
 
 const load = (file) => YAML.parse(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
-const base = load('docker-compose.yml');
-const shared = load('docker-compose.shared.yml');
-const fullpassword = load('docker-compose.fullpassword.yml');
+const compose = load('docker-compose.yml');
 const maintenance = load('docker-compose.maintenance.yml');
+const requiredServices = ['db', 'backend', 'frontend', 'edge', 'certbot'];
 
-const requiredServices = ['db', 'backend', 'frontend', 'edge'];
 for (const service of requiredServices) {
-  if (!base.services?.[service]) throw new Error(`Serviço Compose ausente: ${service}`);
+  if (!compose.services?.[service]) throw new Error(`Servico Compose ausente: ${service}`);
 }
-if (base.services.db.ports) throw new Error('O banco não pode publicar portas no host.');
-if (base.services.backend.ports || base.services.frontend.ports) {
-  throw new Error('O Compose base não deve publicar portas de aplicação.');
+for (const service of ['db', 'backend', 'frontend', 'certbot']) {
+  if (compose.services[service].ports) throw new Error(`${service} nao pode publicar porta no host.`);
 }
-if (!base.services.edge.profiles?.includes('standalone')) {
-  throw new Error('O ingress próprio precisa permanecer no profile standalone.');
+const edgePorts = compose.services.edge.ports || [];
+if (!edgePorts.includes('80:80') || !edgePorts.includes('443:443')) {
+  throw new Error('Somente o Nginx isolado deve publicar 80/443.');
 }
-for (const service of ['backend', 'frontend']) {
-  const ports = shared.services?.[service]?.ports;
-  if (!Array.isArray(ports) || !ports.every((value) => String(value).includes('127.0.0.1'))) {
-    throw new Error(`O modo compartilhado deve publicar ${service} somente em loopback por padrão.`);
-  }
+for (const [service, expected] of Object.entries({ db: 'devflow-db', backend: 'devflow-backend', frontend: 'devflow-frontend', edge: 'devflow-nginx', certbot: 'devflow-certbot' })) {
+  if (compose.services[service].container_name !== expected) throw new Error(`Nome estavel ausente: ${expected}`);
 }
-for (const volume of ['devflow_db_data', 'devflow_uploads']) {
-  if (!Object.hasOwn(base.volumes || {}, volume)) throw new Error(`Volume isolado ausente: ${volume}`);
+if (!compose.networks?.devflow_internal?.internal || compose.networks.devflow_internal.name !== 'devflow_internal') {
+  throw new Error('Rede interna isolada invalida.');
 }
-if (!base.networks?.devflow_internal?.internal) {
-  throw new Error('A rede interna do banco deve bloquear exposição externa direta.');
+if (compose.networks?.devflow_edge?.external || compose.networks.devflow_edge.name !== 'devflow_edge') {
+  throw new Error('Rede de borda deve pertencer ao Compose DevFlow.');
 }
-if (!base.networks?.devflow_edge?.external || base.networks.devflow_edge.name !== 'devflow_edge'
-  || base.services.db.networks?.includes('devflow_edge')) {
-  throw new Error('A rede de borda deve existir e permanecer inacessível ao PostgreSQL.');
+if (compose.services.db.networks.includes('devflow_edge') || !compose.services.db.networks.includes('devflow_internal')) {
+  throw new Error('PostgreSQL deve permanecer somente na rede interna.');
 }
-for (const service of ['backend', 'frontend']) {
-  if (fullpassword.services?.[service]?.ports) {
-    throw new Error(`O adaptador Full Password não deve publicar portas de ${service} no host.`);
-  }
-  if (!Object.hasOwn(fullpassword.services?.[service]?.networks || {}, 'devflow_edge')) {
-    throw new Error(`Alias de borda ausente para ${service} no adaptador Full Password.`);
-  }
+if (!compose.services.backend.networks.includes('devflow_internal') || !compose.services.backend.networks.includes('devflow_edge')) {
+  throw new Error('Backend deve intermediar as redes interna e de borda.');
 }
-if (!Object.hasOwn(fullpassword.services.backend.networks, 'devflow_internal')) {
-  throw new Error('O overlay Full Password deve preservar explicitamente a rede interna do backend.');
+if (!compose.services.frontend.networks.includes('devflow_edge') || !compose.services.edge.networks.includes('devflow_edge')) {
+  throw new Error('Frontend e Nginx devem usar a borda DevFlow.');
 }
-for (const service of ['backend', 'frontend', 'edge']) {
-  if (!base.services[service].networks?.includes('devflow_edge')) {
-    throw new Error(`${service} precisa usar a rede de borda DevFlow.`);
-  }
+for (const service of ['db', 'backend', 'frontend', 'edge']) {
+  if (!compose.services[service].healthcheck) throw new Error(`Healthcheck ausente: ${service}`);
 }
-if (!base.services.backend.networks?.includes('devflow_internal')) {
-  throw new Error('Somente o backend deve intermediar acesso ao PostgreSQL.');
+if (!compose.services.certbot.profiles?.includes('operations')) throw new Error('Certbot deve ser operacional e explicito.');
+if (!maintenance.services?.maintenance || maintenance.services.maintenance.restart !== 'no') {
+  throw new Error('Compose de manutencao invalido.');
 }
-if (!maintenance.services?.maintenance) throw new Error('Serviço de manutenção ausente.');
-const maintenancePorts = maintenance.services.maintenance.ports || [];
-if (!maintenancePorts.includes('80:80') || !maintenancePorts.includes('443:443')) {
-  throw new Error('O modo de manutenção isolado deve assumir explicitamente 80/443.');
-}
-if (maintenance.services.maintenance.restart !== 'no') {
-  throw new Error('O container de manutenção não pode reiniciar indefinidamente.');
-}
-
-process.stdout.write('Compose base, compartilhado e manutenção validados.\n');
+process.stdout.write('Compose isolado e manutencao validados.\n');

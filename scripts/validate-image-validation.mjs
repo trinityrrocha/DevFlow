@@ -18,7 +18,7 @@ const transactionPath = bashPath(resolve(root, 'scripts/lib/install-transaction.
 const common = read('scripts/lib/common.sh');
 const install = read('scripts/install.sh');
 const update = read('scripts/update.sh');
-const providers = read('scripts/providers/provider-contract.sh');
+const compose = read('docker-compose.yml');
 const validationStart = common.indexOf('validate_backend_migration_image()');
 const validationEnd = common.indexOf('\nrun_devflow_migrations()', validationStart);
 const validationBody = common.slice(validationStart, validationEnd);
@@ -146,10 +146,10 @@ const transactionProbe = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.13-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
-  install_transaction_complete_stage 06-validate-images
-  grep -F '"resumeFromStage": "07-create-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
-  install_transaction_fail 06-validate-images image-validation-runtime-error
+  install_transaction_begin 0.5.0-alpha 0123456789012345678901234567890123456789
+  install_transaction_complete_stage 05-images
+  grep -F '"resumeFromStage": "06-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
+  install_transaction_fail 05-images image-validation-runtime-error
   grep -F '"rootCause": "image-validation-runtime-error"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
 `, '_', commonPath, transactionPath], { encoding: 'utf8' });
 
@@ -200,15 +200,14 @@ try {
     && !validationBody.includes('docker compose') && validationBody.includes('docker run'));
   check('absent Compose networks do not block validation', success.result.status === 0
     && success.result.stdout.includes('function_status=0') && !success.arguments.includes('compose'));
-  check('shared mode uses the provider-independent validator', install.includes('validate_backend_migration_image "$backend_image"')
-    && install.includes('installation_mode=$PROXY_MODE')
+  check('isolated mode uses the independent validator', install.includes('validate_backend_migration_image "$backend_image"')
+    && install.includes('installation_mode=isolated')
     && !validationBody.includes('DEVFLOW_PROXY_MODE'));
-  check('isolated mode uses the same validator', !validationBody.includes('isolated')
+  check('single mode uses the same validator', !validationBody.includes('isolated')
     && (install.match(/validate_backend_migration_image/g) || []).length === 1);
-  check('host-nginx provider is preserved', providers.includes('host-nginx'));
-  check('isolated-nginx provider is preserved', providers.includes('isolated-nginx'));
-  check('legacy provider does not interfere', providers.includes('legacy-docker-nginx')
-    && !validationBody.includes('legacy-docker-nginx'));
+  check('Nginx does not participate in image probe', !validationBody.includes('devflow-nginx'));
+  check('Certbot does not participate in image probe', !validationBody.includes('certbot'));
+  check('PostgreSQL does not participate in image probe', !validationBody.includes('postgres'));
   check('Docker runtime error is distinct', runtimeError.result.stdout.includes('backend_image_validation_status=runtime-error')
     && runtimeError.result.stdout.includes('image_validation_container_failed=true')
     && runtimeError.result.stdout.includes('docker_exit_code=125')
@@ -227,22 +226,22 @@ try {
     'expected_migration_content_match=true',
     'image_validation_runtime=docker-run', 'image_validation_network=none', 'image_validation_probe=node']
     .every((field) => success.result.stdout.includes(field)));
-  check('stage 06 resumes at stage 07 with root cause support', transaction.status === 0
-    && transaction.stdout.includes('completed_stage=06-validate-images')
-    && transaction.stdout.includes('resume_from_stage=07-create-networks')
+  check('stage 05 resumes at stage 06 with root cause support', transaction.status === 0
+    && transaction.stdout.includes('stage=05-images completed=true')
+    && transaction.stdout.includes('resume_from=06-networks')
     && transaction.stdout.includes('root_cause=image-validation-runtime-error'));
-  check('PostgreSQL volume is preserved', install.includes('database_data_preserved=true')
+  check('PostgreSQL storage is preserved', compose.includes('/opt/devflow/storage/postgres')
     && !validationBody.includes('volume'));
-  check('Full Password remains preserved', !validationBody.toLowerCase().includes('fullpassword')
-    && read('scripts/audit-fullpassword-readonly.mjs').includes('/opt/fullpassword'));
+  check('runtime is independent from neighboring applications', !validationBody.toLowerCase().includes('fullpassword')
+    && !install.toLowerCase().includes('fullpassword'));
   check('ports 80 and 443 are untouched', !validationBody.match(/\b(?:80|443)\b/u));
   check('ARM64 remains supported', common.includes('aarch64|arm64) DEVFLOW_ARCH=arm64'));
   check('Docker 29.6.1 satisfies the supported minimum', common.includes('version_at_least')
-    && install.includes('version_at_least "$docker_version" 24.0'));
-  check('Compose 5.3.1 remains supported', install.includes('version_at_least "$compose_version" 2.20'));
-  check('fail-closed mapping is retained', install.includes('ROOT_CAUSE=image-content-invalid')
-    && install.includes('ROOT_CAUSE=image-validation-runtime-error')
-    && update.includes('candidate_image_validation_status'));
+    && install.includes("docker version --format '{{.Server.Version}}')\" 24.0"));
+  check('Compose 5.3.1 remains supported', install.includes('docker compose version --short')
+    && install.includes('2.20 ou superior'));
+  check('fail-closed mapping is retained', update.includes('candidate_image_validation_status')
+    && update.includes('40|41|43|44|45|46|47|48'));
 
   if (checks.length !== 32) throw new Error(`Expected 32 checks, got ${checks.length}`);
   console.log(`Direct image validation tests passed: ${checks.length} scenarios.`);

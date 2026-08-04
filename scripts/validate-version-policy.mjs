@@ -50,24 +50,19 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'docs/implementation-status.md'), `Versão: \`${version}\`.\n`);
   writeFileSync(resolve(directory, 'docs/infrastructure/vps-installation.md'), `Versão \`${version}\`.\n`);
   writeFileSync(resolve(directory, 'docs/roadmap.md'), `## Marco \`${version}\`\n`);
-  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Instalação interna \`${version}\`\n`);
+  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Instalação isolada \`${version}\`\n`);
   writeFileSync(resolve(directory, 'scripts/bootstrap.sh'), '#!/usr/bin/env bash\nsource scripts/lib/version.sh\nDETECTED_VERSION=dynamic\n');
   writeFileSync(resolve(directory, 'scripts/lib/common.sh'), 'source scripts/lib/version.sh\n');
   writeFileSync(resolve(directory, 'scripts/lib/version.sh'), '# fixture uses the tested library externally\n');
-  writeFileSync(resolve(directory, 'scripts/lib/port-ownership.sh'), '# port ownership fixture\n');
   writeFileSync(resolve(directory, 'scripts/lib/compose-images.sh'), '# compose image fixture\n');
   writeFileSync(resolve(directory, 'scripts/lib/install-transaction.sh'), '# transaction fixture\n');
-  writeFileSync(resolve(directory, 'scripts/lib/install-startup.sh'), '# startup fixture\n');
   writeFileSync(resolve(directory, 'scripts/resolve-compose-image.py'), '# resolver fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-compose-images-resume.mjs'), '// image tests fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-install-startup.mjs'), '// startup tests fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-compose-env.mjs'), '// compose env tests fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-isolated-architecture.mjs'), '// isolated tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/audit-compose-command.mjs'), '// compose audit fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.py'), '# state validator fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.mjs'), '// state tests fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-installed-release-reconciliation.mjs'), '// reconciliation tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-migration-image-permissions.mjs'), '// migration permission tests fixture\n');
-  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh', 'repair-installation-state.sh', 'reconcile-installed-release.sh']) {
+  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
   }
@@ -86,10 +81,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.13-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.5.0-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.13-alpha');
+  writeFixture(patchFixture, '0.5.0-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
@@ -102,7 +97,7 @@ try {
   runGit(repositoryFixture, ['config', 'user.name', 'trinityrrocha']);
   runGit(repositoryFixture, ['config', 'user.email', 'trinityrocha@sti1.com.br']);
   runGit(repositoryFixture, ['add', '-A']);
-  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh', 'repair-installation-state.sh', 'reconcile-installed-release.sh']) {
+  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh']) {
     runGit(repositoryFixture, ['update-index', '--chmod=+x', `scripts/${script}`]);
   }
   runGit(repositoryFixture, ['commit', '-m', 'test: version policy fixture']);
@@ -111,10 +106,9 @@ try {
   runGit(repositoryFixture, ['tag', 'v0.4.3-alpha']);
   runGit(repositoryFixture, ['checkout', '--detach', 'v0.4.3-alpha']);
   check('tag with corresponding version', validateIdentity(repositoryFixture, 'v0.4.3-alpha', fixtureCommit).status === 0
-    && validateCheckout(repositoryFixture).status === 0
-    && bootstrap.includes('"v$DETECTED_VERSION"'));
+    && validateCheckout(repositoryFixture).status === 0);
 
-  check('matching expected version', validateSemver('0.4.3-alpha').status === 0 && bootstrap.includes('version_match=true'));
+  check('matching expected version', validateSemver('0.4.3-alpha').status === 0 && bootstrap.includes('EXPECTED_VERSION'));
   const mismatch = runBash('devflow_version_mismatch_message main 0.4.1-alpha 0.4.2-alpha 0123456789012345678901234567890123456789', []);
   check('divergent expected version', mismatch.status === 0 && mismatch.stdout.includes('Versão esperada: 0.4.1-alpha') && mismatch.stdout.includes('Nenhuma alteração foi realizada.'));
 
@@ -154,7 +148,7 @@ try {
   check('validation failure makes no changes', digestTree(divergentFixture) === beforeDigest
     && !bootstrap.includes('apt-get')
     && !bootstrap.includes('DEVFLOW_BOOTSTRAP_CONFIRMED')
-    && install.includes('require_numeric_confirmation initial-installation'));
+    && install.includes('prompt_numeric_confirmation initial-installation'));
 
   const futureFixture = resolve(temporary, 'future');
   writeFixture(futureFixture, '0.9.0-alpha');

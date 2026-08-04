@@ -1,0 +1,12 @@
+# Managed by DevFlow installer.
+[Unit]
+Description=Agendamento da renovacao HTTPS do DevFlow
+
+[Timer]
+OnCalendar=*-*-* 03,15:20:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=devflow-certificate-renewal.service
+
+[Install]
+WantedBy=timers.target

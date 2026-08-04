@@ -12,6 +12,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const catalogRoutes = require('./routes/catalogRoutes');
+const updateOperationRoutes = require('./routes/updateOperationRoutes');
 const { requestContext } = require('./middleware/requestContext');
 const { csrfProtection } = require('./middleware/csrfMiddleware');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
@@ -74,6 +75,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/catalogs', catalogRoutes);
+app.use('/api/operations/update', updateOperationRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

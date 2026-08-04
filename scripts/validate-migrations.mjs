@@ -4,15 +4,9 @@ import {
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
-import { spawnSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..');
 const read = (file) => readFileSync(resolve(root, file), 'utf8');
-const bash = process.env.DEVFLOW_TEST_BASH || (process.platform === 'win32'
-  ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
-const bashPath = (value) => process.platform === 'win32'
-  ? value.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`)
-  : value;
 const checks = [];
 const check = (label, condition) => {
   if (!condition) throw new Error(`Migration test failed: ${label}`);
@@ -35,7 +29,7 @@ const dockerfile = read('backend/Dockerfile');
 const compose = read('docker-compose.yml');
 const common = read('scripts/lib/common.sh');
 const install = read('scripts/install.sh');
-const startup = read('scripts/lib/install-startup.sh');
+const transaction = read('scripts/lib/install-transaction.sh');
 const update = read('scripts/update.sh');
 const migrationSource = read('backend/scripts/migrate.js');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
@@ -125,26 +119,11 @@ try {
     && dockerfile.startsWith('FROM node:22-alpine'));
   check('PostgreSQL 16 Alpine remains selected', compose.includes('image: postgres:16-alpine'));
 
-  const resumeProbe = spawnSync(bash, ['-c', `
-    source "$1"
-    PARTIAL_INSTALLATION_DETECTED=true CONFIGURATION_READY=true
-    BACKEND_BUILD_REQUIRED=true FRONTEND_BUILD_REQUIRED=false POSTGRES_PULL_REQUIRED=false IMAGES_READY=false
-    DATABASE_CONTAINER_READY=true DATABASE_HEALTHY=true MIGRATIONS_READY=false
-    BACKEND_READY=false FRONTEND_READY=false SUPER_ADMIN_READY=false INSTALLATION_STATE_READY=false
-    RESUME_FROM_STAGE=01-preflight
-    determine_resume_stage
-    printf '%s' "$RESUME_FROM_STAGE"
-  `, '_', bashPath(resolve(root, 'scripts/lib/install-startup.sh'))], { encoding: 'utf8' });
-  check('resume starts from stage 09 with healthy database', resumeProbe.status === 0
-    && resumeProbe.stdout === '09-run-migrations');
-  check('backend rebuild remains required', install.includes('BACKEND_BUILD_REQUIRED=true')
-    && install.includes('build_services+=(backend)'));
-  check('proven previous frontend can be reused', install.includes('frontend_image_reusable_from_failed_migration')
-    && install.includes('FRONTEND_BUILD_REQUIRED=false'));
-  check('healthy database is preserved', install.includes('database_container_reused=true database_data_preserved=true'));
-
-  const audit = spawnSync(process.execPath, [resolve(root, 'scripts/audit-fullpassword-readonly.mjs')], { encoding: 'utf8' });
-  check('Full Password remains read-only', audit.status === 0 && audit.stdout.includes('read-only aprovada'));
+  check('resume retains migration stage', install.includes('--resume') && transaction.includes('08-migrations'));
+  check('backend image is always built before migrations', install.indexOf('build backend frontend') < install.indexOf('run_devflow_migrations'));
+  check('database is preserved on installation failure', !install.includes('down --volumes') && install.includes('dados, logs e imagens foram preservados'));
+  check('migration runtime is non-root', dockerfile.includes('USER devflow') && !common.includes('--user root'));
+  check('migration flow is independent from neighboring applications', !install.toLowerCase().includes('fullpassword') && !update.toLowerCase().includes('fullpassword'));
   if (checks.length !== 20) throw new Error(`Expected 20 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {

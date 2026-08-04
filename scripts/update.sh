@@ -6,12 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
-# shellcheck source=lib/proxy-config.sh
-. "$SCRIPT_DIR/lib/proxy-config.sh"
-# shellcheck source=lib/fullpassword-proxy.sh
-. "$SCRIPT_DIR/lib/fullpassword-proxy.sh"
-# shellcheck source=providers/provider-contract.sh
-. "$SCRIPT_DIR/providers/provider-contract.sh"
 # shellcheck source=lib/compose-images.sh
 . "$SCRIPT_DIR/lib/compose-images.sh"
 
@@ -63,16 +57,7 @@ flock -n 9 || die 'Outra atualização DevFlow está em andamento.'
 
 load_devflow_env
 validate_runtime_paths
-provider_resolve_installed
-provider_load "$DEVFLOW_INFRASTRUCTURE_PROVIDER" || die 'Provider instalado nao pode ser carregado.'
-if [[ -r "$DEVFLOW_PROVIDER_STATE_FILE" ]]; then
-  [[ "$DEVFLOW_STATE_DOMAIN" == "$DEVFLOW_DOMAIN" \
-    && "$DEVFLOW_STATE_FRONTEND_PORT" == "${DEVFLOW_HTTP_PORT:-18080}" \
-    && "$DEVFLOW_STATE_BACKEND_PORT" == "${DEVFLOW_API_PORT:-13000}" ]] \
-    || die 'Estado do provider diverge da configuracao privada.'
-fi
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Diretório instalado inesperado.'
-[[ "$DEVFLOW_PROXY_MODE" == isolated || "$DEVFLOW_PROXY_MODE" == shared ]] || die 'Modo de proxy inválido.'
 validate_domain "$DEVFLOW_DOMAIN"
 check_capacity "$DEVFLOW_INSTALL_ROOT"
 
@@ -99,7 +84,8 @@ validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release instalada'
 DEVFLOW_INSTALLED_SOURCE_DIR="$SOURCE_DIR"
 DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
 validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json" \
-  || die 'Estado instalado inconsistente; execute repair-installation-state.sh antes de atualizar.'
+  || die 'Estado instalado schema v3 inconsistente; atualização bloqueada.'
+[[ "$DEVFLOW_INSTALLATION_STATE_MODE" == isolated ]] || die 'A atualização aceita somente instalações isoladas.'
 OLD_SHA="$INSTALLED_COMMIT"
 OLD_VERSION="$INSTALLED_VERSION"
 SOURCE_OLD_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
@@ -112,27 +98,13 @@ for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/
   [[ -f "$unit_file" ]] || die "Unidade obrigatória ausente: $unit_file"
   managed_file "$unit_file" '# Managed by DevFlow installer.' || die "$unit_file pertence a outro sistema."
 done
-if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-  if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
-    [[ -f "$FULLPASSWORD_OVERRIDE_FILE" && "$(head -n1 "$FULLPASSWORD_OVERRIDE_FILE")" == "$FULLPASSWORD_OVERRIDE_MARKER" ]] \
-      || die 'Override persistente do Full Password ausente ou divergente.'
-    [[ -f "$DEVFLOW_PROXY_CONFIG" && "$(head -n1 "$DEVFLOW_PROXY_CONFIG")" == "$FULLPASSWORD_CONFIG_MARKER" ]] \
-      || die 'Configuração independente DevFlow ausente ou divergente.'
-    fullpassword_adapter_preflight || die 'Preflight do adaptador fullpassword_nginx falhou.'
-  else
-    managed_file /etc/nginx/conf.d/devflow.conf '# Managed by DevFlow installer. Do not merge with another application.' \
-      || die '/etc/nginx/conf.d/devflow.conf pertence a outro sistema.'
-    nginx -t >/dev/null 2>&1 || die 'A configuração Nginx atual é inválida.'
-  fi
-fi
-provider_validate || die 'Validacao do provider instalado falhou.'
 DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR"
 DEVFLOW_VERSION="$OLD_VERSION"
 DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
 export DEVFLOW_APP_ROOT DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_INSTALLED_SOURCE_DIR \
   DEVFLOW_IDENTITY_RELEASE_ROOT
 compose_files
-reconcile_installed_release_runtime \
+validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
 
 TEMP_REMOTE_REPO=
@@ -219,8 +191,6 @@ else
   exec > >(redact_stream | tee -a "$UPDATE_LOG") 2>&1
 fi
 
-NGINX_CONFIG=/etc/nginx/conf.d/devflow.conf
-NGINX_MARKER='# Managed by DevFlow installer. Do not merge with another application.'
 UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
 if [[ "$ROLLBACK_REQUESTED" == true ]]; then
   [[ "$(installation_state_value state "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" == completed ]] \
@@ -256,7 +226,6 @@ BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
 [[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
-EDGE_NETWORK_PREEXISTED=true
 
 write_update_transaction() {
   local state="$1" temporary
@@ -281,21 +250,13 @@ write_update_transaction() {
 }
 
 persist_operational_installation_state() {
-  DEVFLOW_INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
   DEVFLOW_APPLICATION_INSTALLED=true
   DEVFLOW_APPLICATION_HEALTHY=true
-  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
-  DEVFLOW_INFRASTRUCTURE_PROVIDER="$DEVFLOW_INSTALLATION_STATE_PROVIDER"
-  DEVFLOW_FRONTEND_URL="$DEVFLOW_INSTALLATION_STATE_FRONTEND_URL"
-  DEVFLOW_BACKEND_URL="$DEVFLOW_INSTALLATION_STATE_BACKEND_URL"
-  DEVFLOW_PROXY_MIGRATION_EXECUTED="$DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED"
   DEVFLOW_CERTIFICATE_ISSUED="$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED"
+  ADMIN_EMAIL="$DEVFLOW_INSTALLATION_STATE_ADMIN_EMAIL"
   DEVFLOW_MIGRATION_VERSION="${DEVFLOW_MIGRATION_VERSION:-$DEVFLOW_INSTALLATION_STATE_MIGRATION}"
-  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY \
-    DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
-    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
-    DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED \
-    DEVFLOW_MIGRATION_VERSION
+  export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY \
+    DEVFLOW_CERTIFICATE_ISSUED ADMIN_EMAIL DEVFLOW_MIGRATION_VERSION
   write_installation_state
 }
 
@@ -329,14 +290,6 @@ maintenance_compose_for() {
     || die 'Não foi possível montar o Compose de manutenção com a configuração privada.'
 }
 
-render_host_proxy() {
-  local root="$1" template="$2" output="$3"
-  sed -e "s/__DEVFLOW_DOMAIN__/$DEVFLOW_DOMAIN/g" \
-    -e "s/__DEVFLOW_HTTP_PORT__/${DEVFLOW_HTTP_PORT:-18080}/g" \
-    -e "s/__DEVFLOW_API_PORT__/${DEVFLOW_API_PORT:-13000}/g" \
-    "$root/docker/nginx/$template" > "$output"
-}
-
 maintenance_http_ok() {
   local status
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
@@ -345,43 +298,27 @@ maintenance_http_ok() {
 }
 
 enter_maintenance() {
-  local root="$1" candidate
+  local root="$1"
   log INFO 'Ativando modo de manutenção.'
-  if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    case "$DEVFLOW_INFRASTRUCTURE_PROVIDER" in
-      host-nginx) provider_update "$root" host-maintenance.conf.template ;;
-      legacy-docker-nginx) promote_fullpassword_proxy_config "$root" fullpassword-maintenance.conf.template "$DEVFLOW_DOMAIN" maintenance ;;
-      *) return 1 ;;
-    esac
-  else
-    set_compose_for "$OLD_RELEASE_DIR"
+  set_compose_for "$OLD_RELEASE_DIR"
+  "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
+  if [[ -r "$CANDIDATE_DIR/docker-compose.yml" ]]; then
+    set_compose_for "$CANDIDATE_DIR"
     "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
-    if [[ -r "$CANDIDATE_DIR/docker-compose.yml" ]]; then
-      set_compose_for "$CANDIDATE_DIR"
-      "${DEVFLOW_COMPOSE[@]}" stop edge >/dev/null 2>&1 || true
-    fi
-    maintenance_compose_for "$root"
-    "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" up -d --wait
   fi
+  maintenance_compose_for "$root"
+  "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" up -d --wait
   MAINTENANCE_ACTIVE=true
   maintenance_http_ok || return 1
   log INFO 'Modo de manutenção confirmado com HTTP 503.'
 }
 
 restore_proxy_for() {
-  local root="$1" candidate
-  if [[ "$DEVFLOW_PROXY_MODE" == shared ]]; then
-    case "$DEVFLOW_INFRASTRUCTURE_PROVIDER" in
-      host-nginx) provider_update "$root" host-shared.conf.template ;;
-      legacy-docker-nginx) promote_fullpassword_proxy_config "$root" fullpassword-shared.conf.template "$DEVFLOW_DOMAIN" healthy ;;
-      *) return 1 ;;
-    esac
-  else
-    maintenance_compose_for "$CANDIDATE_DIR"
-    "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" down --remove-orphans
-    set_compose_for "$root"
-    "${DEVFLOW_COMPOSE[@]}" up -d edge --wait
-  fi
+  local root="$1"
+  maintenance_compose_for "$CANDIDATE_DIR"
+  "${DEVFLOW_MAINTENANCE_COMPOSE[@]}" down --remove-orphans
+  set_compose_for "$root"
+  "${DEVFLOW_COMPOSE[@]}" up -d edge --wait
 }
 
 rollback_update() {
@@ -438,24 +375,22 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-proxy
-  if [[ "$DEVFLOW_INFRASTRUCTURE_PROVIDER" == host-nginx ]]; then
-    provider_rollback "$OLD_RELEASE_DIR" host-shared.conf.template
-  else
-    restore_proxy_for "$OLD_RELEASE_DIR"
-  fi
+  install -m 0644 "$OLD_RELEASE_DIR/docker/nginx/isolated-https.conf.template" "$DEVFLOW_NGINX_CONFIG_PATH"
+  restore_proxy_for "$OLD_RELEASE_DIR"
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
     "$CANDIDATE_DIR/scripts/health.sh"
   [[ $? -eq 0 ]] || { log ERROR 'Health check público após rollback falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
-  for unit_name in devflow-backup.service devflow-backup.timer; do
+  for unit_name in devflow-backup.service devflow-backup.timer \
+    devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
     install -m 0644 "$OLD_RELEASE_DIR/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name"
     [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
   done
   systemctl daemon-reload
   [[ $? -eq 0 ]] || { log ERROR 'systemd daemon-reload falhou durante o rollback.'; rollback_failures=$((rollback_failures + 1)); }
-  if systemctl enable --now devflow-backup.timer; then
+  if systemctl enable --now devflow-backup.timer devflow-certificate-renewal.timer; then
     BACKUP_TIMER_PAUSED=false
   else
     log ERROR 'Não foi possível restaurar o timer de backup.'
@@ -465,11 +400,6 @@ rollback_update() {
   if [[ "$rollback_failures" -eq 0 && "$CANDIDATE_CREATED" == true && "$CANDIDATE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* ]]; then
     rm -rf -- "$CANDIDATE_DIR"
     [[ $? -eq 0 ]] || { log ERROR 'Não foi possível remover a release candidata rejeitada.'; rollback_failures=$((rollback_failures + 1)); }
-  fi
-
-  if [[ "$EDGE_NETWORK_PREEXISTED" == false ]]; then
-    remove_devflow_edge_network_if_unused
-    [[ $? -eq 0 ]] || { log ERROR 'Não foi possível remover a rede de borda criada pela atualização rejeitada.'; rollback_failures=$((rollback_failures + 1)); }
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
@@ -579,11 +509,6 @@ fi
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 ROLLBACK_ARMED=true
 
-if ! docker network inspect "$DEVFLOW_EDGE_NETWORK" >/dev/null 2>&1; then
-  EDGE_NETWORK_PREEXISTED=false
-fi
-ensure_devflow_edge_network || die 'A rede externa devflow_edge não pôde ser preparada com propriedade segura.'
-
 UPDATE_PHASE=source
 SOURCE_ADVANCED=true
 git -C "$SOURCE_DIR" merge --ff-only "$NEW_SHA"
@@ -638,19 +563,23 @@ set_managed_env_value DEVFLOW_RELEASE_COMMIT "$NEW_SHA"
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
 
 UPDATE_PHASE=proxy
+install -m 0644 "$CANDIDATE_DIR/docker/nginx/isolated-https.conf.template" "$DEVFLOW_NGINX_CONFIG_PATH"
 restore_proxy_for "$CANDIDATE_DIR"
 MAINTENANCE_ACTIVE=false
 
 UPDATE_PHASE=health-public
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
+  DEVFLOW_HEALTH_ALLOW_PENDING_VERSION=true \
   "$CANDIDATE_DIR/scripts/health.sh"
 
 UPDATE_PHASE=finalize
 rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
-install -m 0644 "$CANDIDATE_DIR/scripts/systemd/devflow-backup.service" /etc/systemd/system/devflow-backup.service
-install -m 0644 "$CANDIDATE_DIR/scripts/systemd/devflow-backup.timer" /etc/systemd/system/devflow-backup.timer
+for unit_name in devflow-backup.service devflow-backup.timer \
+  devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
+  install -m 0644 "$CANDIDATE_DIR/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name"
+done
 systemctl daemon-reload
-systemctl enable --now devflow-backup.timer
+systemctl enable --now devflow-backup.timer devflow-certificate-renewal.timer
 BACKUP_TIMER_PAUSED=false
 DEVFLOW_VERSION="$NEW_VERSION"
 DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
@@ -660,12 +589,10 @@ resolve_installed_release_identity "$SOURCE_DIR" main >/dev/null \
   || die 'Checkout canônico não confirma a release candidata promovida.'
 [[ "$INSTALLED_COMMIT" == "$NEW_SHA" && "$INSTALLED_VERSION" == "$NEW_VERSION" ]] \
   || die 'Identidade promovida diverge da release candidata.'
-reconcile_installed_release_runtime \
+validate_installed_release_runtime \
   || die 'Imagens ou API divergem da identidade candidata após o health.'
 persist_operational_installation_state \
   || die 'Estado instalado não pôde ser gravado com a identidade candidata.'
-provider_state_write "$DEVFLOW_INFRASTRUCTURE_PROVIDER" "$DEVFLOW_DOMAIN" \
-  "${DEVFLOW_HTTP_PORT:-18080}" "${DEVFLOW_API_PORT:-13000}"
 ROLLBACK_RESULT=not-required
 write_update_transaction completed
 write_update_report success

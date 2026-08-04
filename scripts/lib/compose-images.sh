@@ -110,7 +110,7 @@ compose_image_matches_release() {
   [[ "$actual_commit" == "$expected_commit" && "$actual_version" == "$expected_version" ]]
 }
 
-reconcile_installed_release_runtime() {
+validate_installed_release_runtime() {
   local backend_image frontend_image api_payload api_version api_commit installed_source
   BACKEND_IMAGE_VERSION_MATCH=false
   BACKEND_IMAGE_COMMIT_MATCH=false
@@ -139,8 +139,9 @@ reconcile_installed_release_runtime() {
     [[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$frontend_image" 2>/dev/null || true)" == "$INSTALLED_COMMIT" ]] \
       && FRONTEND_IMAGE_COMMIT_MATCH=true
   fi
-  api_payload="$(curl --fail --silent --show-error --max-time 10 \
-    "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}/api/health" 2>/dev/null || true)"
+  api_payload="$("${DEVFLOW_COMPOSE[@]}" exec -T backend node -e \
+    "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)process.exit(1);process.stdout.write(await r.text())}).catch(()=>process.exit(1))" \
+    2>/dev/null || true)"
   if [[ -n "$api_payload" ]]; then
     api_version="$(printf '%s' "$api_payload" | python3 -c \
       'import json,sys; value=json.load(sys.stdin).get("version", ""); print(value if isinstance(value, str) else "")' \

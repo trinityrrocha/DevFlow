@@ -18,11 +18,9 @@ const validationEnd = common.indexOf('\nrun_devflow_migrations()', validationSta
 const validationBody = common.slice(validationStart, validationEnd);
 const install = read('scripts/install.sh');
 const update = read('scripts/update.sh');
-const reconcile = read('scripts/reconcile-installed-release.sh');
 const compose = read('docker-compose.yml');
 const migrations = read('backend/scripts/migrate.js');
 const health = read('scripts/health.sh');
-const fullPasswordAudit = read('scripts/audit-fullpassword-readonly.mjs');
 const checks = [];
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migration-permissions-'));
 
@@ -112,26 +110,25 @@ try {
   check('file EACCES is classified', contract.includes('expected-migration-permission-denied')
     && common.includes('expected-migration-permission-denied'));
   check('permission failures are not runtime failures', common.includes('return "$docker_exit_code"')
-    && install.includes('40|41|43|44|45|46|47|48'));
-  check('shared mode uses the same image contract', install.includes('installation_mode=$PROXY_MODE')
+    && common.includes('"$docker_exit_code" -ge 40') && common.includes('"$docker_exit_code" -le 47'));
+  check('single isolated mode uses the image contract', install.includes('installation_mode=isolated')
     && !validationBody.includes('DEVFLOW_PROXY_MODE'));
-  check('isolated mode uses the same image contract', compose.includes('profiles: ["standalone"]')
-    && !validationBody.includes('isolated-nginx'));
+  check('isolated Compose uses the same image contract', compose.includes('container_name: devflow-backend')
+    && !validationBody.includes('provider'));
   check('initial installation validates permissions', install.includes('validate_backend_migration_image "$backend_image"'));
   check('resume reuses the initial installation gate', install.includes('--resume')
-    && install.includes('CURRENT_INSTALL_STAGE=06-validate-images'));
+    && install.includes('CURRENT_INSTALL_STAGE=05-images'));
   check('update validates permissions before maintenance', update.indexOf('validate_backend_migration_image')
     < update.indexOf('UPDATE_PHASE=maintenance'));
-  check('reconciliation validates before promotion', reconcile.indexOf('validate_backend_migration_image')
-    < reconcile.indexOf('write_reconciliation_state promotion running'));
-  check('rollback remains armed for reconciliation failures', reconcile.includes('rollback_reconciliation')
-    && reconcile.includes('fullpassword_modified=false') && reconcile.includes('public_proxy_modified=false'));
+  check('update validates before promotion', update.indexOf('validate_backend_migration_image')
+    < update.indexOf('UPDATE_PHASE=promotion'));
+  check('rollback remains armed for update failures', update.includes('rollback_update')
+    && update.includes('ROLLBACK_ARMED=true'));
   check('ARM64 remains supported by platform gate', common.includes('aarch64|arm64) DEVFLOW_ARCH=arm64'));
   check('Alpine BusyBox build avoids find -printf', dockerfile.startsWith('FROM node:22-alpine')
     && dockerfile.includes('find /database/migrations -maxdepth 1') && !dockerfile.includes('find -printf'));
-  check('Full Password and unpublished HTTPS remain preserved', fullPasswordAudit.includes('/opt/fullpassword')
-    && health.includes('EXTERNAL_PUBLICATION_ENABLED=false')
-    && health.includes('external_https_status=not-configured'));
+  check('isolated HTTPS is owned by DevFlow', compose.includes('container_name: devflow-nginx')
+    && health.includes('external_https_status=') && !install.toLowerCase().includes('fullpassword'));
 
   check('official migration command remains non-root', migrations.includes('MIGRATIONS_DIR')
     && common.includes('run --rm --no-deps backend node scripts/migrate.js')

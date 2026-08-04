@@ -1,145 +1,35 @@
-# Baseline de segurança
+# Baseline de seguranca
 
-## Limite do provider `host-nginx`
+## Limite isolado
 
-Frontend e API publicam somente em `127.0.0.1`; PostgreSQL não possui `ports`. O provider altera exclusivamente o virtual host, a cópia auditável, o certificado e o hook de renovação marcados como DevFlow. Arquivos sem marcador, links divergentes, domínio duplicado, upstream inválido, porta ocupada ou `nginx -t` inválido bloqueiam a operação.
+O DevFlow controla somente recursos prefixados ou armazenados em seu namespace: containers `devflow-*`, redes `devflow_edge`/`devflow_internal`, `/opt/devflow`, quatro unidades systemd e locks `devflow-*` em `/run/lock`. Nao executa prune global, nao modifica virtual hosts do host e nao adapta proxies existentes.
 
-O provider legado nunca é selecionado automaticamente. A migração do proxy requer snapshot, dupla confirmação, override fora do repositório Full Password, validação antes da troca e rollback armado. Check/dry-run não fazem writes, reloads, instalação de pacote ou mudanças Docker.
+## Rede
 
-## 1. Autenticação
+- somente `devflow-nginx` publica 80/443;
+- PostgreSQL nao publica porta e conecta apenas a rede interna;
+- frontend conecta apenas a borda;
+- backend intermedia borda e rede interna;
+- Certbot acessa somente ACME/certificados e a borda.
 
-- Argon2id com parâmetros versionados e benchmarkados no hardware alvo.
-- Sessão em cookie `HttpOnly`, `Secure`, `SameSite=Strict`, escopo mínimo.
-- Token assinado com segredo de pelo menos 64 caracteres aleatórios.
-- Registro de sessão no banco contendo apenas hash do token.
-- Expiração absoluta e por inatividade.
-- Revogação por sessão, por usuário e global via `token_version`.
-- Troca obrigatória da credencial temporária.
-- Resposta genérica para login e recuperação, evitando enumeração.
+## Segredos
 
-## 2. MFA e recuperação
+O ambiente privado, passphrase e token de bootstrap usam modo `0600`. Logs passam por sanitizacao. Segredos sao gerados com OpenSSL, nunca exibidos nem versionados.
 
-- TOTP com desafio de curta duração e audience específica.
-- Códigos de recuperação aleatórios, uso único e hash Argon2id.
-- Reset de MFA restrito ao Super Admin, com revogação de sessões.
-- Token de recuperação aleatório, validade de 30 minutos, uso único e hash SHA-256 no banco.
-- Recuperação nunca deve prometer recuperar material criptográfico que não possa ser reconstruído.
-- A primeira identidade administrativa permanece restrita até trocar a senha e confirmar MFA.
-- O bootstrap não usa senha fixa: e-mail e token inicial ficam em arquivos protegidos e o token deve ser removido após uso.
+## TLS e proxy
 
-## 3. Autorização
+O challenge ACME e comprovado por HTTP antes da emissao. A configuracao HTTPS somente e promovida depois de validar dominio/SAN. Nginx usa TLS 1.2/1.3, HSTS, CSP, headers de seguranca, limites, timeouts, gzip e rate limiting. Renovacao e reload atingem somente `devflow-nginx`.
 
-- Toda rota protegida autentica e autoriza no backend.
-- O frontend apenas oculta ou desabilita controles.
-- Ações administrativas críticas exigem `is_super_admin`.
-- Permissões devem ser verificadas no recurso, não só na rota.
-- Testes cobrem acesso permitido, negado, inativo, revogado e concorrente.
+## Supply chain e runtime
 
-## 4. CSRF, CORS e headers
+- checkout canonico HTTPS, commit remoto e fast-forward validados;
+- hooks Git desabilitados no checkout operacional;
+- labels OCI de versao e revisao;
+- backend e migrations executam como usuario nao root;
+- migrations sao `root:root 0755/0644`, sem escrita ou execucao pelo runtime;
+- Compose recebe ambiente por `--env-file` validado e nunca por `source`;
+- instalacao, update, backup e restore usam locks e estado atomico.
 
-- CSRF assinado para métodos mutáveis com sessão em cookie.
-- CORS com uma lista explícita de origens.
-- CSP sem `unsafe-inline` e sem origem coringa.
-- HSTS, `frame-ancestors 'none'`, nosniff, referrer policy e permissions policy.
-- Limites distintos para JSON comum, upload e streaming.
+## Atualizacao via frontend
 
-## 5. Rate limiting
-
-Limitadores independentes para:
-
-- login e bootstrap;
-- MFA;
-- recuperação de acesso;
-- escrita geral;
-- operações sensíveis;
-- update;
-- backup;
-- integração externa.
-
-O limite de emergência em memória não substitui o bloqueio persistido por política.
-
-## 6. Segredos
-
-- `.env` com permissão `0600`.
-- Geração criptográfica, sem exibir valores no terminal ou log.
-- Chave de configuração base64 canônica de 32 bytes.
-- Envelopes AES-256-GCM com IV de 12 bytes e versão.
-- Segredos nunca retornam à UI após salvos; apenas estado mascarado.
-- Rotação inclui inventário, recriptografia e rollback.
-- Perda da chave deve estar documentada como cenário de desastre.
-- Na VPS, `devflow.env`, `backup.passphrase` e `bootstrap-token` ficam fora da release com modo `0600`.
-- Diagnóstico não coleta conteúdo do ambiente, anexos ou dados pessoais e aplica redação adicional aos logs.
-
-## 7. Auditoria
-
-Cada evento sensível registra:
-
-- ator e alvo;
-- ação e resultado;
-- request ID;
-- IP e user-agent normalizados;
-- horário UTC;
-- metadados allowlisted;
-- nunca senha, token, segredo, passphrase ou payload confidencial.
-
-Auditoria é append-only para a aplicação. Alteração ou purga exige job administrativo separado e retenção aprovada.
-
-## 8. Exclusões
-
-- confirmação textual `EXCLUIR` para ação irreversível;
-- confirmação contextual exibindo o recurso alvo;
-- bloqueio de autoexclusão e do último administrador;
-- trigger ou constraint para identidades invariantes;
-- soft delete e período de recuperação por padrão;
-- hard delete somente por job de purga, com auditoria;
-- transação e lock de linha para invariantes concorrentes.
-
-## 9. Infraestrutura
-
-- imagens fixadas por versão e, em produção, digest.
-- containers non-root quando possível.
-- filesystem read-only e capabilities removidas.
-- nenhum banco publicado em interface externa.
-- bind de aplicação em `127.0.0.1` quando passar por Nginx do host.
-- socket Docker não é montado no backend web.
-- operador recebe proxy restrito ou operações allowlisted.
-- certificados montados somente leitura.
-- instalador falha diante de recursos sem propriedade comprovada e nunca executa prune global.
-- `fullpassword_nginx` só é aceito quando todos os fatos do contrato aprovado permitem um Compose override persistente; qualquer divergência, outro Nginx containerizado ou Caddy permanece bloqueado;
-- o adaptador não edita Compose/runtime config originais, exige mounts read-only exatos, valida o merge e usa snapshot/rollback; somente o serviço `nginx` pode ser recriado com `--no-deps`;
-- a rota ACME é provada por desafio aleatório antes da emissão e somente o certificado do domínio DevFlow pode ser removido por confirmação explícita;
-- o PostgreSQL permanece exclusivamente em `devflow_internal`; proxy, frontend e edge não recebem acesso à rede do banco;
-- a rota exclusiva do Nginx do host é promovida atomicamente e restaurada em falha de sintaxe ou reload;
-- bootstrap público valida HTTPS canônico, `main`, commit remoto, `VERSION`, integridade Git e equivalência do próprio bootstrap antes de chamar o instalador;
-- updater aceita somente o HTTPS público de `trinityrrocha/DevFlow`, `main`, fast-forward, checkout root limpo e hooks desabilitados;
-- instalação e atualização na VPS não dependem de token, deploy key, chave SSH ou autenticação GitHub;
-- backup autenticado e release candidata íntegra são gates anteriores à mutação do código instalado;
-- migrations ocorrem com tráfego em manutenção e serviços de aplicação parados;
-- falhas acionam restauração coordenada de dados, release, containers e proxy, com log sanitizado.
-- `.env`, `env_file` e variáveis obrigatórias do Compose do Full Password são inputs opacos: apenas metadados de caminho/legibilidade podem ser inventariados e somente o próprio Docker Compose pode consumir seu conteúdo;
-- validação privilegiada é sempre explícita, somente leitura e separada da instalação; não há elevação automática, alteração de permissões, cópia ou carregamento do ambiente no shell;
-- JSON interpolado do Compose é mantido apenas em temporário `0700` com arquivos `0600`, removido por trap, e nunca aparece em stdout, relatório ou log;
-- scripts operacionais mantêm contratos explícitos para variáveis obrigatórias, opcionais, descobertas, derivadas, secretas e somente leitura, auditados conforme [contratos de variáveis Bash](bash-variable-contracts.md);
-
-## 10. Publicação segura
-
-- `.env` real, backups, dumps, logs, chaves e dados runtime são ignorados e auditados antes do commit;
-- a auditoria local busca tokens conhecidos, chaves privadas, caminhos de estação Windows e links internos inválidos;
-- a conta GitHub autorizada é exclusivamente `trinityrrocha`;
-- autoria Git deve vir da identidade já configurada pelo proprietário, sem e-mail inventado ou coautoria;
-- a abertura pública exige auditoria do checkout e de todos os blobs alcançáveis do histórico;
-- a publicação permanece somente na `main`, sem tag, release, PR ou force push;
-- enquanto não existir `LICENSE`, a visibilidade pública não concede automaticamente direito de uso, modificação ou redistribuição.
-
-## 11. Definition of Done de segurança
-
-Uma funcionalidade não está pronta sem:
-
-- threat model proporcional;
-- validação de entrada e saída;
-- autorização no backend;
-- teste negativo;
-- evento de auditoria quando sensível;
-- mensagem segura para o usuário;
-- ausência de segredos em logs e fixtures;
-- análise do impacto em backup, restore e exclusão.
+O endpoint administrativo `GET /api/operations/update/capabilities` publica somente metadados imutaveis do contrato allowlisted e informa `executionAvailable=false`. Uma futura API de execucao devera chamar apenas `update-operation.sh`, sob MFA, auditoria e um servico operacional restrito. Nao existe endpoint para shell arbitrario e nenhuma tela foi implementada nesta fase.

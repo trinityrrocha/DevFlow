@@ -14,17 +14,10 @@ const visit = (directory) => {
 };
 visit(scriptsRoot);
 
-const fullPasswordOnly = new Set([
-  'scripts/detect-shared-proxy.sh',
-  'scripts/migrate-proxy-to-host-nginx.sh',
-  'scripts/lib/fullpassword-proxy.sh',
-]);
 const versionProbeAllowed = new Set([
   'scripts/install.sh',
   'scripts/update.sh',
-  'scripts/reconcile-installed-release.sh',
   'scripts/diagnose.sh',
-  'scripts/migrate-proxy-to-host-nginx.sh',
 ]);
 
 for (const path of shellFiles) {
@@ -35,9 +28,9 @@ for (const path of shellFiles) {
     if (!/\bdocker\s+compose\b/u.test(line)) return;
     const centralBuilder = name === 'scripts/lib/common.sh'
       && line.includes('target=(docker compose --env-file "$env_file"');
-    const fullPasswordOperation = fullPasswordOnly.has(name);
     const versionProbe = versionProbeAllowed.has(name) && /docker\s+compose\s+version\b/u.test(line);
-    if (!centralBuilder && !fullPasswordOperation && !versionProbe) {
+    const renewalUnitLiteral = name === 'scripts/install.sh' && line.includes('docker compose version');
+    if (!centralBuilder && !versionProbe && !renewalUnitLiteral) {
       failures.push(`${name}:${index + 1}: chamada Docker Compose direta fora do construtor central`);
     }
   });
@@ -75,7 +68,7 @@ for (const fragment of [
 for (const script of [
   'scripts/install.sh', 'scripts/update.sh', 'scripts/health.sh', 'scripts/backup.sh',
   'scripts/restore.sh', 'scripts/verify-backup.sh', 'scripts/uninstall.sh',
-  'scripts/diagnose.sh', 'scripts/publish.sh',
+  'scripts/diagnose.sh',
 ]) {
   const source = readFileSync(resolve(root, script), 'utf8');
   if (!source.includes('compose_files') && !source.includes('build_devflow_compose_command')) {

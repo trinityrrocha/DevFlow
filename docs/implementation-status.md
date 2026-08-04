@@ -1,86 +1,19 @@
 # Estado de implementação
 
-Data de corte: 2026-08-04. Versão: `0.4.13-alpha`.
+Data de corte: 2026-08-04. Versão: `0.5.0-alpha`.
 
-## Provider Nginx do host
+## Arquitetura vigente
 
-Implementados localmente: contrato comum, provider padrão `host-nginx`, providers isolado/legado, estado operacional, virtual host atômico, portas loopback, TLS/Certbot, integração com install/update/health/uninstall e utilitário transacional de migração. Em `0.4.1-alpha`, check/dry-run passaram a provar mappings, porta loopback, Compose original/override, vhost, listeners, saúde e rollback por evidências sanitizadas. A validação local é estrutural/simulada; nenhuma instalação, migração, emissão TLS, reload, troca de portas ou rollback real foi executado nesta rodada.
+O DevFlow possui somente instalacao isolada. O Compose entrega PostgreSQL, backend, frontend, Nginx e Certbot proprios, redes `devflow_internal`/`devflow_edge`, persistencia em `/opt/devflow`, HTTPS ACME e estado final schema v3.
 
-Em `0.4.3-alpha`, a instalação interna deixou de depender da disponibilidade de 80/443. A primeira instalação interna real chegou à build em Ubuntu 24.04.4 ARM64, mas parou antes dos containers porque `docker compose images -q backend` retornou vazio. Em `0.4.4-alpha`, a fonte de verdade passou a ser o Compose resolvido com confirmação por `docker image inspect`, e a instalação ganhou retomada explícita e estado transacional em 14 etapas. A retomada real ainda aguarda homologação na VPS.
+Foram removidos como caminhos operacionais: providers de Nginx no host, adapter de proxy externo, overlays compartilhados, publicacao posterior, migracao de proxy, escopo interno, reconciliacao compartilhada e reparos especificos de convivencia.
 
-Na tentativa real de `0.4.4-alpha`, dry-run e resume encerraram com código `1` antes do logger: `detect_partial_installation` propagava o falso esperado de `install_transaction_has_stage` como retorno da função sob `set -e`. Em `0.4.5-alpha`, o contrato booleano é explícito, trap/logger antecedem imports, o estado legado pode ser reconstruído e o clone fornecido é auditado como read-only. A validação real desta correção ainda está pendente na VPS.
+O instalador interativo solicita dominio e um unico e-mail administrativo. Instalacao, resume, update, backup, restore, health, diagnostico e uninstall permanecem fail-closed e limitados aos recursos DevFlow.
 
-No dry-run real de `0.4.5-alpha`, o logger confirmou que a renderização Compose falhava antes da resolução de imagens: o comando divergente não aplicava `/opt/devflow/config/devflow.env`, e `DB_PASSWORD` ficou ausente na interpolação. A `0.4.6-alpha` centraliza o comando Compose, separa validação estrutural de runtime, classifica configuração parcial e oferece recuperação somente sem evidência de dados. A imagem nunca foi a causa primária dessa tentativa.
+`update.sh` continua como motor unico, usado pelo terminal e pelo contrato `update-operation.sh`. O backend expoe apenas `GET /api/operations/update/capabilities`, autenticado e administrativo, para descrever o contrato futuro. Esse endpoint nao executa atualizacoes; `executionAvailable=false`, `UPDATE_API_ENABLED=false` por padrao e nenhuma execucao arbitraria foi exposta ao frontend.
 
-Na retomada real de `0.4.6-alpha`, o PostgreSQL chegou a `healthy`, mas a etapa `09-run-migrations` falhou com `ENOENT`: o `docker compose run` substituiu o `CMD` que definia `MIGRATIONS_DIR`, levando o Node a procurar `/app/database/migrations` enquanto a imagem continha `/database/migrations`. A `0.4.7-alpha` torna esse ambiente permanente, valida os arquivos dentro da imagem, centraliza o comando e preserva banco/frontend comprovados ao retomar da etapa 09. Essa correção ainda não foi executada na VPS.
+## Validacao pendente
 
-Na retomada de `0.4.7-alpha`, as imagens foram construídas e o backend foi comprovado externamente com `/database/migrations/001_initial_schema.sql`, mas a etapa 06 retornou falso negativo. O validador usava `docker compose run` antes da criação das redes e descartava stderr. A `0.4.8-alpha` usa a imagem resolvida em `docker run --network none`, classifica conteúdo e runtime separadamente e registra a causa no estado transacional. A retomada real ainda não foi repetida.
+Ainda dependem de VPS Linux: instalacao completa, Docker/Compose reais, DNS/ACME, HTTPS e renovacao, ARM64 real, backup/restauracao, rollback induzido, carga, acessibilidade e pentest.
 
-A retomada `0.4.8-alpha` concluiu a instalação interna e todos os health checks na VPS ARM64. O estado final, porém, herdou o commit `0.4.6-alpha` do `.env` depois de `load_devflow_env`. A `0.4.9-alpha` resolve a identidade pelo checkout canônico, introduz schema e reparo atômico, reconcilia imagens/API e bloqueia update/publicação enquanto houver divergência. O reparo real ainda não foi executado na VPS.
-
-O check real do reparador `0.4.9-alpha` confirmou que backend e frontend tinham a versão correta, mas revision OCI antiga; por isso o reparo somente do JSON foi corretamente bloqueado. A `0.4.10-alpha` adiciona reconciliação transacional das duas imagens a partir do checkout canônico `0.4.8-alpha`, preservando banco, migration, proxy, Full Password e imagens anteriores. A execução real ainda está pendente.
-
-A `0.4.11-alpha` fecha localmente os contratos de estado v2, publicação explícita, HTTPS/renovação, rollback persistente, health ampliado e operações reutilizáveis de atualização. Os testes locais são não mutantes e não substituem o ensaio privilegiado na VPS: DNS, 80/443, emissão/reuso de certificado, reload do Nginx, tráfego HTTP/HTTPS/WebSocket e rollback real continuam como gate obrigatório antes da homologação operacional do modo compartilhado.
-
-Os logs da tentativa de reconciliação seguinte comprovaram apenas que o checkout continha a migration, que a validação da candidata retornou `expected migration missing` e que o rollback preservou aplicação, banco, proxy público e Full Password. A `0.4.12-alpha` elimina o nome fixo e o probe BusyBox, compara a migration dinâmica e seu checksum, fixa a inspeção ao ID da imagem e permite retenção diagnóstica opt-in. Docker real e a VPS não foram acessados nesta rodada; a causa anterior permanece como hipótese principal de referência/conteúdo candidato divergente até a nova execução manual.
-
-A inspeção manual posterior da candidata retida confirmou a causa: `/database/migrations` estava `0700 root:root` e `001_initial_schema.sql` estava `0600 root:root`; o processo `devflow` (UID 100/GID 101) recebeu `EACCES`. A `0.4.13-alpha` normaliza o contrato para diretórios `0755` e arquivos `0644`, preserva ownership `root:root`, valida como usuário não root e classifica violações de permissão separadamente. Essa correção ainda não foi construída nem reconciliada pelo Codex na VPS.
-
-> O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
-
-## Implementado na baseline
-
-| Área | Estado atual |
-|---|---|
-| Identidade | bootstrap único, Argon2id, sessão server-side, cookie protegido, CSRF, troca de senha, MFA TOTP obrigatório e códigos de recuperação |
-| Multi-tenant | empresas, memberships, tenant ativo, RBAC e chaves compostas de isolamento |
-| Domínio | clientes, projetos, catálogos configuráveis, fluxos e etapas, tarefas como dossiê técnico |
-| Evidências | comentários, anexos por referência, testes, aprovações, metadados GitHub, eventos e tempos |
-| Governança | histórico imutável, auditoria separada, notificações e snapshots de métricas |
-| Banco | PostgreSQL 16, migration `001_initial_schema.sql`, registro real e advisory lock de migration |
-| Interface | frontend React/Vite, design system de referência, telas autenticadas e gates de senha/MFA |
-| Containers | db, backend, frontend e edge; healthchecks próprios; `devflow_edge` separada de `devflow_internal`; banco sem porta publicada |
-| Instalação | bootstrap público independente; proxy explícito; diagnóstico compartilhado read-only; adaptador estrito para o contrato comprovado do `fullpassword_nginx`; outros Nginx containerizados/Caddy bloqueados; checkout HTTPS protegido e releases por SHA |
-| Operação | versão instalada/disponível, health diagnóstico, backup criptografado, restore confirmado, timer, updater transacional com manutenção e rollback automático, e desinstalação com preservação padrão |
-| Publicação | repositório público, contrato `.env.example`, auditorias do checkout e de todo o histórico Git, documentação de VPS e ausência explícita de licença |
-
-Worker e serviço de fila não existem nesta versão. O processamento disponível permanece no backend e nos mecanismos já documentados.
-
-## Evidência real de VPS
-
-Na VPS Ubuntu 24.04 ARM64, `--check` do commit `be1636861505d4f8bedbd42e84d3d66eb70f6fad`, versão `0.3.2-alpha`, concluiu com `passed-with-privileged-dry-run-required`. O dry-run comum não chegou ao gate: `discover_fullpassword_compose_inputs` referenciava `FULLPASSWORD_COMPOSE_FILE` sem inicialização sob `set -u`. Nenhuma alteração foi realizada. A versão `0.3.3-alpha` introduz descoberta defensiva e o teste de regressão; ainda não foi executada nessa VPS. O modo compartilhado continua não homologado.
-
-## Validações locais aplicáveis
-
-A fase executa lint, testes automatizados, build do frontend, carregamento estrutural do backend, parsing e invariantes do Compose, auditoria de dependências, auditoria de arquivos/links/segredos, auditoria de todos os commits alcançáveis e sintaxe Bash quando as ferramentas estão disponíveis.
-
-Os resultados efetivamente obtidos nesta rodada devem constar no relatório final da publicação; este documento não antecipa sucesso de comandos ainda não executados.
-
-## Pendente para homologação na VPS
-
-- executar `reconcile-installed-release.sh --check` e `--reconcile --retain-failed-candidates` sobre a instalação existente, arquivando log, estado, IDs e tags diagnósticas/rollback;
-- construir imagens e iniciar todos os containers em Linux com Docker;
-- executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
-- executar migration em PostgreSQL real e confirmar `/api/health`;
-- executar dry-run e `--resume` com `0.4.8-alpha`, confirmar a validação direta da imagem na etapa 06 e arquivar os relatórios sanitizados;
-- confirmar migration, bootstrap do Super Admin, health interno e estado transacional final na VPS ARM64;
-- confirmar na VPS todos os booleans do Compose, Nginx, loopback, health e rollback antes de considerar `migration_ready=true`;
-- confirmar `compose_cross_directory_supported=true`, `compose_merge_valid=true`, `changes_performed=false` e `installation_ready=true` no dry-run privilegiado;
-- executar posteriormente a migração controlada e confirmar Nginx do host, Full Password e rollback;
-- ensaiar instalação completa com Nginx do host compatível e o modo isolado, incluindo renovação TLS;
-- realizar bootstrap, troca de senha e MFA ponta a ponta;
-- validar backup e restore com dados descartáveis;
-- simular falhas em cada fase do update e comprovar o rollback automático;
-- confirmar reboot, timers, permissões e idempotência;
-- ensaiar o adaptador persistente com Docker/Nginx reais, ACME, recriação exclusiva do proxy, falhas induzidas e rollback dos dois domínios.
-
-## Pendente para produção
-
-- Documento 004;
-- updater transacional homologado com matriz de falhas, atestação de release e rollback testado;
-- CI em toda a matriz Linux/arquitetura;
-- testes API, integração, E2E e isolamento de tenant ampliados;
-- restore drill periódico e backup remoto 3-2-1;
-- acessibilidade, carga, observabilidade, retenção e pentest;
-- fixação de imagens por digest e SBOM/assinatura;
-- licença do projeto e políticas organizacionais finais.
+> O DevFlow esta preparado para homologacao, nao para producao. O Documento 004 ainda nao foi executado.

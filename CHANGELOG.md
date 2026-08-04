@@ -1,5 +1,29 @@
 # Changelog
 
+> Entradas anteriores a `0.5.0-alpha` descrevem a arquitetura compartilhada historica, descontinuada e removida como caminho operacional.
+
+## [0.5.0-alpha] - 2026-08-04
+
+### Alterado
+
+- o DevFlow passa a suportar exclusivamente instalacao isolada, com Nginx, Certbot, containers, redes, storage e certificados proprios;
+- o instalador interativo solicita somente dominio e e-mail administrativo, usa confirmacoes numericas e bloqueia 80/443 ocupadas sem adaptar terceiros;
+- o fluxo transacional possui 16 etapas, ACME HTTP antes de HTTPS, retomada segura e estado final schema v3;
+- PostgreSQL permanece apenas na rede interna; frontend e backend nao publicam portas no host;
+- `update.sh` permanece como motor unico para terminal e futura API allowlisted, com backup, manutencao, migrations, health e rollback;
+- health, diagnostico e uninstall foram reduzidos ao namespace exclusivo do DevFlow.
+
+### Removido
+
+- providers `host-nginx`, `legacy-docker-nginx` e o antigo wrapper de provider isolado;
+- adapters, overlays e fixtures de proxy compartilhado;
+- publicacao separada, migracao de proxy, escopo interno, reconciliacao e reparos especificos da arquitetura compartilhada.
+
+### Validacao
+
+- 30 cenarios obrigatorios verificam instalacao isolada, portas, DNS, e-mail unico, arquiteturas, migrations, Nginx, ACME, HTTPS, renovacao, rollback, update, backup, restore, uninstall, limites de rede e desacoplamento;
+- Docker/ACME/ARM64 reais continuam pendentes de homologacao manual na VPS.
+
 ## [0.4.13-alpha] - 2026-08-04
 
 ### Corrigido

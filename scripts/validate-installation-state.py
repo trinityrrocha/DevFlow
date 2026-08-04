@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and atomically write the versioned DevFlow installation state."""
+"""Validate and atomically write the isolated DevFlow installation state v3."""
 
 from __future__ import annotations
 
@@ -11,21 +11,19 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 REQUIRED_KEYS = {
-    "schemaVersion", "installationScope", "provider", "proxyMode",
-    "installedVersion", "installedCommit", "installedRef", "repository",
-    "applicationInstalled", "applicationHealthy", "externalPublicationEnabled",
-    "proxyMigrationExecuted", "certificateIssued", "domain", "frontendUrl",
-    "backendUrl", "migration",
+    "schemaVersion", "installationMode", "installedVersion", "installedCommit",
+    "installedRef", "repository", "applicationInstalled", "applicationHealthy",
+    "externalPublicationEnabled", "certificateIssued", "domain", "adminEmail",
+    "frontendUrl", "backendUrl", "migration",
 }
 BOOLEAN_KEYS = {
-    "applicationInstalled", "applicationHealthy", "externalPublicationEnabled",
-    "proxyMigrationExecuted", "certificateIssued",
+    "applicationInstalled", "applicationHealthy", "externalPublicationEnabled", "certificateIssued",
 }
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
-DOMAIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
+DOMAIN = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 CANONICAL_REPOSITORY = "https://github.com/trinityrrocha/DevFlow.git"
 
 
@@ -34,64 +32,48 @@ def fail(message: str) -> None:
     raise SystemExit(2)
 
 
-def validate_url(value: object, label: str) -> None:
+def validate_url(value: object, label: str, expected_host: str, suffix: str) -> None:
     if not isinstance(value, str):
         fail(f"{label} must be a string")
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-        fail(f"{label} is not a safe HTTP URL")
+    if (parsed.scheme != "https" or parsed.hostname != expected_host
+            or parsed.netloc != expected_host or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.params):
+        fail(f"{label} is not the isolated HTTPS URL")
+    if parsed.path.rstrip("/") != suffix:
+        fail(f"{label} path is invalid")
 
 
 def validate(document: object) -> dict[str, object]:
     if not isinstance(document, dict):
         fail("root must be an object")
     keys = set(document)
-    missing = REQUIRED_KEYS - keys
-    unknown = keys - REQUIRED_KEYS
-    if missing:
-        fail(f"missing keys: {','.join(sorted(missing))}")
-    if unknown:
-        fail(f"unknown keys: {','.join(sorted(unknown))}")
-    if document["schemaVersion"] != 2:
-        fail("schemaVersion must be 2")
+    if keys != REQUIRED_KEYS:
+        missing = REQUIRED_KEYS - keys
+        unknown = keys - REQUIRED_KEYS
+        fail(f"keys diverge; missing={','.join(sorted(missing))}; unknown={','.join(sorted(unknown))}")
+    if document["schemaVersion"] != 3 or document["installationMode"] != "isolated":
+        fail("schemaVersion 3 and isolated mode are mandatory")
     if not isinstance(document["installedVersion"], str) or not SEMVER.fullmatch(document["installedVersion"]):
         fail("installedVersion is invalid")
     if not isinstance(document["installedCommit"], str) or not COMMIT.fullmatch(document["installedCommit"]):
         fail("installedCommit is invalid")
-    if document["installedRef"] != "main" and not (
-        isinstance(document["installedRef"], str) and document["installedRef"].startswith("v")
-        and SEMVER.fullmatch(document["installedRef"][1:])
-    ):
-        fail("installedRef is invalid")
+    if document["installedRef"] != "main":
+        fail("installedRef must be main")
     if document["repository"] != CANONICAL_REPOSITORY:
         fail("repository is not canonical")
-    if document["installationScope"] not in {"internal", "complete"}:
-        fail("installationScope is invalid")
-    if document["provider"] not in {"host-nginx", "isolated-nginx", "legacy-docker-nginx"}:
-        fail("provider is invalid")
-    if document["proxyMode"] not in {"isolated", "shared"}:
-        fail("proxyMode is invalid")
     for key in BOOLEAN_KEYS:
         if not isinstance(document[key], bool):
             fail(f"{key} must be boolean")
-    if document["applicationHealthy"] and not document["applicationInstalled"]:
-        fail("applicationHealthy requires applicationInstalled")
-    if document["externalPublicationEnabled"] != (document["installationScope"] == "complete"):
-        fail("installationScope and externalPublicationEnabled diverge")
-    if document["certificateIssued"] != document["externalPublicationEnabled"]:
-        fail("certificateIssued must represent the active external certificate")
-    if document["externalPublicationEnabled"] and not document["applicationHealthy"]:
-        fail("external publication requires a healthy application")
-    expected_proxy_mode = "isolated" if document["provider"] == "isolated-nginx" else "shared"
-    if document["proxyMode"] != expected_proxy_mode:
-        fail("provider and proxyMode diverge")
-    for key in ("frontendUrl", "backendUrl"):
-        validate_url(document[key], key)
-    expected_scheme = "https" if document["externalPublicationEnabled"] else "http"
-    if any(urlparse(document[key]).scheme != expected_scheme for key in ("frontendUrl", "backendUrl")):
-        fail("URLs do not match the publication scope")
-    if not isinstance(document["domain"], str) or not DOMAIN.fullmatch(document["domain"]):
+    if not all(document[key] for key in BOOLEAN_KEYS):
+        fail("final isolated state requires installed, healthy, published and certificate flags")
+    domain = document["domain"]
+    if not isinstance(domain, str) or not DOMAIN.fullmatch(domain) or "." not in domain:
         fail("domain is invalid")
+    if not isinstance(document["adminEmail"], str) or not EMAIL.fullmatch(document["adminEmail"]):
+        fail("adminEmail is invalid")
+    validate_url(document["frontendUrl"], "frontendUrl", domain, "")
+    validate_url(document["backendUrl"], "backendUrl", domain, "/api")
     if not isinstance(document["migration"], str) or not document["migration"] or len(document["migration"]) > 255:
         fail("migration is invalid")
     return document
@@ -128,12 +110,6 @@ def atomic_write(destination: Path) -> None:
         os.chmod(destination, 0o600)
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             os.chown(destination, 0, 0)
-        if os.name == "posix":
-            directory_descriptor = os.open(destination.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
     finally:
         if temporary.exists():
             temporary.unlink()

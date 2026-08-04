@@ -12,7 +12,7 @@ DEVFLOW_INSTALL_ROOT="${DEVFLOW_INSTALL_ROOT:-/opt/devflow}"
 DEVFLOW_CONFIG_ROOT="${DEVFLOW_CONFIG_ROOT:-$DEVFLOW_INSTALL_ROOT/config}"
 DEVFLOW_ENV_FILE="${DEVFLOW_ENV_FILE:-$DEVFLOW_CONFIG_ROOT/devflow.env}"
 DEVFLOW_LOG_ROOT="${DEVFLOW_LOG_ROOT:-$DEVFLOW_INSTALL_ROOT/logs}"
-DEVFLOW_DATA_ROOT="${DEVFLOW_DATA_ROOT:-$DEVFLOW_INSTALL_ROOT/data}"
+DEVFLOW_DATA_ROOT="${DEVFLOW_DATA_ROOT:-$DEVFLOW_INSTALL_ROOT/storage}"
 DEVFLOW_STATE_ROOT="${DEVFLOW_STATE_ROOT:-$DEVFLOW_INSTALL_ROOT/state}"
 DEVFLOW_COMPOSE=()
 DEVFLOW_MAINTENANCE_COMPOSE=()
@@ -100,6 +100,8 @@ DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS=(
   DEVFLOW_RELEASE_COMMIT
   DEVFLOW_ENV_FILE
   DEVFLOW_DOMAIN
+  ADMIN_EMAIL
+  LETSENCRYPT_EMAIL
   NODE_ENV
   APP_ORIGIN
   DB_USER
@@ -206,7 +208,7 @@ load_devflow_env() {
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-      DEVFLOW_VERSION|DEVFLOW_RELEASE_COMMIT|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|DEVFLOW_INFRASTRUCTURE_PROVIDER|DEVFLOW_PROXY_MODE|DEVFLOW_SHARED_PROXY_ADAPTER|LETSENCRYPT_EMAIL|DEVFLOW_ENV_FILE|DEVFLOW_BIND_ADDRESS|DEVFLOW_HTTP_PORT|DEVFLOW_API_PORT|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL)
+      DEVFLOW_VERSION|DEVFLOW_RELEASE_COMMIT|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|DEVFLOW_ENV_FILE|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|ADMIN_EMAIL|LETSENCRYPT_EMAIL|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DEVFLOW_ACME_PATH|DEVFLOW_CERTIFICATE_PATH|DEVFLOW_NGINX_CONFIG_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL|UPDATE_API_ENABLED)
         export "$key=$value"
         ;;
       *) die "$DEVFLOW_ENV_FILE contém variável não permitida: $key" ;;
@@ -216,16 +218,24 @@ load_devflow_env() {
 }
 
 validate_runtime_paths() {
-  local db_path uploads_path backups_path passphrase_path
+  local db_path uploads_path acme_path certificate_path nginx_path backups_path passphrase_path
   db_path="$(realpath -m "${DEVFLOW_DB_DATA_PATH:-}")"
   uploads_path="$(realpath -m "${DEVFLOW_UPLOADS_PATH:-}")"
+  acme_path="$(realpath -m "${DEVFLOW_ACME_PATH:-}")"
+  certificate_path="$(realpath -m "${DEVFLOW_CERTIFICATE_PATH:-}")"
+  nginx_path="$(realpath -m "${DEVFLOW_NGINX_CONFIG_PATH:-}")"
   backups_path="$(realpath -m "${BACKUP_ARCHIVE_DIR:-}")"
   passphrase_path="$(realpath -m "${BACKUP_PASSPHRASE_FILE:-}")"
-  [[ "$db_path" == "$DEVFLOW_DATA_ROOT/postgres" ]] || die 'Caminho persistente do PostgreSQL inválido.'
+  [[ "$db_path" == "$DEVFLOW_INSTALL_ROOT/storage/postgres" ]] || die 'Caminho persistente do PostgreSQL inválido.'
   [[ "$uploads_path" == "$DEVFLOW_INSTALL_ROOT/storage/uploads" ]] || die 'Caminho persistente de uploads inválido.'
+  [[ "$acme_path" == "$DEVFLOW_INSTALL_ROOT/storage/acme" ]] || die 'Caminho ACME inválido.'
+  [[ "$certificate_path" == "$DEVFLOW_INSTALL_ROOT/certificates" ]] || die 'Caminho de certificados inválido.'
+  [[ "$nginx_path" == "$DEVFLOW_CONFIG_ROOT/nginx/active.conf.template" ]] || die 'Caminho da configuração Nginx inválido.'
   [[ "$backups_path" == "$DEVFLOW_INSTALL_ROOT/backups" ]] || die 'Caminho de backups inválido.'
   [[ "$passphrase_path" == "$DEVFLOW_CONFIG_ROOT/backup.passphrase" ]] || die 'Caminho da passphrase de backup inválido.'
-  [[ "${DEVFLOW_BIND_ADDRESS:-}" == 127.0.0.1 ]] || die 'Serviços compartilhados devem permanecer vinculados a 127.0.0.1.'
+  [[ "${ADMIN_EMAIL:-}" == "${SUPER_ADMIN_EMAIL:-}" \
+    && "${ADMIN_EMAIL:-}" == "${LETSENCRYPT_EMAIL:-}" ]] \
+    || die 'ADMIN_EMAIL deve ser a autoridade única para administrador e certificado.'
 }
 
 set_managed_env_value() {
@@ -258,19 +268,6 @@ build_devflow_compose_command() {
   esac
   [[ -f "$compose_file" && ! -L "$compose_file" && -r "$compose_file" ]] || return 2
   target=(docker compose --env-file "$env_file" -p "$project" --project-directory "$app_root" -f "$compose_file")
-  if [[ "$layout" == application ]]; then
-    if [[ "${DEVFLOW_PROXY_MODE:-}" == shared ]]; then
-      if [[ "${DEVFLOW_SHARED_PROXY_ADAPTER:-host-nginx}" == fullpassword-nginx ]]; then
-        [[ -f "$app_root/docker-compose.fullpassword.yml" && ! -L "$app_root/docker-compose.fullpassword.yml" ]] || return 2
-        target+=(-f "$app_root/docker-compose.fullpassword.yml")
-      else
-        [[ -f "$app_root/docker-compose.shared.yml" && ! -L "$app_root/docker-compose.shared.yml" ]] || return 2
-        target+=(-f "$app_root/docker-compose.shared.yml")
-      fi
-    elif [[ "${DEVFLOW_PROXY_MODE:-}" == isolated ]]; then
-      target+=(--profile standalone)
-    fi
-  fi
   COMPOSE_ENV_FILE_APPLIED=true
 }
 
@@ -281,8 +278,7 @@ compose_files() {
 }
 
 compose_validate_structure() {
-  local app_root="$1" temporary status=0 previous_proxy_mode="${DEVFLOW_PROXY_MODE:-}"
-  local previous_adapter="${DEVFLOW_SHARED_PROXY_ADAPTER:-}"
+  local app_root="$1" temporary status=0
   local previous_env_applied="${COMPOSE_ENV_FILE_APPLIED:-false}"
   temporary="$(mktemp "${TMPDIR:-/tmp}/devflow-compose-structure.XXXXXX.env")"
   chmod 0600 "$temporary"
@@ -291,8 +287,10 @@ DEVFLOW_VERSION=$DEVFLOW_RELEASE_VERSION
 DEVFLOW_RELEASE_COMMIT=0000000000000000000000000000000000000000
 DEVFLOW_ENV_FILE=$temporary
 DEVFLOW_DOMAIN=internal.invalid
+ADMIN_EMAIL=validation@example.invalid
+LETSENCRYPT_EMAIL=validation@example.invalid
 NODE_ENV=production
-APP_ORIGIN=http://127.0.0.1:18080
+APP_ORIGIN=https://internal.invalid
 DB_USER=devflow_validation
 DB_PASSWORD=placeholder-structural-validation
 DB_NAME=devflow_validation
@@ -301,45 +299,21 @@ ADMIN_BOOTSTRAP_TOKEN=placeholder-structural-validation-placeholder
 CONFIG_ENCRYPTION_KEY=placeholder-structural-validation
 SUPER_ADMIN_EMAIL=validation@example.invalid
 BACKUP_PASSPHRASE_FILE=/tmp/devflow-structural-validation.passphrase
-DEVFLOW_DB_DATA_PATH=/opt/devflow/data/postgres
+DEVFLOW_DB_DATA_PATH=/opt/devflow/storage/postgres
 DEVFLOW_UPLOADS_PATH=/opt/devflow/storage/uploads
-DEVFLOW_BIND_ADDRESS=127.0.0.1
-DEVFLOW_HTTP_PORT=18080
-DEVFLOW_API_PORT=13000
+DEVFLOW_ACME_PATH=/opt/devflow/storage/acme
+DEVFLOW_CERTIFICATE_PATH=/opt/devflow/certificates
+DEVFLOW_NGINX_CONFIG_PATH=/opt/devflow/config/nginx/active.conf.template
 EOF
-  DEVFLOW_PROXY_MODE=shared
-  DEVFLOW_SHARED_PROXY_ADAPTER=host-nginx
   local -a structure_compose=()
   if ! build_devflow_compose_command "$app_root" "$temporary" structure_compose devflow-validation application; then
     status=2
   elif ! "${structure_compose[@]}" config --quiet >/dev/null; then
     status=2
   fi
-  DEVFLOW_PROXY_MODE="$previous_proxy_mode"
-  DEVFLOW_SHARED_PROXY_ADAPTER="$previous_adapter"
   COMPOSE_ENV_FILE_APPLIED="$previous_env_applied"
   rm -f -- "$temporary"
   return "$status"
-}
-
-derive_legacy_proxy_settings() {
-  local provider="${1:-${DEVFLOW_INFRASTRUCTURE_PROVIDER:-host-nginx}}"
-  case "$provider" in
-    host-nginx)
-      DEVFLOW_PROXY_MODE=shared
-      DEVFLOW_SHARED_PROXY_ADAPTER=host-nginx
-      ;;
-    isolated-nginx)
-      DEVFLOW_PROXY_MODE=isolated
-      DEVFLOW_SHARED_PROXY_ADAPTER=none
-      ;;
-    legacy-docker-nginx)
-      DEVFLOW_PROXY_MODE=shared
-      DEVFLOW_SHARED_PROXY_ADAPTER=fullpassword-nginx
-      ;;
-    *) die "Provider de infraestrutura invalido: $provider" ;;
-  esac
-  export DEVFLOW_INFRASTRUCTURE_PROVIDER="$provider" DEVFLOW_PROXY_MODE DEVFLOW_SHARED_PROXY_ADAPTER
 }
 
 is_interactive_terminal() { [[ -t 0 && -t 1 ]]; }
@@ -627,22 +601,20 @@ write_installation_state() {
   install -d -m 0750 "$DEVFLOW_STATE_ROOT"
   {
     printf '{\n'
-    printf '  "schemaVersion": 2,\n'
-    printf '  "installationScope": "%s",\n' "${DEVFLOW_INSTALLATION_SCOPE:-unknown}"
-    printf '  "provider": "%s",\n' "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-unknown}"
-    printf '  "proxyMode": "%s",\n' "${DEVFLOW_PROXY_MODE:-unknown}"
+    printf '  "schemaVersion": 3,\n'
+    printf '  "installationMode": "isolated",\n'
     printf '  "installedVersion": "%s",\n' "$INSTALLED_VERSION"
     printf '  "installedCommit": "%s",\n' "$INSTALLED_COMMIT"
     printf '  "installedRef": "%s",\n' "$INSTALLED_REF"
     printf '  "repository": "%s",\n' "$INSTALLED_REPOSITORY"
     printf '  "applicationInstalled": %s,\n' "${DEVFLOW_APPLICATION_INSTALLED:-false}"
     printf '  "applicationHealthy": %s,\n' "${DEVFLOW_APPLICATION_HEALTHY:-false}"
-    printf '  "externalPublicationEnabled": %s,\n' "${DEVFLOW_EXTERNAL_PUBLICATION_ENABLED:-false}"
-    printf '  "proxyMigrationExecuted": %s,\n' "${DEVFLOW_PROXY_MIGRATION_EXECUTED:-false}"
+    printf '  "externalPublicationEnabled": true,\n'
     printf '  "certificateIssued": %s,\n' "${DEVFLOW_CERTIFICATE_ISSUED:-false}"
     printf '  "domain": "%s",\n' "${DEVFLOW_DOMAIN:-unknown}"
-    printf '  "frontendUrl": "%s",\n' "${DEVFLOW_FRONTEND_URL:-http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}}"
-    printf '  "backendUrl": "%s",\n' "${DEVFLOW_BACKEND_URL:-http://127.0.0.1:${DEVFLOW_API_PORT:-13000}}"
+    printf '  "adminEmail": "%s",\n' "${ADMIN_EMAIL:-unknown}"
+    printf '  "frontendUrl": "https://%s",\n' "${DEVFLOW_DOMAIN:-unknown}"
+    printf '  "backendUrl": "https://%s/api",\n' "${DEVFLOW_DOMAIN:-unknown}"
     printf '  "migration": "%s"\n' "${DEVFLOW_MIGRATION_VERSION:-unknown}"
     printf '}\n'
   } | python3 "$validator" write "$report"
@@ -656,49 +628,21 @@ installation_state_value() {
   sed -nE "s/^[[:space:]]*\"$key\"[[:space:]]*:[[:space:]]*(\"([^\"]*)\"|(true|false)|[0-9]+),?[[:space:]]*$/\\2\\3/p" "$state_file"
 }
 
-installation_state_legacy_value() {
-  local state_file="$1" fallback="$2" key value
-  shift 2
-  for key in "$@"; do
-    value="$(installation_state_value "$key" "$state_file" 2>/dev/null || true)"
-    if [[ -n "$value" ]]; then
-      printf '%s\n' "$value"
-      return 0
-    fi
-  done
-  printf '%s\n' "$fallback"
-}
-
 prepare_installation_state_operational_values() {
   local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
-  DEVFLOW_INSTALLATION_SCOPE="$(installation_state_legacy_value "$state_file" internal installationScope)"
-  DEVFLOW_APPLICATION_INSTALLED="$(installation_state_legacy_value "$state_file" true applicationInstalled)"
-  DEVFLOW_APPLICATION_HEALTHY="$(installation_state_legacy_value "$state_file" false applicationHealthy)"
-  DEVFLOW_EXTERNAL_PUBLICATION_ENABLED="$(installation_state_legacy_value "$state_file" false externalPublicationEnabled)"
-  if [[ "$DEVFLOW_EXTERNAL_PUBLICATION_ENABLED" == true ]]; then
-    DEVFLOW_INSTALLATION_SCOPE=complete
-    DEVFLOW_CERTIFICATE_ISSUED=true
-  else
-    DEVFLOW_INSTALLATION_SCOPE=internal
-    DEVFLOW_CERTIFICATE_ISSUED=false
-  fi
-  DEVFLOW_INFRASTRUCTURE_PROVIDER="$(installation_state_legacy_value "$state_file" "${DEVFLOW_INFRASTRUCTURE_PROVIDER:-host-nginx}" provider infrastructure_provider)"
-  DEVFLOW_FRONTEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_HTTP_PORT:-18080}" frontendUrl)"
-  DEVFLOW_BACKEND_URL="$(installation_state_legacy_value "$state_file" "http://127.0.0.1:${DEVFLOW_API_PORT:-13000}" backendUrl)"
-  DEVFLOW_PROXY_MIGRATION_EXECUTED="$(installation_state_legacy_value "$state_file" false proxyMigrationExecuted)"
-  DEVFLOW_PROXY_MODE="$(installation_state_legacy_value "$state_file" "${DEVFLOW_PROXY_MODE:-shared}" proxyMode proxy_mode)"
-  DEVFLOW_DOMAIN="$(installation_state_legacy_value "$state_file" "${DEVFLOW_DOMAIN:-internal.local}" domain)"
-  DEVFLOW_MIGRATION_VERSION="$(installation_state_legacy_value "$state_file" 001_initial_schema.sql migration)"
-  export DEVFLOW_INSTALLATION_SCOPE DEVFLOW_APPLICATION_INSTALLED \
-    DEVFLOW_APPLICATION_HEALTHY \
-    DEVFLOW_EXTERNAL_PUBLICATION_ENABLED DEVFLOW_INFRASTRUCTURE_PROVIDER \
-    DEVFLOW_FRONTEND_URL DEVFLOW_BACKEND_URL \
-    DEVFLOW_PROXY_MIGRATION_EXECUTED DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_PROXY_MODE \
-    DEVFLOW_DOMAIN DEVFLOW_MIGRATION_VERSION
+  load_installation_state "$state_file" || return 1
+  DEVFLOW_APPLICATION_INSTALLED="$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED"
+  DEVFLOW_APPLICATION_HEALTHY="$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY"
+  DEVFLOW_CERTIFICATE_ISSUED="$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED"
+  DEVFLOW_DOMAIN="$DEVFLOW_INSTALLATION_STATE_DOMAIN"
+  ADMIN_EMAIL="$DEVFLOW_INSTALLATION_STATE_ADMIN_EMAIL"
+  DEVFLOW_MIGRATION_VERSION="$DEVFLOW_INSTALLATION_STATE_MIGRATION"
+  export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY \
+    DEVFLOW_CERTIFICATE_ISSUED DEVFLOW_DOMAIN ADMIN_EMAIL DEVFLOW_MIGRATION_VERSION
 }
 
 load_installation_state() {
-  local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}" state_boolean
+  local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
   [[ -r "$state_file" ]] || return 1
   installation_state_schema_valid "$state_file" || return 1
   DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION="$(installation_state_value schemaVersion "$state_file")"
@@ -706,42 +650,37 @@ load_installation_state() {
   DEVFLOW_INSTALLATION_STATE_COMMIT="$(installation_state_value installedCommit "$state_file")"
   DEVFLOW_INSTALLATION_STATE_REF="$(installation_state_value installedRef "$state_file")"
   DEVFLOW_INSTALLATION_STATE_REPOSITORY="$(installation_state_value repository "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_SCOPE="$(installation_state_value installationScope "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_MODE="$(installation_state_value installationMode "$state_file")"
   DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED="$(installation_state_value applicationInstalled "$state_file")"
   DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY="$(installation_state_value applicationHealthy "$state_file")"
   DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED="$(installation_state_value externalPublicationEnabled "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_PROVIDER="$(installation_state_value provider "$state_file")"
   DEVFLOW_INSTALLATION_STATE_FRONTEND_URL="$(installation_state_value frontendUrl "$state_file")"
   DEVFLOW_INSTALLATION_STATE_BACKEND_URL="$(installation_state_value backendUrl "$state_file")"
   DEVFLOW_INSTALLATION_STATE_DOMAIN="$(installation_state_value domain "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED="$(installation_state_value proxyMigrationExecuted "$state_file")"
+  DEVFLOW_INSTALLATION_STATE_ADMIN_EMAIL="$(installation_state_value adminEmail "$state_file")"
   DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED="$(installation_state_value certificateIssued "$state_file")"
-  DEVFLOW_INSTALLATION_STATE_PROXY_MODE="$(installation_state_value proxyMode "$state_file")"
   DEVFLOW_INSTALLATION_STATE_MIGRATION="$(installation_state_value migration "$state_file")"
-  [[ "$DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION" == 2 ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION" == 3 ]] || return 1
   devflow_semver_is_valid "$DEVFLOW_INSTALLATION_STATE_VERSION" || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 1
   devflow_ref_is_valid "$DEVFLOW_INSTALLATION_STATE_REF" || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_REPOSITORY" == "$DEVFLOW_CANONICAL_REPOSITORY_URL" ]] || return 1
-  [[ "$DEVFLOW_INSTALLATION_STATE_SCOPE" == internal || "$DEVFLOW_INSTALLATION_STATE_SCOPE" == complete ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_MODE" == isolated ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == true || "$DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED" == false ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY" == true || "$DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY" == false ]] || return 1
   [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true || "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == false ]] || return 1
-  for state_boolean in DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED \
-    DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED; do
-    [[ "${!state_boolean}" == true || "${!state_boolean}" == false ]] || return 1
-  done
-  provider_validate_name "$DEVFLOW_INSTALLATION_STATE_PROVIDER" >/dev/null 2>&1 || return 1
-  export DEVFLOW_INSTALLATION_STATE_SCOPE DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED \
+  [[ "$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED" == true ]] || return 1
+  [[ "$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED" == true ]] || return 1
+  validate_domain "$DEVFLOW_INSTALLATION_STATE_DOMAIN" || return 1
+  validate_email "$DEVFLOW_INSTALLATION_STATE_ADMIN_EMAIL" || return 1
+  export DEVFLOW_INSTALLATION_STATE_MODE DEVFLOW_INSTALLATION_STATE_APPLICATION_INSTALLED \
     DEVFLOW_INSTALLATION_STATE_APPLICATION_HEALTHY \
-    DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED DEVFLOW_INSTALLATION_STATE_PROVIDER \
+    DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED \
     DEVFLOW_INSTALLATION_STATE_FRONTEND_URL DEVFLOW_INSTALLATION_STATE_BACKEND_URL \
-    DEVFLOW_INSTALLATION_STATE_DOMAIN \
+    DEVFLOW_INSTALLATION_STATE_DOMAIN DEVFLOW_INSTALLATION_STATE_ADMIN_EMAIL \
     DEVFLOW_INSTALLATION_STATE_SCHEMA_VERSION DEVFLOW_INSTALLATION_STATE_VERSION \
     DEVFLOW_INSTALLATION_STATE_COMMIT DEVFLOW_INSTALLATION_STATE_REF \
-    DEVFLOW_INSTALLATION_STATE_REPOSITORY \
-    DEVFLOW_INSTALLATION_STATE_PROXY_MIGRATION_EXECUTED DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED \
-    DEVFLOW_INSTALLATION_STATE_PROXY_MODE \
+    DEVFLOW_INSTALLATION_STATE_REPOSITORY DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED \
     DEVFLOW_INSTALLATION_STATE_MIGRATION
 }
 

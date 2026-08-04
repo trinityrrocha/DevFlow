@@ -14,6 +14,6 @@ Toda mudança funcional deverá incluir:
 - tratamento de erro sem exposição de detalhes;
 - testes proporcionais ao risco;
 - documentação de variáveis, migrações e impacto operacional;
-- evidência de que não afeta uma instalação Full Password coexistente.
+- evidência de que a mudança permanece limitada aos recursos próprios do DevFlow.
 
 Commits e publicações no GitHub devem usar a identidade autorizada `trinityrrocha`.
