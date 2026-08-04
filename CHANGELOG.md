@@ -10,6 +10,7 @@
 - o vhost compartilhado cobre WebSocket, uploads, restore, downloads, CSP, HSTS, rate limit, timeouts, buffers e gzip;
 - `health.sh` expõe prontidão de provider, proxy, publicação, certificado, renovação, rollback, identidade, estado e adapter, além de `overall_health`;
 - `update-operation.sh` estabelece o contrato reutilizável `check-update`, `download-update`, `validate-update`, `install-update` e `rollback-update`; o rollback manual reutiliza a transação e o backup autenticado do updater.
+- a migração controlada do proxy promove `proxyMigrationExecuted` no estado v2 e restaura o snapshot do estado em rollback automático, sem escrever no repositório Full Password.
 
 ### Validação
 

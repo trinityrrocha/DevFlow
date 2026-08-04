@@ -93,13 +93,16 @@ try {
   check('failure after port switch invokes rollback', migration.indexOf('MIGRATION_STARTED=true') < migration.indexOf('perform_migration\n'));
   check('host Nginx start failure is trapped', migration.includes('systemctl enable --now nginx || return 1'));
   check('rollback verifies restored 80 and 443', migration.includes('original_public_mappings_present') && migration.includes('443/tcp'));
+  check('operational state follows migration and rollback', migration.includes('promote_proxy_migration_state true')
+    && migration.includes('promote_proxy_migration_state false')
+    && migration.includes('INSTALLATION_STATE_BACKUP'));
   check('sensitive values never enter validation or report output', !valid.stdout.includes('TEST-SECRET') && !valid.stdout.includes('TEST-JWT') && migration.includes('| redact_stream > "$temporary"') && !migration.includes('cat "$FULLPASSWORD_ROOT/.env"'));
 
   const evaluateIndex = migration.indexOf('evaluate_readiness');
   const readyIndex = migration.indexOf('migration_ready=true', evaluateIndex);
   check('readiness is emitted only after gates', evaluateIndex >= 0 && readyIndex > evaluateIndex && migration.includes('[[ "${#BLOCKERS[@]}" -eq 0 ]]'));
 
-  if (checks.length !== 21) throw new Error(`Expected 21 checks, got ${checks.length}`);
+  if (checks.length !== 22) throw new Error(`Expected 22 checks, got ${checks.length}`);
   process.stdout.write(`Evidencias de migracao validadas em ${checks.length} cenarios.\n`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

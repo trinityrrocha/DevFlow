@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=providers/provider-contract.sh
+. "$SCRIPT_DIR/providers/provider-contract.sh"
 
 MODE=check
 MODE_EXPLICIT=false
@@ -19,6 +21,8 @@ MIGRATION_ROOT="${DEVFLOW_PROXY_MIGRATION_ROOT:-/etc/devflow/proxy-migrations}"
 OVERRIDE_FILE="$MIGRATION_ROOT/fullpassword-host-nginx.override.yml"
 STATE_FILE="$MIGRATION_ROOT/fullpassword-host-nginx.state"
 BACKUP_ROOT="$MIGRATION_ROOT/backups"
+INSTALLATION_STATE_FILE="$DEVFLOW_STATE_ROOT/installation.json"
+INSTALLATION_STATE_BACKUP="$BACKUP_ROOT/devflow-installation.json"
 LOG_ROOT="${DEVFLOW_PROXY_MIGRATION_LOG_ROOT:-/var/log/devflow}"
 DRY_RUN_REPORT="$LOG_ROOT/proxy-migration-dry-run.log"
 HOST_CONFIG=/etc/nginx/sites-available/fullpassword-proxy-migration.conf
@@ -669,12 +673,30 @@ rollback_transaction() {
   [[ "$failures" -eq 0 ]]
 }
 
+promote_proxy_migration_state() {
+  local executed="$1"
+  [[ "$executed" == true || "$executed" == false ]] || return 1
+  validate_installed_state_consistency "$INSTALLATION_STATE_FILE" || return 1
+  prepare_installation_state_operational_values "$INSTALLATION_STATE_FILE"
+  DEVFLOW_PROXY_MIGRATION_EXECUTED="$executed"
+  export DEVFLOW_PROXY_MIGRATION_EXECUTED
+  write_installation_state
+  validate_installed_state_consistency "$INSTALLATION_STATE_FILE"
+}
+
 on_failure() {
   local code=$?
   trap - ERR
   if [[ "$MIGRATION_STARTED" == true ]]; then
-    rollback_transaction && log WARN 'Rollback automatico da migracao concluido.' \
-      || log ERROR 'Rollback incompleto; intervencao manual obrigatoria.'
+    if rollback_transaction; then
+      if [[ -f "$INSTALLATION_STATE_BACKUP" && ! -L "$INSTALLATION_STATE_BACKUP" ]]; then
+        install -m 0600 "$INSTALLATION_STATE_BACKUP" "$INSTALLATION_STATE_FILE" \
+          || log ERROR 'Estado DevFlow nao pode ser restaurado automaticamente.'
+      fi
+      log WARN 'Rollback automatico da migracao concluido.'
+    else
+      log ERROR 'Rollback incompleto; intervencao manual obrigatoria.'
+    fi
   elif [[ "$ARTIFACTS_APPLIED" == true ]]; then
     rm -f -- "$HOST_ENABLED" "$HOST_CONFIG" "$OVERRIDE_FILE"
     log WARN 'Artefatos preparatorios removidos; nenhuma porta ou container havia sido alterado.'
@@ -731,12 +753,16 @@ main() {
 
   if [[ "$MODE" == rollback ]]; then
     load_state || die 'Estado de migracao ausente ou invalido; rollback recusado.'
+    validate_installed_state_consistency "$INSTALLATION_STATE_FILE" \
+      || die 'Estado DevFlow inconsistente; rollback recusado antes de mutacoes.'
     [[ ! -e /etc/nginx/sites-available/devflow.conf && ! -e /etc/nginx/conf.d/devflow.conf ]] \
       || die 'DevFlow utiliza o Nginx do host; remova-o de forma controlada antes deste rollback global.'
     require_numeric_confirmation proxy-migration-rollback \
       'A reversão restaurará o fullpassword_nginx nas portas 80/443.' \
       'REVERTER PROXY DO HOST'
     rollback_transaction || die 'Rollback falhou; consulte o log e os servicos manualmente.'
+    promote_proxy_migration_state false \
+      || die 'Proxy foi revertido, mas o estado DevFlow nao pode ser promovido; intervencao obrigatoria.'
     rm -f -- "$STATE_FILE" "$OVERRIDE_FILE"
     log INFO 'Rollback concluido; o repositorio Full Password permaneceu inalterado.'
     return 0
@@ -777,6 +803,9 @@ main() {
   chmod 0640 "$migration_log"
   exec > >(redact_stream | tee -a "$migration_log") 2>&1
   started_at="$(timestamp)"
+  validate_installed_state_consistency "$INSTALLATION_STATE_FILE" \
+    || die 'Estado DevFlow inconsistente; migracao bloqueada antes das mutacoes.'
+  install -m 0600 "$INSTALLATION_STATE_FILE" "$INSTALLATION_STATE_BACKUP"
   sha256sum "$FULLPASSWORD_COMPOSE_FILE" > "$BACKUP_ROOT/original-compose.sha256"
   docker inspect --format 'name={{.Name}}\nimage={{.Config.Image}}\nproject={{index .Config.Labels "com.docker.compose.project"}}\nservice={{index .Config.Labels "com.docker.compose.service"}}\nnetworks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}\nports={{json .HostConfig.PortBindings}}' \
     "$FULLPASSWORD_CONTAINER" > "$BACKUP_ROOT/fullpassword-nginx.state.txt"
@@ -794,6 +823,7 @@ main() {
   log INFO 'Janela de manutencao operacional iniciada; nenhuma credencial foi registrada.'
   MIGRATION_STARTED=true
   perform_migration
+  promote_proxy_migration_state true
   completed_at="$(timestamp)"
   write_state "$ORIGINAL_NGINX_ACTIVE" "$HOST_NGINX_INSTALLED_BY_MIGRATION" "$started_at" "$completed_at"
   trap - ERR
