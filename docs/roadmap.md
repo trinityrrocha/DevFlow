@@ -1,12 +1,12 @@
 # Roadmap inicial
 
-## Marco `0.4.12-alpha` — diagnóstico robusto da reconciliação compartilhada
+## Marco `0.4.13-alpha` — permissões determinísticas das migrations
 
-- [x] estabelecer `installation.json` schema v2 sem campos legados;
-- [x] validar migration dinâmica, checksum e ID imutável da imagem candidata;
-- [x] separar falhas de conteúdo, identidade e runtime;
-- [x] adicionar retenção diagnóstica opt-in após rollback;
-- [x] impedir falso positivo de publicação externa no health;
+- [x] confirmar a causa `0700/0600 root:root` por evidências fornecidas pela VPS;
+- [x] normalizar migrations para `root:root 0755/0644` no build;
+- [x] validar leitura e ausência de escrita/execução como `devflow`;
+- [x] classificar `EACCES` de diretório e arquivo separadamente;
+- [x] cobrir instalação, resume, update e reconciliação com o mesmo contrato;
 - [ ] executar homologação privilegiada completa na VPS Linux.
 
 ## Marco `0.4.10-alpha` — reconciliação transacional da release instalada
@@ -162,7 +162,7 @@ Saída: instalação segura nos cenários suportados.
 
 Estado: baseline publicada e mecanismo de update implementado localmente; ensaios na VPS dependem dos gates registrados.
 
-- versão `0.4.12-alpha` consistente;
+- versão `0.4.13-alpha` consistente;
 - instalador inicial seguro com check, dry-run e install;
 - bootstrap público independente do checkout e atualizações anônimas por HTTPS;
 - updater separado com consulta de versão/changelog, manutenção e rollback automático;

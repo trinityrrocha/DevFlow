@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-04. Versão: `0.4.12-alpha`.
+Data de corte: 2026-08-04. Versão: `0.4.13-alpha`.
 
 ## Provider Nginx do host
 
@@ -23,6 +23,8 @@ O check real do reparador `0.4.9-alpha` confirmou que backend e frontend tinham 
 A `0.4.11-alpha` fecha localmente os contratos de estado v2, publicação explícita, HTTPS/renovação, rollback persistente, health ampliado e operações reutilizáveis de atualização. Os testes locais são não mutantes e não substituem o ensaio privilegiado na VPS: DNS, 80/443, emissão/reuso de certificado, reload do Nginx, tráfego HTTP/HTTPS/WebSocket e rollback real continuam como gate obrigatório antes da homologação operacional do modo compartilhado.
 
 Os logs da tentativa de reconciliação seguinte comprovaram apenas que o checkout continha a migration, que a validação da candidata retornou `expected migration missing` e que o rollback preservou aplicação, banco, proxy público e Full Password. A `0.4.12-alpha` elimina o nome fixo e o probe BusyBox, compara a migration dinâmica e seu checksum, fixa a inspeção ao ID da imagem e permite retenção diagnóstica opt-in. Docker real e a VPS não foram acessados nesta rodada; a causa anterior permanece como hipótese principal de referência/conteúdo candidato divergente até a nova execução manual.
+
+A inspeção manual posterior da candidata retida confirmou a causa: `/database/migrations` estava `0700 root:root` e `001_initial_schema.sql` estava `0600 root:root`; o processo `devflow` (UID 100/GID 101) recebeu `EACCES`. A `0.4.13-alpha` normaliza o contrato para diretórios `0755` e arquivos `0644`, preserva ownership `root:root`, valida como usuário não root e classifica violações de permissão separadamente. Essa correção ainda não foi construída nem reconciliada pelo Codex na VPS.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 

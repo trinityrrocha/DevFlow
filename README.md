@@ -4,11 +4,15 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.12-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes; a homologação final exige executar os gates em uma VPS Linux. O sistema não está aprovado para produção.
+Versão atual: **0.4.13-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes; a homologação final exige executar os gates em uma VPS Linux. O sistema não está aprovado para produção.
 
 ## Estado atual
 
 A baseline inclui backend Node.js/Express, frontend React/Vite, PostgreSQL, migration inicial, autenticação com sessão protegida, MFA TOTP, RBAC multi-tenant, domínio de tarefas, auditoria, Docker Compose, backup criptografado e atualização transacional para homologação.
+
+A imagem backend normaliza migrations para `root:root 0755/0644` durante o build e repete a
+validação como usuário não root `devflow`. Symlinks, entradas não regulares, diretórios vazios,
+arquivos graváveis/executáveis ou conteúdo divergente bloqueiam instalação, update e reconciliação.
 
 Ainda dependem de homologação em Linux: instalação completa, emissão e renovação real de certificados, integração com PostgreSQL e containers, ensaios de backup/restauração e rollback induzido, E2E, acessibilidade, carga e pentest. Consulte o [estado de implementação](docs/implementation-status.md).
 
@@ -42,7 +46,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.12-alpha
+./install.sh --check --ref main --expected-version 0.4.13-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.

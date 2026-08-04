@@ -46,26 +46,77 @@ const runProbe = (scenario, expectedMigration = '001_initial_schema.sql') => {
         return 99
       fi
       if [[ "$1 $2" == 'image inspect' ]]; then
-        printf '%s\\n' '${imageId}'
+        if [[ "$*" == *'.Config.User'* ]]; then
+          [[ '${scenario}' == invalid-user ]] && printf '%s\\n' root || printf '%s\\n' devflow
+        else
+          printf '%s\\n' '${imageId}'
+        fi
         return 0
       fi
       [[ "$1" == run ]] || return 98
       case "${scenario}" in
         success)
-          printf '%s\\n' 'devflow_image_validation_result=passed'
+          printf '%s\\n' \
+            'devflow_image_validation_result=passed' \
+            'runtime_uid=100' \
+            'runtime_gid=101'
           return 0
           ;;
         missing-directory)
-          printf '%s\\n' 'devflow_image_validation_result=migration-directory-missing'
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=migration-directory-missing' \
+            'migration_directory_present=false'
           return 40
           ;;
         missing-initial)
-          printf '%s\\n' 'devflow_image_validation_result=expected-migration-missing'
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=expected-migration-missing' \
+            'migration_directory_present=true' \
+            'migration_directory_readable=true' \
+            'expected_migration_present=false'
           return 41
           ;;
         content-mismatch)
-          printf '%s\\n' 'devflow_image_validation_result=expected-migration-content-mismatch'
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=expected-migration-content-mismatch' \
+            'expected_migration_present=true' \
+            'expected_migration_content_match=false'
           return 44
+          ;;
+        directory-eacces)
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=migration-directory-permission-denied' \
+            'migration_directory_present=true' \
+            'migration_directory_readable=false' \
+            'migration_directory_traversable=false'
+          return 45
+          ;;
+        file-eacces)
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=expected-migration-permission-denied' \
+            'migration_directory_present=true' \
+            'migration_directory_readable=true' \
+            'expected_migration_present=true' \
+            'expected_migration_readable=false'
+          return 46
+          ;;
+        symlink)
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=migration-entry-symlink'
+          return 43
+          ;;
+        writable)
+          printf '%s\\n' \
+            'devflow_image_validation_result=failed' \
+            'devflow_image_validation_root_cause=expected-migration-writable-by-runtime-user' \
+            'expected_migration_writable_by_runtime_user=true'
+          return 47
           ;;
         runtime-error)
           printf '%s\\n' 'DB_PASSWORD=TOPSECRET' 'token=ANOTHERSECRETVALUE' >&2
@@ -95,7 +146,7 @@ const transactionProbe = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.12-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
+  install_transaction_begin 0.4.13-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
   install_transaction_complete_stage 06-validate-images
   grep -F '"resumeFromStage": "07-create-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
   install_transaction_fail 06-validate-images image-validation-runtime-error
@@ -107,6 +158,11 @@ try {
   const missingDirectory = runProbe('missing-directory');
   const missingInitial = runProbe('missing-initial');
   const contentMismatch = runProbe('content-mismatch');
+  const directoryEacces = runProbe('directory-eacces');
+  const fileEacces = runProbe('file-eacces');
+  const symlink = runProbe('symlink');
+  const writable = runProbe('writable');
+  const invalidUser = runProbe('invalid-user');
   const dynamicMigration = runProbe('success', '002_future_schema.sql');
   const runtimeError = runProbe('runtime-error');
   const transaction = transactionProbe();
@@ -121,11 +177,24 @@ try {
   check('migration content mismatch is distinct', contentMismatch.result.stdout.includes('expected_migration_content_match=false')
     && contentMismatch.result.stdout.includes('root_cause=expected-migration-content-mismatch')
     && contentMismatch.result.stdout.includes('function_status=44'));
+  check('directory EACCES is a content failure', directoryEacces.result.stdout.includes('root_cause=migration-directory-permission-denied')
+    && directoryEacces.result.stdout.includes('migration_directory_readable=false')
+    && directoryEacces.result.stdout.includes('function_status=45'));
+  check('file EACCES is a content failure', fileEacces.result.stdout.includes('root_cause=expected-migration-permission-denied')
+    && fileEacces.result.stdout.includes('expected_migration_readable=false')
+    && fileEacces.result.stdout.includes('function_status=46'));
+  check('symlink is rejected', symlink.result.stdout.includes('root_cause=migration-entry-symlink')
+    && symlink.result.stdout.includes('function_status=43'));
+  check('runtime user cannot write migration', writable.result.stdout.includes('root_cause=expected-migration-writable-by-runtime-user')
+    && writable.result.stdout.includes('function_status=47'));
+  check('configured image user must be devflow', invalidUser.result.stdout.includes('configured_user=root')
+    && invalidUser.result.stdout.includes('root_cause=backend-configured-user-invalid')
+    && invalidUser.result.stdout.includes('function_status=48'));
   check('docker run has no network and uses Node directly', success.arguments.includes('run --rm --network none --entrypoint node'));
   check('expected migration is calculated and passed as an argument', dynamicMigration.arguments.includes('002_future_schema.sql')
     && dynamicMigration.result.stdout.includes('expected_migration=002_future_schema.sql'));
   check('immutable image identity is checked before and after the probe',
-    (success.arguments.match(/image inspect/g) || []).length === 2
+    (success.arguments.match(/image inspect/g) || []).length === 3
     && success.result.stdout.includes(`validated_image_id=${imageId}`));
   check('Compose run is not used for image validation', !validationBody.includes('DEVFLOW_COMPOSE')
     && !validationBody.includes('docker compose') && validationBody.includes('docker run'));
@@ -150,7 +219,12 @@ try {
     && !runtimeError.result.stdout.includes('ANOTHERSECRETVALUE')
     && runtimeError.result.stdout.includes('[REDACTED]'));
   check('success output is complete', ['backend_image_validation_status=passed', 'migration_directory_present=true',
-    'expected_migration_present=true', 'expected_migration_content_match=true',
+    'configured_user=devflow', 'runtime_uid=100', 'runtime_gid=101',
+    'migration_directory_readable=true', 'migration_directory_traversable=true',
+    'migration_directory_writable_by_runtime_user=false', 'expected_migration_present=true',
+    'expected_migration_regular_file=true', 'expected_migration_readable=true',
+    'expected_migration_writable_by_runtime_user=false', 'expected_migration_executable=false',
+    'expected_migration_content_match=true',
     'image_validation_runtime=docker-run', 'image_validation_network=none', 'image_validation_probe=node']
     .every((field) => success.result.stdout.includes(field)));
   check('stage 06 resumes at stage 07 with root cause support', transaction.status === 0
@@ -170,7 +244,7 @@ try {
     && install.includes('ROOT_CAUSE=image-validation-runtime-error')
     && update.includes('candidate_image_validation_status'));
 
-  if (checks.length !== 27) throw new Error(`Expected 27 checks, got ${checks.length}`);
+  if (checks.length !== 32) throw new Error(`Expected 32 checks, got ${checks.length}`);
   console.log(`Direct image validation tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

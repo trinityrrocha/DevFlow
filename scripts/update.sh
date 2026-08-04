@@ -607,7 +607,7 @@ validate_backend_migration_image "$candidate_backend_image" "$candidate_expected
   || candidate_image_validation_status=$?
 case "$candidate_image_validation_status" in
   0) ;;
-  40|41|43|44) die 'A imagem candidata do backend não contém os artefatos de migration esperados.' ;;
+  40|41|43|44|45|46|47|48) die 'A imagem candidata do backend não atende ao contrato de conteúdo e permissões das migrations.' ;;
   *) die 'O runtime Docker não conseguiu validar a imagem candidata do backend.' ;;
 esac
 

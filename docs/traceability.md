@@ -1,17 +1,17 @@
 # Rastreabilidade — Documento 001
 
-## Instalação interna `0.4.12-alpha` — modo compartilhado
+## Instalação interna `0.4.13-alpha` — permissões determinísticas das migrations
 
 | Requisito | Evidência |
 |---|---|
-| Migration esperada | último `.sql` ordenado da fonte canônica mais SHA-256 |
-| Probe independente | Node direto, `--network none`, sem Compose ou BusyBox |
-| Identidade candidata | referência e ID `sha256:` verificados antes/depois |
-| Classificação | ausência, tipo, conteúdo, troca de referência e runtime separados |
-| Retenção opt-in | `--retain-failed-candidates` depois do rollback |
-| Estado diagnóstico | `reconciliation.json` schema v2 com fase, causa, IDs e rollback |
-| Health externo | estado consistente mais `publication-transaction.json` concluído |
-| Testes não mutantes | `validate-image-validation.mjs` e `validate-installed-release-reconciliation.mjs` |
+| Normalização | `migration-image-contract.js normalize`: `root:root 0755/0644` |
+| Validação no build | contrato root seguido por probe após `USER devflow` |
+| Probe operacional | `Config.User=devflow`, UID não root, rede `none`, sem `--user root` |
+| Integridade | regularidade, symlink, modo, ownership, leitura, escrita, execução e SHA-256 |
+| EACCES | causas distintas para diretório e migration esperada |
+| Fluxos | instalação, resume, update e reconciliação usam o mesmo validador |
+| Preservação | PostgreSQL, Full Password, proxy público e 80/443 fora do probe |
+| Regressões | 29 cenários de permissões mais 32 cenários do validador direto |
 
 ## Instalação interna `0.4.10-alpha`
 

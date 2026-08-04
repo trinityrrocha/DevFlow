@@ -13,7 +13,7 @@ services:
     volumes:
       - ${DEVFLOW_DB_DATA_PATH:-devflow_db_data}:/var/lib/postgresql/data
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.12-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.13-alpha}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -28,13 +28,13 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.12-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.13-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.4.12-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.4.13-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
@@ -45,7 +45,7 @@ services:
     volumes:
       - ${DEVFLOW_UPLOADS_PATH:-devflow_uploads}:/var/lib/devflow/uploads
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.12-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.13-alpha}
     depends_on:
       db:
         condition: service_healthy
@@ -65,7 +65,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.12-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.4.13-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     expose:
@@ -76,7 +76,7 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.12-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.13-alpha}
     networks:
       - devflow_edge
 
@@ -104,7 +104,7 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.12-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.4.13-alpha}
     networks:
       - devflow_edge
 

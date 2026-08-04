@@ -665,6 +665,7 @@ IMAGE_ARCHITECTURE_STATUS=pending-docker-install
 COMPOSE_STRUCTURE_STATUS=pending-docker-install
 if [[ "$MODE" != check ]]; then
   for required_file in database/migrations/001_initial_schema.sql backend/scripts/migrate.js \
+    backend/scripts/migration-image-contract.js \
     scripts/backup.sh scripts/verify-backup.sh scripts/restore.sh scripts/health.sh \
     scripts/repair-installation-state.sh scripts/reconcile-installed-release.sh \
     scripts/validate-installation-state.py \
@@ -1557,7 +1558,7 @@ else
 fi
 case "$image_validation_status" in
   0) ;;
-  40|41|43|44)
+  40|41|43|44|45|46|47|48)
     ROOT_CAUSE=image-content-invalid
     die 'A imagem do backend não contém os artefatos de migration esperados.'
     ;;

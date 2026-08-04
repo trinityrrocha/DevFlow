@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.13-alpha] - 2026-08-04
+
+### Corrigido
+
+- o build backend deixa de herdar permissões `0700/0600` do checkout e normaliza `/database` e `/database/migrations` como `root:root 0755`, com todos os arquivos regulares em `0644`;
+- o build rejeita diretório ausente/vazio, symlink, entrada não regular, ownership ou modos divergentes e executa o contrato novamente como `USER devflow`;
+- o probe operacional continua sem override de usuário, exige `Config.User=devflow`, UID não root, leitura/travessia, ausência de escrita/execução e SHA-256 correto;
+- `EACCES` no diretório e no arquivo agora são classificados como `migration-directory-permission-denied` e `expected-migration-permission-denied`, em vez de erro inesperado do runtime;
+- instalação, resume, update e reconciliação tratam violações de permissões como imagem inválida antes de migrations, manutenção ou promoção.
+
+### Validação
+
+- 29 cenários específicos cobrem os 28 requisitos de permissões e o comando oficial não root; o validador direto cobre também os marcadores de `EACCES` e usuário configurado;
+- Docker não está disponível na estação Windows, portanto build Alpine/ARM64 e execução real das migrations permanecem pendentes de homologação manual na VPS.
+
 ## [0.4.12-alpha] - 2026-08-04
 
 ### Corrigido

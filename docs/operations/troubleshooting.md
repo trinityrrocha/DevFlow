@@ -21,6 +21,12 @@ O relatório omite valores de ambiente, credenciais, anexos e dados pessoais. Re
 
 ## Revision OCI diverge do checkout instalado
 
+Se o probe informar `migration-directory-permission-denied` ou
+`expected-migration-permission-denied`, não execute a migration como root e não altere a
+imagem manualmente. A causa conhecida é a herança de `0700/0600 root:root` pelo `COPY`; a
+imagem corrigida deve ser reconstruída para obter `/database` e `/database/migrations` em
+`0755`, arquivos em `0644` e execução como `devflow`.
+
 Se a versão das imagens estiver correta, mas `backend_image_commit_match=false` ou
 `frontend_image_commit_match=false`, não edite `installation.json` e não execute update.
 Use o checkout operacional mais novo somente como executor:

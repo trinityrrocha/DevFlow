@@ -34,13 +34,14 @@ const check = (name, condition) => {
 };
 
 const writeFixture = (directory, version, { frontendVersion = version } = {}) => {
-  for (const child of ['backend/src/config', 'backend/src', 'frontend', 'scripts/lib', 'docs/infrastructure']) mkdirSync(resolve(directory, child), { recursive: true });
+  for (const child of ['backend/src/config', 'backend/src', 'backend/scripts', 'frontend', 'scripts/lib', 'docs/infrastructure']) mkdirSync(resolve(directory, child), { recursive: true });
   writeFileSync(resolve(directory, 'VERSION'), `${version}\n`);
   writeFileSync(resolve(directory, 'package.json'), `{\n  "name": "devflow",\n  "version": "${version}"\n}\n`);
   writeFileSync(resolve(directory, 'backend/package.json'), `{\n  "name": "backend",\n  "version": "${version}"\n}\n`);
   writeFileSync(resolve(directory, 'frontend/package.json'), `{\n  "name": "frontend",\n  "version": "${frontendVersion}"\n}\n`);
   writeFileSync(resolve(directory, 'backend/src/config/env.js'), `const version = z.string().default('${version}');\n`);
   writeFileSync(resolve(directory, 'backend/src/app.js'), 'const payload = { version: env.DEVFLOW_VERSION };\n');
+  writeFileSync(resolve(directory, 'backend/scripts/migration-image-contract.js'), '// migration image contract fixture\n');
   writeFileSync(resolve(directory, '.env.example'), `DEVFLOW_VERSION=${version}\n`);
   writeFileSync(resolve(directory, 'docker-compose.yml'), `version: \${DEVFLOW_VERSION:-${version}}\nservices:\n  backend:\n    image: devflow-backend:\${DEVFLOW_IMAGE_TAG:-latest}\n  frontend:\n    image: devflow-frontend:\${DEVFLOW_IMAGE_TAG:-latest}\n`);
   writeFileSync(resolve(directory, 'docker-compose.maintenance.yml'), `version: \${DEVFLOW_VERSION:-${version}}\n`);
@@ -65,6 +66,7 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.py'), '# state validator fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.mjs'), '// state tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-installed-release-reconciliation.mjs'), '// reconciliation tests fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-migration-image-permissions.mjs'), '// migration permission tests fixture\n');
   for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'publish.sh', 'repair-installation-state.sh', 'reconcile-installed-release.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
@@ -84,10 +86,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.12-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.13-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.12-alpha');
+  writeFixture(patchFixture, '0.4.13-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');

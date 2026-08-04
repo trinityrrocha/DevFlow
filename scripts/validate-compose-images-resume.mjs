@@ -57,7 +57,7 @@ const exerciseTransaction = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.12-alpha 0123456789012345678901234567890123456789 internal true true 05-build-images
+  install_transaction_begin 0.4.13-alpha 0123456789012345678901234567890123456789 internal true true 05-build-images
   install_transaction_complete_stage 01-preflight >/dev/null
   install_transaction_complete_stage 05-build-images >/dev/null
   install_transaction_fail 06-validate-images >/dev/null
@@ -88,7 +88,7 @@ check('missing or implicit image is controlled', resolveJson({ services: { backe
 check('multiple images are rejected', resolveJson({ services: { backend: { image: ['one', 'two'] } } }, 'backend').status !== 0);
 check('explicit registry remains distinct', normalize('registry.example.com/team/devflow-backend:latest').stdout.trim() === 'registry.example.com/team/devflow-backend:latest');
 check('latest tag is accepted', normalize('devflow-backend:latest').status === 0);
-check('version tag is accepted', normalize('devflow-backend:0.4.12-alpha').status === 0);
+check('version tag is accepted', normalize('devflow-backend:0.4.13-alpha').status === 0);
 check('commit tag is accepted', normalize('devflow-backend:dab9444').status === 0);
 check('execution directory is irrelevant', resolveThroughCompose().stdout.trim() === 'docker.io/library/devflow-backend:latest'
   && common.includes('--project-directory "$app_root"') && compose.startsWith('name: devflow'));

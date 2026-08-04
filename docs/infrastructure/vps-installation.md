@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.12-alpha`: reconcilie a release e migre o estado para o schema v2 antes da publicação externa; a homologação real exige executar todos os gates abaixo na VPS.
+> Versão `0.4.13-alpha`: as migrations da imagem backend são normalizadas para `root:root 0755/0644` e validadas como `devflow`; a homologação real exige executar todos os gates abaixo na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.12-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.13-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -175,6 +175,12 @@ preservado em `/opt/devflow/backups/state` e promovido por rename atômico apena
 Se qualquer gate falhar, o rollback permanece obrigatório. Com a opção de retenção, somente
 tags `diagnostic-*` são preservadas e o próprio script imprime os comandos de inspeção e
 remoção; nenhum container usa essas imagens.
+
+O probe da candidata deve registrar `configured_user=devflow`, UID/GID não root,
+`migration_directory_readable=true`, `migration_directory_writable_by_runtime_user=false`,
+`expected_migration_readable=true`, `expected_migration_writable_by_runtime_user=false`,
+`expected_migration_executable=false` e `expected_migration_content_match=true`. Qualquer
+`EACCES` bloqueia a promoção com causa específica e aciona rollback.
 
 Valide com o health da mesma revisão operacional:
 

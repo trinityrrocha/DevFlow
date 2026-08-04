@@ -79,7 +79,10 @@ const dbSection = compose.match(/\n  db:\n([\s\S]*?)(?=\n  backend:)/)?.[1] || '
 check('PostgreSQL has no host publication', dbSection.includes('expose:') && !dbSection.includes('ports:') && install.includes('postgres_public_port_exposed=true'));
 check('Full Password remains untouched internally', install.includes('DEVFLOW_FULLPASSWORD_MODIFIED=false') && install.includes('não alterar Nginx, 80/443, certificados, Full Password'));
 check('internal state is recorded', common.includes('"installationScope"') && common.includes('"externalPublicationEnabled"') && common.includes('"applicationHealthy"'));
-check('internal health ignores absent HTTPS', health.includes('external_https_status=not-configured') && health.includes('overall_internal_health=healthy'));
+check('internal health ignores Full Password HTTPS', health.includes('EXTERNAL_PUBLICATION_ENABLED=false')
+  && health.includes('EXTERNAL_PUBLICATION_TRANSACTION_VALID=false')
+  && health.includes('external_https_status=not-configured')
+  && health.includes('overall_internal_health=healthy'));
 check('later publication does not migrate', publish.includes('nunca executam migrations') && !publish.includes('scripts/migrate.js'));
 check('internal rollback is DevFlow-scoped', install.includes('compose_files') && install.includes('down --remove-orphans') && install.includes('if [[ "$PROVIDER_APPLIED" == true ]]'));
 check('repeated installation is blocked', install.includes('Uma instalação já existe') && install.includes('use scripts/update.sh'));

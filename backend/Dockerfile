@@ -20,10 +20,17 @@ COPY backend/package.json ./package.json
 COPY backend/src ./src
 COPY backend/scripts ./scripts
 COPY database /database
+RUN node scripts/migration-image-contract.js normalize /database
 RUN addgroup -S devflow && adduser -S -G devflow devflow \
     && mkdir -p /var/lib/devflow/uploads \
     && chown -R devflow:devflow /app /var/lib/devflow
 USER devflow
+RUN set -eu; \
+    latest_path="$(find /database/migrations -maxdepth 1 -type f -name '*.sql' -print | sort | tail -n1)"; \
+    test -n "$latest_path"; \
+    latest_name="${latest_path##*/}"; \
+    latest_sha256="$(sha256sum "$latest_path" | awk '{print $1}')"; \
+    node scripts/migration-image-contract.js probe /database "$latest_name" "$latest_sha256"
 EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["sh", "-c", "node scripts/migrate.js && node src/server.js"]

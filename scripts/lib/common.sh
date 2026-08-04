@@ -398,7 +398,8 @@ validate_backend_migration_image() {
   local backend_image="${1:-}" expected_migration="${2:-001_initial_schema.sql}"
   local expected_image_id="${3:-}" expected_sha256="${4:-}"
   local validation_root stdout_file stderr_file actual_image_id post_validation_image_id
-  local docker_exit_code=0 validation_marker= sanitized_line
+  local configured_user runtime_uid runtime_gid validation_result validation_root_cause sanitized_line
+  local docker_exit_code=0
   validate_image_reference "$backend_image" || {
     printf '%s\n' \
       'backend_image_validation_status=runtime-error' \
@@ -442,6 +443,14 @@ validate_backend_migration_image() {
       "validated_image_id=$actual_image_id"
     return 42
   fi
+  configured_user="$(docker image inspect --format '{{.Config.User}}' "$backend_image" 2>/dev/null || true)"
+  if [[ "$configured_user" != devflow ]]; then
+    printf '%s\n' \
+      'backend_image_validation_status=failed' \
+      "configured_user=${configured_user:-unset}" \
+      'root_cause=backend-configured-user-invalid'
+    return 48
+  fi
 
   validation_root="$(mktemp -d "${TMPDIR:-/tmp}/devflow-image-validation.XXXXXX")"
   chmod 0700 "$validation_root"
@@ -451,53 +460,10 @@ validate_backend_migration_image() {
   : > "$stderr_file"
   chmod 0600 "$stdout_file" "$stderr_file"
 
-  # The backend image is Node-based. A direct Node probe avoids shell/BusyBox
-  # quoting differences and receives the expected basename as a real argument.
-  docker run --rm --network none --entrypoint node "$backend_image" -e '
-    const crypto = require("node:crypto");
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const expectedName = process.argv[1];
-    const expectedHash = process.argv[2] || "";
-    const directory = "/database/migrations";
-    const migration = path.posix.join(directory, expectedName);
-    try {
-      if (!fs.statSync(directory).isDirectory()) {
-        console.log("devflow_image_validation_result=migration-directory-missing");
-        process.exit(40);
-      }
-    } catch (error) {
-      if (error && error.code === "ENOENT") {
-        console.log("devflow_image_validation_result=migration-directory-missing");
-        process.exit(40);
-      }
-      console.error(`devflow_image_probe_error=${error && error.code ? error.code : "unknown"}`);
-      process.exit(46);
-    }
-    let migrationStat;
-    try {
-      migrationStat = fs.statSync(migration);
-    } catch (error) {
-      if (error && error.code === "ENOENT") {
-        console.log("devflow_image_validation_result=expected-migration-missing");
-        process.exit(41);
-      }
-      console.error(`devflow_image_probe_error=${error && error.code ? error.code : "unknown"}`);
-      process.exit(46);
-    }
-    if (!migrationStat.isFile()) {
-      console.log("devflow_image_validation_result=expected-migration-not-regular");
-      process.exit(43);
-    }
-    if (expectedHash) {
-      const actualHash = crypto.createHash("sha256").update(fs.readFileSync(migration)).digest("hex");
-      if (actualHash !== expectedHash) {
-        console.log("devflow_image_validation_result=expected-migration-content-mismatch");
-        process.exit(44);
-      }
-    }
-    console.log("devflow_image_validation_result=passed");
-  ' "$expected_migration" "$expected_sha256" > "$stdout_file" 2> "$stderr_file" || docker_exit_code=$?
+  # No --user override is allowed here: Docker must use Config.User=devflow.
+  docker run --rm --network none --entrypoint node "$backend_image" \
+    scripts/migration-image-contract.js probe /database "$expected_migration" "$expected_sha256" \
+    > "$stdout_file" 2> "$stderr_file" || docker_exit_code=$?
 
   post_validation_image_id="$(docker image inspect --format '{{.Id}}' "$backend_image" 2>/dev/null || true)"
   if [[ "$post_validation_image_id" != "$actual_image_id" ]]; then
@@ -511,15 +477,30 @@ validate_backend_migration_image() {
     return 42
   fi
 
-  validation_marker="$(sed -nE 's/^devflow_image_validation_result=(passed|migration-directory-missing|expected-migration-missing|expected-migration-not-regular|expected-migration-content-mismatch)$/\1/p' "$stdout_file" | head -n1)"
-  case "$validation_marker:$docker_exit_code" in
-    passed:0)
+  validation_result="$(sed -nE 's/^devflow_image_validation_result=(passed|failed)$/\1/p' "$stdout_file" | head -n1)"
+  validation_root_cause="$(sed -nE 's/^devflow_image_validation_root_cause=([a-z0-9-]+)$/\1/p' "$stdout_file" | head -n1)"
+  runtime_uid="$(sed -nE 's/^runtime_uid=([0-9]+)$/\1/p' "$stdout_file" | head -n1)"
+  runtime_gid="$(sed -nE 's/^runtime_gid=([0-9]+)$/\1/p' "$stdout_file" | head -n1)"
+  if [[ "$validation_result:$docker_exit_code" == passed:0 \
+    && "$runtime_uid" =~ ^[0-9]+$ && "$runtime_uid" -ne 0 \
+    && "$runtime_gid" =~ ^[0-9]+$ ]]; then
       printf '%s\n' \
         'backend_image_validation_status=passed' \
+        "configured_user=$configured_user" \
+        "runtime_uid=$runtime_uid" \
+        "runtime_gid=$runtime_gid" \
         'migration_directory_present=true' \
+        'migration_directory_readable=true' \
+        'migration_directory_traversable=true' \
+        'migration_directory_writable_by_runtime_user=false' \
         'expected_migration_present=true' \
+        'expected_migration_regular_file=true' \
+        'expected_migration_readable=true' \
+        'expected_migration_writable_by_runtime_user=false' \
+        'expected_migration_executable=false' \
         'expected_migration_content_match=true' \
         "expected_migration=$expected_migration" \
+        "expected_migration_sha256=$expected_sha256" \
         "validated_image_reference=$backend_image" \
         "validated_image_id=$actual_image_id" \
         'image_validation_runtime=docker-run' \
@@ -527,58 +508,29 @@ validate_backend_migration_image() {
         'image_validation_probe=node'
       rm -rf -- "$validation_root"
       return 0
-      ;;
-    migration-directory-missing:40)
-      printf '%s\n' \
-        'backend_image_validation_status=failed' \
-        'migration_directory_present=false' \
-        'expected_migration_present=false' \
-        "expected_migration=$expected_migration" \
-        "validated_image_reference=$backend_image" \
-        "validated_image_id=$actual_image_id" \
-        'root_cause=migration-directory-missing'
-      rm -rf -- "$validation_root"
-      return 40
-      ;;
-    expected-migration-missing:41)
-      printf '%s\n' \
-        'backend_image_validation_status=failed' \
-        'migration_directory_present=true' \
-        'expected_migration_present=false' \
-        "expected_migration=$expected_migration" \
-        "validated_image_reference=$backend_image" \
-        "validated_image_id=$actual_image_id" \
-        'root_cause=expected-migration-missing'
-      rm -rf -- "$validation_root"
-      return 41
-      ;;
-    expected-migration-not-regular:43)
-      printf '%s\n' \
-        'backend_image_validation_status=failed' \
-        'migration_directory_present=true' \
-        'expected_migration_present=true' \
-        'expected_migration_regular_file=false' \
-        "expected_migration=$expected_migration" \
-        "validated_image_reference=$backend_image" \
-        "validated_image_id=$actual_image_id" \
-        'root_cause=expected-migration-not-regular'
-      rm -rf -- "$validation_root"
-      return 43
-      ;;
-    expected-migration-content-mismatch:44)
-      printf '%s\n' \
-        'backend_image_validation_status=failed' \
-        'migration_directory_present=true' \
-        'expected_migration_present=true' \
-        'expected_migration_content_match=false' \
-        "expected_migration=$expected_migration" \
-        "validated_image_reference=$backend_image" \
-        "validated_image_id=$actual_image_id" \
-        'root_cause=expected-migration-content-mismatch'
-      rm -rf -- "$validation_root"
-      return 44
-      ;;
+  fi
+
+  case "$validation_root_cause" in
+    database-directory-missing|database-directory-permission-denied|migration-directory-missing|migration-directory-not-regular|migration-directory-empty|migration-directory-permission-denied|migration-directory-writable-by-runtime-user|migration-entry-symlink|migration-entry-not-regular|expected-migration-missing|expected-migration-not-latest|expected-migration-permission-denied|expected-migration-writable-by-runtime-user|expected-migration-executable|expected-migration-content-mismatch|database-permission-contract-invalid|migration-directory-permission-contract-invalid|migration-file-permission-contract-invalid) ;;
+    *) validation_root_cause= ;;
   esac
+  if [[ "$validation_result" == failed && "$docker_exit_code" -ge 40 \
+    && "$docker_exit_code" -le 47 && -n "$validation_root_cause" ]]; then
+      printf '%s\n' \
+        'backend_image_validation_status=failed' \
+        "configured_user=$configured_user" \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
+        "root_cause=$validation_root_cause"
+      while IFS= read -r sanitized_line; do
+        if [[ "$sanitized_line" =~ ^(migration_directory_present|migration_directory_readable|migration_directory_traversable|migration_directory_writable_by_runtime_user|expected_migration_present|expected_migration_regular_file|expected_migration_readable|expected_migration_writable_by_runtime_user|expected_migration_executable|expected_migration_content_match)=(true|false)$ ]]; then
+          printf '%s\n' "$sanitized_line"
+        fi
+      done < "$stdout_file"
+      rm -rf -- "$validation_root"
+      return "$docker_exit_code"
+  fi
 
   printf '%s\n' \
     'backend_image_validation_status=runtime-error' \

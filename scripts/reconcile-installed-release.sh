@@ -418,7 +418,7 @@ validate_backend_migration_image "$CANDIDATE_BACKEND_IMAGE" "$MIGRATION_EXPECTED
 reported_validation_root_cause="$(sed -nE 's/^root_cause=([a-z0-9-]+)$/\1/p' \
   "$IMAGE_VALIDATION_RESULT_FILE" | tail -n1)"
 case "$reported_validation_root_cause" in
-  none|migration-directory-missing|expected-migration-missing|expected-migration-not-regular|expected-migration-content-mismatch|candidate-image-inspect-failed|candidate-image-identity-mismatch|candidate-image-reference-changed|invalid-expected-migration|invalid-expected-migration-checksum|image-validation-runtime-error) ;;
+  none|database-directory-missing|database-directory-permission-denied|migration-directory-missing|migration-directory-not-regular|migration-directory-empty|migration-directory-permission-denied|migration-directory-writable-by-runtime-user|migration-entry-symlink|migration-entry-not-regular|expected-migration-missing|expected-migration-not-latest|expected-migration-permission-denied|expected-migration-writable-by-runtime-user|expected-migration-executable|expected-migration-content-mismatch|database-permission-contract-invalid|migration-directory-permission-contract-invalid|migration-file-permission-contract-invalid|backend-configured-user-invalid|candidate-image-inspect-failed|candidate-image-identity-mismatch|candidate-image-reference-changed|invalid-expected-migration|invalid-expected-migration-checksum|image-validation-runtime-error) ;;
   '') reported_validation_root_cause=image-validation-result-missing ;;
   *) reported_validation_root_cause=image-validation-result-invalid ;;
 esac
@@ -427,7 +427,7 @@ case "$candidate_validation_exit" in
     IMAGE_VALIDATION_STATUS=passed
     IMAGE_VALIDATION_ROOT_CAUSE=none
     ;;
-  40|41|43|44) IMAGE_VALIDATION_STATUS=failed; IMAGE_VALIDATION_ROOT_CAUSE="$reported_validation_root_cause" ;;
+  40|41|43|44|45|46|47|48) IMAGE_VALIDATION_STATUS=failed; IMAGE_VALIDATION_ROOT_CAUSE="$reported_validation_root_cause" ;;
   *) IMAGE_VALIDATION_STATUS=runtime-error; IMAGE_VALIDATION_ROOT_CAUSE="$reported_validation_root_cause" ;;
 esac
 write_reconciliation_state validation "$IMAGE_VALIDATION_STATUS" \
