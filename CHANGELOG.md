@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.12-alpha] - 2026-08-04
+
+### Corrigido
+
+- a validação da imagem candidata calcula a migration esperada a partir do checkout canônico, compara seu SHA-256 e vincula a inspeção ao ID imutável da imagem antes e depois do probe;
+- o probe usa o runtime Node da própria imagem, sem quoting do BusyBox, e diferencia diretório ausente, arquivo ausente, arquivo não regular, conteúdo divergente, troca de referência e falha do runtime;
+- a reconciliação registra referências, IDs, migration, resultado da validação, causa e rollback em estado transacional schema v2;
+- `--retain-failed-candidates` preserva opcionalmente tags diagnósticas após o rollback, imprime comandos exatos de inspeção/remoção e nunca promove ou executa as candidatas;
+- `health.sh` considera publicação externa habilitada somente quando o estado consistente também possui transação de publicação concluída para o mesmo domínio/provider e certificado DevFlow ativo.
+
+### Validação
+
+- a validação Docker real não foi executada nesta estação Windows porque Docker não está disponível;
+- testes locais com mocks/fixtures cobrem o nome dinâmico, códigos de saída, identidade da imagem, conteúdo, retenção e estado; a nova homologação operacional permanece pendente de execução manual na VPS.
+
 ## [0.4.11-alpha] - 2026-08-04
 
 ### Corrigido

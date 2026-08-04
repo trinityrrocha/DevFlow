@@ -84,10 +84,10 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.11-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.4.12-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.4.11-alpha');
+  writeFixture(patchFixture, '0.4.12-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');

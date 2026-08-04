@@ -395,7 +395,9 @@ require_numeric_confirmation() {
 }
 
 validate_backend_migration_image() {
-  local backend_image="${1:-}" validation_root stdout_file stderr_file
+  local backend_image="${1:-}" expected_migration="${2:-001_initial_schema.sql}"
+  local expected_image_id="${3:-}" expected_sha256="${4:-}"
+  local validation_root stdout_file stderr_file actual_image_id post_validation_image_id
   local docker_exit_code=0 validation_marker= sanitized_line
   validate_image_reference "$backend_image" || {
     printf '%s\n' \
@@ -405,6 +407,41 @@ validate_backend_migration_image() {
       'root_cause=image-validation-runtime-error'
     return 42
   }
+  [[ "$expected_migration" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.sql$ ]] || {
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=false' \
+      'docker_exit_code=not-run' \
+      'root_cause=invalid-expected-migration'
+    return 42
+  }
+  [[ -z "$expected_sha256" || "$expected_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=false' \
+      'docker_exit_code=not-run' \
+      'root_cause=invalid-expected-migration-checksum'
+    return 42
+  }
+
+  actual_image_id="$(docker image inspect --format '{{.Id}}' "$backend_image" 2>/dev/null || true)"
+  if [[ ! "$actual_image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=false' \
+      'docker_exit_code=not-run' \
+      'root_cause=candidate-image-inspect-failed'
+    return 42
+  fi
+  if [[ -n "$expected_image_id" && "$actual_image_id" != "$expected_image_id" ]]; then
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=false' \
+      'docker_exit_code=not-run' \
+      'root_cause=candidate-image-identity-mismatch' \
+      "validated_image_id=$actual_image_id"
+    return 42
+  fi
 
   validation_root="$(mktemp -d "${TMPDIR:-/tmp}/devflow-image-validation.XXXXXX")"
   chmod 0700 "$validation_root"
@@ -414,27 +451,80 @@ validate_backend_migration_image() {
   : > "$stderr_file"
   chmod 0600 "$stdout_file" "$stderr_file"
 
-  docker run --rm --network none --entrypoint sh "$backend_image" -c '
-    if [ ! -d /database/migrations ]; then
-      printf "%s\n" "devflow_image_validation_result=migration-directory-missing"
-      exit 40
-    fi
-    if [ ! -f /database/migrations/001_initial_schema.sql ]; then
-      printf "%s\n" "devflow_image_validation_result=initial-migration-missing"
-      exit 41
-    fi
-    printf "%s\n" "devflow_image_validation_result=passed"
-  ' > "$stdout_file" 2> "$stderr_file" || docker_exit_code=$?
+  # The backend image is Node-based. A direct Node probe avoids shell/BusyBox
+  # quoting differences and receives the expected basename as a real argument.
+  docker run --rm --network none --entrypoint node "$backend_image" -e '
+    const crypto = require("node:crypto");
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const expectedName = process.argv[1];
+    const expectedHash = process.argv[2] || "";
+    const directory = "/database/migrations";
+    const migration = path.posix.join(directory, expectedName);
+    try {
+      if (!fs.statSync(directory).isDirectory()) {
+        console.log("devflow_image_validation_result=migration-directory-missing");
+        process.exit(40);
+      }
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        console.log("devflow_image_validation_result=migration-directory-missing");
+        process.exit(40);
+      }
+      console.error(`devflow_image_probe_error=${error && error.code ? error.code : "unknown"}`);
+      process.exit(46);
+    }
+    let migrationStat;
+    try {
+      migrationStat = fs.statSync(migration);
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        console.log("devflow_image_validation_result=expected-migration-missing");
+        process.exit(41);
+      }
+      console.error(`devflow_image_probe_error=${error && error.code ? error.code : "unknown"}`);
+      process.exit(46);
+    }
+    if (!migrationStat.isFile()) {
+      console.log("devflow_image_validation_result=expected-migration-not-regular");
+      process.exit(43);
+    }
+    if (expectedHash) {
+      const actualHash = crypto.createHash("sha256").update(fs.readFileSync(migration)).digest("hex");
+      if (actualHash !== expectedHash) {
+        console.log("devflow_image_validation_result=expected-migration-content-mismatch");
+        process.exit(44);
+      }
+    }
+    console.log("devflow_image_validation_result=passed");
+  ' "$expected_migration" "$expected_sha256" > "$stdout_file" 2> "$stderr_file" || docker_exit_code=$?
 
-  validation_marker="$(sed -nE 's/^devflow_image_validation_result=(passed|migration-directory-missing|initial-migration-missing)$/\1/p' "$stdout_file" | head -n1)"
+  post_validation_image_id="$(docker image inspect --format '{{.Id}}' "$backend_image" 2>/dev/null || true)"
+  if [[ "$post_validation_image_id" != "$actual_image_id" ]]; then
+    printf '%s\n' \
+      'backend_image_validation_status=runtime-error' \
+      'image_validation_container_failed=false' \
+      "docker_exit_code=$docker_exit_code" \
+      'root_cause=candidate-image-reference-changed' \
+      "validated_image_id=$actual_image_id"
+    rm -rf -- "$validation_root"
+    return 42
+  fi
+
+  validation_marker="$(sed -nE 's/^devflow_image_validation_result=(passed|migration-directory-missing|expected-migration-missing|expected-migration-not-regular|expected-migration-content-mismatch)$/\1/p' "$stdout_file" | head -n1)"
   case "$validation_marker:$docker_exit_code" in
     passed:0)
       printf '%s\n' \
         'backend_image_validation_status=passed' \
         'migration_directory_present=true' \
-        'initial_migration_present=true' \
+        'expected_migration_present=true' \
+        'expected_migration_content_match=true' \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
         'image_validation_runtime=docker-run' \
-        'image_validation_network=none'
+        'image_validation_network=none' \
+        'image_validation_probe=node'
       rm -rf -- "$validation_root"
       return 0
       ;;
@@ -442,19 +532,51 @@ validate_backend_migration_image() {
       printf '%s\n' \
         'backend_image_validation_status=failed' \
         'migration_directory_present=false' \
-        'initial_migration_present=false' \
+        'expected_migration_present=false' \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
         'root_cause=migration-directory-missing'
       rm -rf -- "$validation_root"
       return 40
       ;;
-    initial-migration-missing:41)
+    expected-migration-missing:41)
       printf '%s\n' \
         'backend_image_validation_status=failed' \
         'migration_directory_present=true' \
-        'initial_migration_present=false' \
-        'root_cause=initial-migration-missing'
+        'expected_migration_present=false' \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
+        'root_cause=expected-migration-missing'
       rm -rf -- "$validation_root"
       return 41
+      ;;
+    expected-migration-not-regular:43)
+      printf '%s\n' \
+        'backend_image_validation_status=failed' \
+        'migration_directory_present=true' \
+        'expected_migration_present=true' \
+        'expected_migration_regular_file=false' \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
+        'root_cause=expected-migration-not-regular'
+      rm -rf -- "$validation_root"
+      return 43
+      ;;
+    expected-migration-content-mismatch:44)
+      printf '%s\n' \
+        'backend_image_validation_status=failed' \
+        'migration_directory_present=true' \
+        'expected_migration_present=true' \
+        'expected_migration_content_match=false' \
+        "expected_migration=$expected_migration" \
+        "validated_image_reference=$backend_image" \
+        "validated_image_id=$actual_image_id" \
+        'root_cause=expected-migration-content-mismatch'
+      rm -rf -- "$validation_root"
+      return 44
       ;;
   esac
 
@@ -462,6 +584,8 @@ validate_backend_migration_image() {
     'backend_image_validation_status=runtime-error' \
     'image_validation_container_failed=true' \
     "docker_exit_code=$docker_exit_code" \
+    "validated_image_reference=$backend_image" \
+    "validated_image_id=$actual_image_id" \
     'root_cause=image-validation-runtime-error'
   while IFS= read -r sanitized_line; do
     [[ -z "$sanitized_line" ]] || printf 'docker_stderr=%s\n' "$sanitized_line"

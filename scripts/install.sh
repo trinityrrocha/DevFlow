@@ -1544,15 +1544,20 @@ CURRENT_INSTALL_STAGE=06-validate-images
 resolve_compose_image_or_die backend backend "$BACKEND_IMAGE_EXPECTED" "$BACKEND_IMAGE_RESOLVED" backend_image
 resolve_compose_image_or_die frontend frontend "$FRONTEND_IMAGE_EXPECTED" "$FRONTEND_IMAGE_RESOLVED" frontend_image
 resolve_compose_image_or_die db PostgreSQL "$POSTGRES_IMAGE_EXPECTED" "$POSTGRES_IMAGE_RESOLVED" postgres_image
+expected_backend_migration="$(find "$SOURCE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
+  | LC_ALL=C sort | tail -n1)"
+expected_backend_migration_sha256="$(sha256sum "$SOURCE_DIR/database/migrations/$expected_backend_migration" | awk '{print $1}')"
+backend_image_id="$(docker image inspect --format '{{.Id}}' "$backend_image")"
 image_validation_status=0
-if validate_backend_migration_image "$backend_image" | tee -a "$INSTALL_LOG"; then
+if validate_backend_migration_image "$backend_image" "$expected_backend_migration" \
+  "$backend_image_id" "$expected_backend_migration_sha256" | tee -a "$INSTALL_LOG"; then
   :
 else
   image_validation_status="${PIPESTATUS[0]}"
 fi
 case "$image_validation_status" in
   0) ;;
-  40|41)
+  40|41|43|44)
     ROOT_CAUSE=image-content-invalid
     die 'A imagem do backend não contém os artefatos de migration esperados.'
     ;;

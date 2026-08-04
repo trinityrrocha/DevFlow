@@ -7,6 +7,7 @@ const reconcile = read('scripts/reconcile-installed-release.sh');
 const common = read('scripts/lib/common.sh');
 const images = read('scripts/lib/compose-images.sh');
 const publish = read('scripts/publish.sh');
+const health = read('scripts/health.sh');
 const compose = read('docker-compose.yml');
 const backendDockerfile = read('backend/Dockerfile');
 const frontendDockerfile = read('frontend/Dockerfile');
@@ -75,6 +76,22 @@ check('idempotência', reconcile.includes('reconciliation_status=not-required')
   && reconcile.includes('changes_applied=false'));
 check('publicação externa bloqueada durante reconciliação', publish.includes('/run/lock/devflow-release-reconcile.lock')
   && publish.includes('Reconciliação da release instalada em andamento'));
+check('migration esperada é calculada da fonte canônica', reconcile.includes('MIGRATION_EXPECTED="$(find "$SOURCE_DIR/database/migrations"')
+  && reconcile.includes('MIGRATION_EXPECTED_SHA256="$(sha256sum'));
+check('validação vincula referência, ID imutável e conteúdo', reconcile.includes('CANDIDATE_BACKEND_IMAGE_ID=')
+  && reconcile.includes('"$CANDIDATE_BACKEND_IMAGE_ID" "$MIGRATION_EXPECTED_SHA256"'));
+check('fases e resultado da validação são transacionais', reconcile.includes('write_reconciliation_state validation running')
+  && reconcile.includes('IMAGE_VALIDATION_ROOT_CAUSE'));
+check('retenção diagnóstica é opt-in', reconcile.includes('--retain-failed-candidates')
+  && reconcile.includes('RETAIN_FAILED_CANDIDATES=false'));
+check('retenção mantém IDs sem promover candidatas', reconcile.includes('retain_failed_candidates')
+  && reconcile.includes('devflow-backend:diagnostic-$TRANSACTION_ID')
+  && reconcile.indexOf('retain_failed_candidates || true') < reconcile.indexOf('docker image rm "$CANDIDATE_BACKEND_IMAGE"'));
+check('estado da reconciliação registra candidatos, validação e rollback', reconcile.includes('"schemaVersion": 2')
+  && reconcile.includes('"failedCandidateRetained"') && reconcile.includes('"rollbackResult"'));
+check('health externo exige transação de publicação concluída', health.includes('EXTERNAL_PUBLICATION_ENABLED=false')
+  && health.includes('EXTERNAL_PUBLICATION_TRANSACTION_VALID=false')
+  && health.includes('== completed'));
 
-if (checks.length !== 20) throw new Error(`Expected 20 checks, got ${checks.length}`);
+if (checks.length !== 27) throw new Error(`Expected 27 checks, got ${checks.length}`);
 console.log(`Installed release reconciliation tests passed: ${checks.length} scenarios.`);

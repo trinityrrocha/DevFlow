@@ -40,6 +40,11 @@ retorna as tags e os dois containers, restaura ambiente e JSON e registra o resu
 `/opt/devflow/state/reconciliation.json`. Logs sanitizados ficam em
 `/opt/devflow/logs/reconciliation-<timestamp>.log`.
 
+Por padrão, tags candidatas com falha são removidas. Em homologação, a opção
+`--retain-failed-candidates` cria tags `diagnostic-*` somente depois de concluir o rollback,
+mantém os containers nos IDs anteriores e registra referências/IDs no estado e no log. O
+script imprime comandos específicos para inspeção e remoção; não use prune global.
+
 Reconcile, update, reparo de estado e publicação externa usam locks incompatíveis. Nenhum
 deles pode iniciar enquanto outro estiver no trecho protegido.
 

@@ -28,13 +28,35 @@ Use o checkout operacional mais novo somente como executor:
 ```bash
 cd ~/DevFlow
 sudo ./scripts/reconcile-installed-release.sh --check
-sudo ./scripts/reconcile-installed-release.sh --reconcile
+sudo ./scripts/reconcile-installed-release.sh --reconcile --retain-failed-candidates
 ```
 
 Confirme `reconciliation_available=true` antes de escolher `1`. O script não usa `down`,
 não recria banco, não executa migrations e não toca no proxy. Se ocorrer rollback, preserve
 `/opt/devflow/state/reconciliation.json`, o log sanitizado e as tags
-`devflow-reconcile-backup-*`; não execute prune.
+`devflow-reconcile-backup-*`/`diagnostic-*`; não execute prune. A retenção acontece somente
+depois do rollback e o script imprime referências, IDs e comandos exatos. Para localizar as
+evidências manualmente:
+
+```bash
+sudo cat /opt/devflow/state/reconciliation.json
+
+sudo find /opt/devflow/logs \
+  -maxdepth 1 \
+  -type f \
+  -name 'reconciliation-*.log' \
+  -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' |
+sort -r |
+head -5
+
+docker image ls \
+  --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}' |
+grep -E 'diagnostic|reconcile'
+```
+
+Não remova as tags até coletar a listagem de `/database/migrations` com o comando impresso
+pelo script. A remoção posterior deve usar somente as duas referências diagnósticas exatas;
+`docker system prune` continua proibido.
 
 Para uma resposta operacional objetiva e a identidade das releases:
 

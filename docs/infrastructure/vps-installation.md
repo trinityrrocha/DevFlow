@@ -1,6 +1,6 @@
 # Instalação em VPS Linux para homologação
 
-> Versão `0.4.11-alpha`: reconcilie a release e migre o estado para o schema v2 antes da publicação externa; a homologação real exige executar todos os gates abaixo na VPS.
+> Versão `0.4.12-alpha`: reconcilie a release e migre o estado para o schema v2 antes da publicação externa; a homologação real exige executar todos os gates abaixo na VPS.
 
 ```bash
 ./install.sh --check
@@ -10,7 +10,7 @@ sudo ./install.sh --install-internal \
   --super-admin-email admin@example.com
 ```
 
-> O DevFlow 0.4.11-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
+> O DevFlow 0.4.12-alpha não está aprovado para produção. Este procedimento é exclusivo para homologação.
 
 Quando o Full Password ocupa 80/443, instale e homologue o DevFlow somente em loopback. Para o estágio externo, limite-se a `scripts/publish.sh --dry-run` ou aos diagnósticos `scripts/migrate-proxy-to-host-nginx.sh --check` e `--dry-run`; não execute `--migrate` automaticamente.
 
@@ -165,13 +165,16 @@ continua sendo exclusivamente `/opt/devflow/source`, portanto a aplicação não
 ```bash
 cd ~/DevFlow
 sudo ./scripts/reconcile-installed-release.sh --check
-sudo ./scripts/reconcile-installed-release.sh --reconcile
+sudo ./scripts/reconcile-installed-release.sh --reconcile --retain-failed-candidates
 ```
 
 Escolha `1` somente depois de confirmar identidade canônica, banco saudável, migration atual e
 `reconciliation_available=true`. A operação cria imagens candidatas, valida labels/conteúdo,
 mantém tags das imagens anteriores e recria somente backend/frontend. O estado anterior é
 preservado em `/opt/devflow/backups/state` e promovido por rename atômico apenas após health.
+Se qualquer gate falhar, o rollback permanece obrigatório. Com a opção de retenção, somente
+tags `diagnostic-*` são preservadas e o próprio script imprime os comandos de inspeção e
+remoção; nenhum container usa essas imagens.
 
 Valide com o health da mesma revisão operacional:
 

@@ -4,7 +4,7 @@ Plataforma multi-tenant de governança do desenvolvimento. Cada tarefa é tratad
 
 > **O DevFlow encontra-se em fase de homologação e ainda não foi aprovado para uso em produção.**
 
-Versão atual: **0.4.11-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes; a homologação final exige executar os gates em uma VPS Linux. O sistema não está aprovado para produção.
+Versão atual: **0.4.12-alpha**. Os Documentos 001, 002 e 003 formam a baseline. A instalação interna e a publicação externa são estágios independentes; a homologação final exige executar os gates em uma VPS Linux. O sistema não está aprovado para produção.
 
 ## Estado atual
 
@@ -42,7 +42,7 @@ O bootstrap sem argumentos valida Linux e conectividade, coleta domínio, e-mail
 Pins são sempre explícitos:
 
 ```bash
-./install.sh --check --ref main --expected-version 0.4.11-alpha
+./install.sh --check --ref main --expected-version 0.4.12-alpha
 ```
 
 Uma referência `vSEMVER` só deve ser usada depois que uma tag correspondente tiver sido criada explicitamente; nenhuma tag é criada nesta entrega.
@@ -116,13 +116,15 @@ Quando as labels OCI das imagens também divergirem, use a reconciliação trans
 
 ```bash
 sudo ./scripts/reconcile-installed-release.sh --check
-sudo ./scripts/reconcile-installed-release.sh --reconcile
+sudo ./scripts/reconcile-installed-release.sh --reconcile --retain-failed-candidates
 ```
 
 Ela executa o código operacional do checkout atual, mas constrói exclusivamente a partir de
 `/opt/devflow/source`. Somente backend e frontend são recriados; PostgreSQL, migrations,
 proxy e Full Password permanecem fora do escopo. As imagens anteriores recebem tags de
-backup e são restauradas automaticamente se qualquer gate posterior falhar.
+backup e são restauradas automaticamente se qualquer gate posterior falhar. A retenção é
+opt-in e só cria tags `diagnostic-*` após o rollback; nenhuma candidata é promovida ou usada
+por containers. O modo padrão continua removendo candidatas que falharam.
 
 Para investigar somente a inicialização, sem exibir valores de configuração ou aplicar mudanças:
 

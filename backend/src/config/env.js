@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.4.11-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.4.12-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),

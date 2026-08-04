@@ -1,6 +1,6 @@
 # Primeiro deployment de homologação
 
-> Em `0.4.11-alpha`, reconcilie imagens e migre o estado para o schema v2 antes de executar o dry-run da publicação. A detecção de `fullpassword_nginx` não autoriza integração nem impede o estágio interno.
+> Em `0.4.12-alpha`, reconcilie imagens e migre o estado para o schema v2 antes de executar o dry-run da publicação. A detecção de `fullpassword_nginx` não autoriza integração nem impede o estágio interno.
 
 ## Gate antes da VPS
 

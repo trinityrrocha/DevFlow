@@ -1,6 +1,6 @@
 # Estado de implementação
 
-Data de corte: 2026-08-04. Versão: `0.4.11-alpha`.
+Data de corte: 2026-08-04. Versão: `0.4.12-alpha`.
 
 ## Provider Nginx do host
 
@@ -21,6 +21,8 @@ A retomada `0.4.8-alpha` concluiu a instalação interna e todos os health check
 O check real do reparador `0.4.9-alpha` confirmou que backend e frontend tinham a versão correta, mas revision OCI antiga; por isso o reparo somente do JSON foi corretamente bloqueado. A `0.4.10-alpha` adiciona reconciliação transacional das duas imagens a partir do checkout canônico `0.4.8-alpha`, preservando banco, migration, proxy, Full Password e imagens anteriores. A execução real ainda está pendente.
 
 A `0.4.11-alpha` fecha localmente os contratos de estado v2, publicação explícita, HTTPS/renovação, rollback persistente, health ampliado e operações reutilizáveis de atualização. Os testes locais são não mutantes e não substituem o ensaio privilegiado na VPS: DNS, 80/443, emissão/reuso de certificado, reload do Nginx, tráfego HTTP/HTTPS/WebSocket e rollback real continuam como gate obrigatório antes da homologação operacional do modo compartilhado.
+
+Os logs da tentativa de reconciliação seguinte comprovaram apenas que o checkout continha a migration, que a validação da candidata retornou `expected migration missing` e que o rollback preservou aplicação, banco, proxy público e Full Password. A `0.4.12-alpha` elimina o nome fixo e o probe BusyBox, compara a migration dinâmica e seu checksum, fixa a inspeção ao ID da imagem e permite retenção diagnóstica opt-in. Docker real e a VPS não foram acessados nesta rodada; a causa anterior permanece como hipótese principal de referência/conteúdo candidato divergente até a nova execução manual.
 
 > O DevFlow está preparado para homologação, não para produção. O Documento 004 ainda não foi executado.
 
@@ -54,7 +56,7 @@ Os resultados efetivamente obtidos nesta rodada devem constar no relatório fina
 
 ## Pendente para homologação na VPS
 
-- executar `reconcile-installed-release.sh --check` e `--reconcile` sobre a instalação `0.4.8-alpha`, arquivando log, estado e tags de rollback;
+- executar `reconcile-installed-release.sh --check` e `--reconcile --retain-failed-candidates` sobre a instalação existente, arquivando log, estado, IDs e tags diagnósticas/rollback;
 - construir imagens e iniciar todos os containers em Linux com Docker;
 - executar o bootstrap público em diretório vazio usando `wget` e `curl` em Linux;
 - executar migration em PostgreSQL real e confirmar `/api/health`;

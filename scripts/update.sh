@@ -597,11 +597,17 @@ set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" build backend frontend
 candidate_backend_image="$(resolve_compose_service_image backend)" \
   || die 'A imagem candidata do backend não pôde ser resolvida após a build.'
+candidate_backend_image_id="$(docker image inspect --format '{{.Id}}' "$candidate_backend_image")"
+candidate_expected_migration="$(find "$CANDIDATE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
+  | LC_ALL=C sort | tail -n1)"
+candidate_expected_migration_sha256="$(sha256sum "$CANDIDATE_DIR/database/migrations/$candidate_expected_migration" | awk '{print $1}')"
 candidate_image_validation_status=0
-validate_backend_migration_image "$candidate_backend_image" || candidate_image_validation_status=$?
+validate_backend_migration_image "$candidate_backend_image" "$candidate_expected_migration" \
+  "$candidate_backend_image_id" "$candidate_expected_migration_sha256" \
+  || candidate_image_validation_status=$?
 case "$candidate_image_validation_status" in
   0) ;;
-  40|41) die 'A imagem candidata do backend não contém os artefatos de migration esperados.' ;;
+  40|41|43|44) die 'A imagem candidata do backend não contém os artefatos de migration esperados.' ;;
   *) die 'O runtime Docker não conseguiu validar a imagem candidata do backend.' ;;
 esac
 

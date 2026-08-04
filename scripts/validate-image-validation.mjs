@@ -30,18 +30,26 @@ const check = (label, condition) => {
   checks.push(label);
 };
 
-const runProbe = (scenario) => {
+const imageId = `sha256:${'a'.repeat(64)}`;
+const migrationHash = 'b'.repeat(64);
+
+const runProbe = (scenario, expectedMigration = '001_initial_schema.sql') => {
   const argumentsFile = resolve(temporary, `${scenario}-arguments`);
   const script = `
     source "$1"
     source "$2"
     arguments_file="$3"
     docker() {
-      printf '%s\\n' "$*" > "$arguments_file"
+      printf '%s\\n' "$*" >> "$arguments_file"
       if [[ "$1" == compose ]]; then
         printf '%s\\n' 'compose networks are unavailable' >&2
         return 99
       fi
+      if [[ "$1 $2" == 'image inspect' ]]; then
+        printf '%s\\n' '${imageId}'
+        return 0
+      fi
+      [[ "$1" == run ]] || return 98
       case "${scenario}" in
         success)
           printf '%s\\n' 'devflow_image_validation_result=passed'
@@ -52,8 +60,12 @@ const runProbe = (scenario) => {
           return 40
           ;;
         missing-initial)
-          printf '%s\\n' 'devflow_image_validation_result=initial-migration-missing'
+          printf '%s\\n' 'devflow_image_validation_result=expected-migration-missing'
           return 41
+          ;;
+        content-mismatch)
+          printf '%s\\n' 'devflow_image_validation_result=expected-migration-content-mismatch'
+          return 44
           ;;
         runtime-error)
           printf '%s\\n' 'DB_PASSWORD=TOPSECRET' 'token=ANOTHERSECRETVALUE' >&2
@@ -62,7 +74,8 @@ const runProbe = (scenario) => {
       esac
     }
     status=0
-    validate_backend_migration_image docker.io/library/devflow-backend:latest || status=$?
+    validate_backend_migration_image docker.io/library/devflow-backend:latest \
+      '${expectedMigration}' '${imageId}' '${migrationHash}' || status=$?
     printf 'function_status=%s\\n' "$status"
   `;
   return {
@@ -82,7 +95,7 @@ const transactionProbe = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.4.11-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
+  install_transaction_begin 0.4.12-alpha 0123456789012345678901234567890123456789 internal false false 06-validate-images
   install_transaction_complete_stage 06-validate-images
   grep -F '"resumeFromStage": "07-create-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
   install_transaction_fail 06-validate-images image-validation-runtime-error
@@ -93,17 +106,27 @@ try {
   const success = runProbe('success');
   const missingDirectory = runProbe('missing-directory');
   const missingInitial = runProbe('missing-initial');
+  const contentMismatch = runProbe('content-mismatch');
+  const dynamicMigration = runProbe('success', '002_future_schema.sql');
   const runtimeError = runProbe('runtime-error');
   const transaction = transactionProbe();
 
   check('image contains migration directory', success.result.stdout.includes('migration_directory_present=true'));
-  check('image contains initial migration', success.result.stdout.includes('initial_migration_present=true'));
+  check('image contains expected migration', success.result.stdout.includes('expected_migration_present=true'));
   check('missing directory is distinct', missingDirectory.result.stdout.includes('root_cause=migration-directory-missing')
     && missingDirectory.result.stdout.includes('function_status=40'));
-  check('missing initial migration is distinct', missingInitial.result.stdout.includes('migration_directory_present=true')
-    && missingInitial.result.stdout.includes('root_cause=initial-migration-missing')
+  check('missing expected migration is distinct', missingInitial.result.stdout.includes('migration_directory_present=true')
+    && missingInitial.result.stdout.includes('root_cause=expected-migration-missing')
     && missingInitial.result.stdout.includes('function_status=41'));
-  check('docker run has no network', success.arguments.includes('run --rm --network none --entrypoint sh'));
+  check('migration content mismatch is distinct', contentMismatch.result.stdout.includes('expected_migration_content_match=false')
+    && contentMismatch.result.stdout.includes('root_cause=expected-migration-content-mismatch')
+    && contentMismatch.result.stdout.includes('function_status=44'));
+  check('docker run has no network and uses Node directly', success.arguments.includes('run --rm --network none --entrypoint node'));
+  check('expected migration is calculated and passed as an argument', dynamicMigration.arguments.includes('002_future_schema.sql')
+    && dynamicMigration.result.stdout.includes('expected_migration=002_future_schema.sql'));
+  check('immutable image identity is checked before and after the probe',
+    (success.arguments.match(/image inspect/g) || []).length === 2
+    && success.result.stdout.includes(`validated_image_id=${imageId}`));
   check('Compose run is not used for image validation', !validationBody.includes('DEVFLOW_COMPOSE')
     && !validationBody.includes('docker compose') && validationBody.includes('docker run'));
   check('absent Compose networks do not block validation', success.result.status === 0
@@ -127,7 +150,8 @@ try {
     && !runtimeError.result.stdout.includes('ANOTHERSECRETVALUE')
     && runtimeError.result.stdout.includes('[REDACTED]'));
   check('success output is complete', ['backend_image_validation_status=passed', 'migration_directory_present=true',
-    'initial_migration_present=true', 'image_validation_runtime=docker-run', 'image_validation_network=none']
+    'expected_migration_present=true', 'expected_migration_content_match=true',
+    'image_validation_runtime=docker-run', 'image_validation_network=none', 'image_validation_probe=node']
     .every((field) => success.result.stdout.includes(field)));
   check('stage 06 resumes at stage 07 with root cause support', transaction.status === 0
     && transaction.stdout.includes('completed_stage=06-validate-images')
@@ -146,7 +170,7 @@ try {
     && install.includes('ROOT_CAUSE=image-validation-runtime-error')
     && update.includes('candidate_image_validation_status'));
 
-  if (checks.length !== 24) throw new Error(`Expected 24 checks, got ${checks.length}`);
+  if (checks.length !== 27) throw new Error(`Expected 27 checks, got ${checks.length}`);
   console.log(`Direct image validation tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

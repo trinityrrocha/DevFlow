@@ -1,17 +1,17 @@
 # Rastreabilidade — Documento 001
 
-## Instalação interna `0.4.11-alpha` — modo compartilhado
+## Instalação interna `0.4.12-alpha` — modo compartilhado
 
 | Requisito | Evidência |
 |---|---|
-| Fonte única da release | `/opt/devflow/source` via `scripts/lib/version.sh` |
-| Estado definitivo | schema v2 exato em `scripts/validate-installation-state.py` |
-| Publicação | `scripts/publish.sh --check/--dry-run/--publish/--rollback` |
-| HTTPS e renovação | provider `host-nginx`, Certbot, timer e hook validados |
-| Rollback de publicação | `publication-transaction.json` e backups persistentes |
-| Health completo | onze flags de prontidão e `overall_health` |
-| Contrato de update | `scripts/update-operation.sh` com cinco operações |
-| Testes não mutantes | `scripts/validate-shared-mode-final.mjs` |
+| Migration esperada | último `.sql` ordenado da fonte canônica mais SHA-256 |
+| Probe independente | Node direto, `--network none`, sem Compose ou BusyBox |
+| Identidade candidata | referência e ID `sha256:` verificados antes/depois |
+| Classificação | ausência, tipo, conteúdo, troca de referência e runtime separados |
+| Retenção opt-in | `--retain-failed-candidates` depois do rollback |
+| Estado diagnóstico | `reconciliation.json` schema v2 com fase, causa, IDs e rollback |
+| Health externo | estado consistente mais `publication-transaction.json` concluído |
+| Testes não mutantes | `validate-image-validation.mjs` e `validate-installed-release-reconciliation.mjs` |
 
 ## Instalação interna `0.4.10-alpha`
 

@@ -11,25 +11,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/providers/provider-contract.sh"
 
 MODE=check
+RETAIN_FAILED_CANDIDATES=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE=check; shift ;;
     --reconcile) MODE=reconcile; shift ;;
+    --retain-failed-candidates) RETAIN_FAILED_CANDIDATES=true; shift ;;
     --help|-h)
       printf '%s\n' \
-        'Uso: sudo scripts/reconcile-installed-release.sh --check|--reconcile' \
+        'Uso: sudo scripts/reconcile-installed-release.sh --check|--reconcile [--retain-failed-candidates]' \
         '' \
         '--check       valida checkout, banco, migrations, imagens, API e estado' \
-        '--reconcile   reconstrói somente backend/frontend e promove o estado validado'
+        '--reconcile   reconstrói somente backend/frontend e promove o estado validado' \
+        '--retain-failed-candidates  preserva tags diagnósticas somente se --reconcile falhar'
       exit 0
       ;;
     *) die "Opção desconhecida: $1" ;;
   esac
 done
+[[ "$RETAIN_FAILED_CANDIDATES" == false || "$MODE" == reconcile ]] \
+  || die '--retain-failed-candidates exige --reconcile.'
 
 require_linux
 require_root
-for required_command in flock git docker python3 curl stat find; do
+for required_command in flock git docker python3 curl stat find sha256sum; do
   command -v "$required_command" >/dev/null 2>&1 || die "Comando obrigatório ausente: $required_command"
 done
 docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 não está disponível.'
@@ -112,6 +117,11 @@ curl --fail --silent --show-error --max-time 10 \
 
 MIGRATION_EXPECTED="$(find "$SOURCE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
   | LC_ALL=C sort | tail -n1)"
+[[ "$MIGRATION_EXPECTED" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.sql$ ]] \
+  || die 'Migration esperada da fonte canônica é ausente ou inválida.'
+MIGRATION_EXPECTED_SHA256="$(sha256sum "$SOURCE_DIR/database/migrations/$MIGRATION_EXPECTED" | awk '{print $1}')"
+[[ "$MIGRATION_EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+  || die 'Checksum da migration esperada não pôde ser calculado.'
 MIGRATION_ACTUAL="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
   2>/dev/null || true)"
@@ -208,10 +218,19 @@ ENV_BACKUP="$(mktemp "$DEVFLOW_CONFIG_ROOT/.reconcile-env.XXXXXX")"
 RECONCILIATION_STATE_FILE="$DEVFLOW_STATE_ROOT/reconciliation.json"
 RECONCILIATION_LOG="$DEVFLOW_LOG_ROOT/reconciliation-$TRANSACTION_ID.log"
 RECONCILE_COMPOSE_OVERRIDE="$(mktemp "$DEVFLOW_STATE_ROOT/.reconcile-compose.XXXXXX.yml")"
+IMAGE_VALIDATION_RESULT_FILE="$(mktemp "$DEVFLOW_STATE_ROOT/.reconcile-image-validation.XXXXXX")"
 CANDIDATE_BACKEND_IMAGE=
 CANDIDATE_FRONTEND_IMAGE=
+CANDIDATE_BACKEND_IMAGE_ID=
+CANDIDATE_FRONTEND_IMAGE_ID=
 TARGET_BACKEND_IMAGE=
 TARGET_FRONTEND_IMAGE=
+FAILED_CANDIDATE_RETAINED=false
+FAILED_BACKEND_DIAGNOSTIC_REF=none
+FAILED_FRONTEND_DIAGNOSTIC_REF=none
+IMAGE_VALIDATION_STATUS=not-started
+IMAGE_VALIDATION_ROOT_CAUSE=none
+ROLLBACK_RESULT=not-required
 OLD_BACKEND_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$BACKEND_CONTAINER_ID")"
 OLD_FRONTEND_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$FRONTEND_CONTAINER_ID")"
 MUTATION_STARTED=false
@@ -234,6 +253,7 @@ chmod 0640 "$RECONCILIATION_LOG"
     '    command: ["node", "src/server.js"]'
 } > "$RECONCILE_COMPOSE_OVERRIDE"
 chmod 0600 "$RECONCILE_COMPOSE_OVERRIDE"
+chmod 0600 "$IMAGE_VALIDATION_RESULT_FILE"
 exec > >(redact_stream | tee -a "$RECONCILIATION_LOG") 2>&1
 
 compose_files_for_reconciliation() {
@@ -246,7 +266,7 @@ write_reconciliation_state() {
   temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.reconciliation.XXXXXX")"
   {
     printf '{\n'
-    printf '  "schemaVersion": 1,\n'
+    printf '  "schemaVersion": 2,\n'
     printf '  "timestamp": "%s",\n' "$(timestamp)"
     printf '  "phase": "%s",\n' "$phase"
     printf '  "result": "%s",\n' "$result"
@@ -254,6 +274,17 @@ write_reconciliation_state() {
     printf '  "installedCommit": "%s",\n' "$INSTALLED_COMMIT_CANONICAL"
     printf '  "databaseContainer": "%s",\n' "$DB_CONTAINER_ID"
     printf '  "stateBackup": "%s",\n' "$STATE_BACKUP"
+    printf '  "candidateBackendReference": "%s",\n' "${CANDIDATE_BACKEND_IMAGE:-none}"
+    printf '  "candidateBackendId": "%s",\n' "${CANDIDATE_BACKEND_IMAGE_ID:-none}"
+    printf '  "candidateFrontendReference": "%s",\n' "${CANDIDATE_FRONTEND_IMAGE:-none}"
+    printf '  "candidateFrontendId": "%s",\n' "${CANDIDATE_FRONTEND_IMAGE_ID:-none}"
+    printf '  "expectedMigration": "%s",\n' "$MIGRATION_EXPECTED"
+    printf '  "imageValidationStatus": "%s",\n' "$IMAGE_VALIDATION_STATUS"
+    printf '  "imageValidationRootCause": "%s",\n' "$IMAGE_VALIDATION_ROOT_CAUSE"
+    printf '  "failedCandidateRetained": %s,\n' "$FAILED_CANDIDATE_RETAINED"
+    printf '  "failedBackendCandidate": "%s",\n' "$FAILED_BACKEND_DIAGNOSTIC_REF"
+    printf '  "failedFrontendCandidate": "%s",\n' "$FAILED_FRONTEND_DIAGNOSTIC_REF"
+    printf '  "rollbackResult": "%s",\n' "$ROLLBACK_RESULT"
     printf '  "fullpasswordModified": false,\n'
     printf '  "publicProxyModified": false\n'
     printf '}\n'
@@ -293,9 +324,40 @@ rollback_reconciliation() {
   fi
   [[ "$("${DEVFLOW_COMPOSE[@]}" ps -q db 2>/dev/null || true)" == "$DB_CONTAINER_ID" ]] \
     || rollback_failures=$((rollback_failures + 1))
-  write_reconciliation_state rollback "$([[ "$rollback_failures" -eq 0 ]] && printf rolled-back || printf rollback-failed)" || true
+  ROLLBACK_RESULT="$([[ "$rollback_failures" -eq 0 ]] && printf rolled-back || printf rollback-failed)"
+  write_reconciliation_state rollback "$ROLLBACK_RESULT" || true
   set -e
   [[ "$rollback_failures" -eq 0 ]]
+}
+
+retain_failed_candidates() {
+  local retention_failures=0
+  [[ "$RETAIN_FAILED_CANDIDATES" == true ]] || return 1
+  [[ "$CANDIDATE_BACKEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ \
+    && "$CANDIDATE_FRONTEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  FAILED_BACKEND_DIAGNOSTIC_REF="devflow-backend:diagnostic-$TRANSACTION_ID"
+  FAILED_FRONTEND_DIAGNOSTIC_REF="devflow-frontend:diagnostic-$TRANSACTION_ID"
+  docker image tag "$CANDIDATE_BACKEND_IMAGE_ID" "$FAILED_BACKEND_DIAGNOSTIC_REF" \
+    || retention_failures=$((retention_failures + 1))
+  docker image tag "$CANDIDATE_FRONTEND_IMAGE_ID" "$FAILED_FRONTEND_DIAGNOSTIC_REF" \
+    || retention_failures=$((retention_failures + 1))
+  if [[ "$retention_failures" -eq 0 ]]; then
+    FAILED_CANDIDATE_RETAINED=true
+    printf '%s\n' \
+      'failed_candidate_retained=true' \
+      "failed_backend_candidate=$FAILED_BACKEND_DIAGNOSTIC_REF" \
+      "failed_backend_candidate_id=$CANDIDATE_BACKEND_IMAGE_ID" \
+      "failed_frontend_candidate=$FAILED_FRONTEND_DIAGNOSTIC_REF" \
+      "failed_frontend_candidate_id=$CANDIDATE_FRONTEND_IMAGE_ID" \
+      "inspect_failed_backend_command=docker image inspect $FAILED_BACKEND_DIAGNOSTIC_REF" \
+      "inspect_failed_frontend_command=docker image inspect $FAILED_FRONTEND_DIAGNOSTIC_REF" \
+      "inspect_failed_migration_command=docker run --rm --network none --entrypoint node $FAILED_BACKEND_DIAGNOSTIC_REF -e 'const fs=require(\"node:fs\");console.log(fs.readdirSync(\"/database/migrations\").sort().join(\"\\n\"))'" \
+      "remove_failed_candidates_command=docker image rm $FAILED_BACKEND_DIAGNOSTIC_REF $FAILED_FRONTEND_DIAGNOSTIC_REF"
+    return 0
+  fi
+  FAILED_BACKEND_DIAGNOSTIC_REF=none
+  FAILED_FRONTEND_DIAGNOSTIC_REF=none
+  return 1
 }
 
 cleanup_reconciliation() {
@@ -303,11 +365,14 @@ cleanup_reconciliation() {
   trap - EXIT ERR INT TERM
   if [[ "$exit_code" -ne 0 && "$RECONCILIATION_COMPLETE" != true ]]; then
     rollback_reconciliation || true
+    retain_failed_candidates || true
     [[ -z "$CANDIDATE_BACKEND_IMAGE" ]] || docker image rm "$CANDIDATE_BACKEND_IMAGE" >/dev/null 2>&1 || true
     [[ -z "$CANDIDATE_FRONTEND_IMAGE" ]] || docker image rm "$CANDIDATE_FRONTEND_IMAGE" >/dev/null 2>&1 || true
+    write_reconciliation_state rollback "$ROLLBACK_RESULT" || true
   fi
   rm -f -- "$ENV_BACKUP"
   rm -f -- "$RECONCILE_COMPOSE_OVERRIDE"
+  rm -f -- "$IMAGE_VALIDATION_RESULT_FILE"
   exit "$exit_code"
 }
 trap cleanup_reconciliation EXIT
@@ -327,12 +392,48 @@ compose_files_for_reconciliation
 "${DEVFLOW_COMPOSE[@]}" build backend frontend
 CANDIDATE_BACKEND_IMAGE="$(resolve_compose_service_image backend)"
 CANDIDATE_FRONTEND_IMAGE="$(resolve_compose_service_image frontend)"
+CANDIDATE_BACKEND_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_BACKEND_IMAGE")"
+CANDIDATE_FRONTEND_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_FRONTEND_IMAGE")"
+[[ "$CANDIDATE_BACKEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ \
+  && "$CANDIDATE_FRONTEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+  || die 'IDs imutáveis das imagens candidatas não puderam ser comprovados.'
+printf '%s\n' \
+  "candidate_backend_reference=$CANDIDATE_BACKEND_IMAGE" \
+  "candidate_backend_id=$CANDIDATE_BACKEND_IMAGE_ID" \
+  "candidate_frontend_reference=$CANDIDATE_FRONTEND_IMAGE" \
+  "candidate_frontend_id=$CANDIDATE_FRONTEND_IMAGE_ID" \
+  "expected_migration=$MIGRATION_EXPECTED" \
+  "expected_migration_sha256=$MIGRATION_EXPECTED_SHA256"
 compose_image_matches_release "$CANDIDATE_BACKEND_IMAGE" "$INSTALLED_COMMIT_CANONICAL" "$INSTALLED_VERSION_CANONICAL" \
   || die 'Labels OCI da imagem candidata backend divergem da release instalada.'
 compose_image_matches_release "$CANDIDATE_FRONTEND_IMAGE" "$INSTALLED_COMMIT_CANONICAL" "$INSTALLED_VERSION_CANONICAL" \
   || die 'Labels OCI da imagem candidata frontend divergem da release instalada.'
-validate_backend_migration_image "$CANDIDATE_BACKEND_IMAGE" \
-  || die 'Conteúdo da imagem candidata backend não passou na validação isolada.'
+IMAGE_VALIDATION_STATUS=running
+write_reconciliation_state validation running \
+  || die 'Fase de validação da imagem não pôde ser registrada.'
+candidate_validation_exit=0
+validate_backend_migration_image "$CANDIDATE_BACKEND_IMAGE" "$MIGRATION_EXPECTED" \
+  "$CANDIDATE_BACKEND_IMAGE_ID" "$MIGRATION_EXPECTED_SHA256" \
+  | tee "$IMAGE_VALIDATION_RESULT_FILE" || candidate_validation_exit=$?
+reported_validation_root_cause="$(sed -nE 's/^root_cause=([a-z0-9-]+)$/\1/p' \
+  "$IMAGE_VALIDATION_RESULT_FILE" | tail -n1)"
+case "$reported_validation_root_cause" in
+  none|migration-directory-missing|expected-migration-missing|expected-migration-not-regular|expected-migration-content-mismatch|candidate-image-inspect-failed|candidate-image-identity-mismatch|candidate-image-reference-changed|invalid-expected-migration|invalid-expected-migration-checksum|image-validation-runtime-error) ;;
+  '') reported_validation_root_cause=image-validation-result-missing ;;
+  *) reported_validation_root_cause=image-validation-result-invalid ;;
+esac
+case "$candidate_validation_exit" in
+  0)
+    IMAGE_VALIDATION_STATUS=passed
+    IMAGE_VALIDATION_ROOT_CAUSE=none
+    ;;
+  40|41|43|44) IMAGE_VALIDATION_STATUS=failed; IMAGE_VALIDATION_ROOT_CAUSE="$reported_validation_root_cause" ;;
+  *) IMAGE_VALIDATION_STATUS=runtime-error; IMAGE_VALIDATION_ROOT_CAUSE="$reported_validation_root_cause" ;;
+esac
+write_reconciliation_state validation "$IMAGE_VALIDATION_STATUS" \
+  || die 'Resultado da validação da imagem não pôde ser registrado.'
+[[ "$candidate_validation_exit" -eq 0 ]] \
+  || die "Conteúdo da imagem candidata backend não passou na validação isolada ($IMAGE_VALIDATION_ROOT_CAUSE)."
 
 DEVFLOW_IMAGE_TAG="$CONFIGURED_IMAGE_TAG"
 export DEVFLOW_IMAGE_TAG
@@ -393,6 +494,7 @@ write_reconciliation_state completed success || die 'Conclusão transacional nã
 RECONCILIATION_COMPLETE=true
 rm -f -- "$ENV_BACKUP"
 rm -f -- "$RECONCILE_COMPOSE_OVERRIDE"
+rm -f -- "$IMAGE_VALIDATION_RESULT_FILE"
 trap - EXIT ERR INT TERM
 printf '%s\n' \
   "state_backup=$STATE_BACKUP" \

@@ -35,7 +35,9 @@ require_linux
 require_root
 load_devflow_env
 validate_runtime_paths
-EXTERNAL_PUBLICATION_ENABLED=true
+EXTERNAL_PUBLICATION_ENABLED=false
+EXTERNAL_PUBLICATION_STATE_CLAIM=false
+EXTERNAL_PUBLICATION_TRANSACTION_VALID=false
 INSTALLATION_SCOPE=complete
 INSTALLATION_STATE_HEALTH=degraded
 REPAIR_AVAILABLE=false
@@ -46,9 +48,24 @@ INSTALLED_STATE_COMMIT_MATCH=false
 INSTALLED_STATE_SOURCE_COMMIT_MATCH=false
 if validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json"; then
   INSTALLATION_STATE_HEALTH=healthy
-  EXTERNAL_PUBLICATION_ENABLED="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
+  EXTERNAL_PUBLICATION_STATE_CLAIM="$DEVFLOW_INSTALLATION_STATE_EXTERNAL_ENABLED"
   INSTALLATION_SCOPE="$DEVFLOW_INSTALLATION_STATE_SCOPE"
-  [[ "$EXTERNAL_PUBLICATION_ENABLED" == true ]] || INTERNAL_ONLY=true
+  if [[ "$EXTERNAL_PUBLICATION_STATE_CLAIM" == true ]]; then
+    publication_transaction="$DEVFLOW_STATE_ROOT/publication-transaction.json"
+    if [[ "$(installation_state_value status "$publication_transaction" 2>/dev/null || true)" == completed \
+      && "$(installation_state_value domain "$publication_transaction" 2>/dev/null || true)" == "$DEVFLOW_INSTALLATION_STATE_DOMAIN" \
+      && "$(installation_state_value provider "$publication_transaction" 2>/dev/null || true)" == "$DEVFLOW_INSTALLATION_STATE_PROVIDER" \
+      && "$DEVFLOW_INSTALLATION_STATE_CERTIFICATE_ISSUED" == true ]]; then
+      EXTERNAL_PUBLICATION_TRANSACTION_VALID=true
+      EXTERNAL_PUBLICATION_ENABLED=true
+    else
+      INSTALLATION_STATE_HEALTH=degraded
+      REPAIR_AVAILABLE=false
+      INTERNAL_ONLY=true
+    fi
+  else
+    INTERNAL_ONLY=true
+  fi
 else
   INTERNAL_ONLY=true
 fi
@@ -103,6 +120,12 @@ report() {
   [[ "$state" == PASS ]] || failures=$((failures + 1))
   [[ "$QUIET" == true ]] || printf '%-4s %-18s %s\n' "$state" "$item" "$detail"
 }
+
+if [[ "$INSTALLATION_STATE_HEALTH" == healthy ]]; then
+  report PASS installation_state healthy
+else
+  report FAIL installation_state degraded
+fi
 
 if [[ "$CONFIGURED_VERSION" == "$EXPECTED_VERSION" ]]; then
   report PASS configured_version "$CONFIGURED_VERSION"
@@ -285,6 +308,8 @@ if [[ "$failures" -gt 0 ]]; then
     printf 'frontend_image_present=%s\n' "$FRONTEND_IMAGE_PRESENT"
     printf 'postgres_image_present=%s\n' "$POSTGRES_IMAGE_PRESENT"
     printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+    printf 'external_publication_state_claim=%s\n' "$EXTERNAL_PUBLICATION_STATE_CLAIM"
+    printf 'external_publication_transaction_valid=%s\n' "$EXTERNAL_PUBLICATION_TRANSACTION_VALID"
     printf 'installed_state_present=%s\n' "$INSTALLED_STATE_PRESENT"
     printf 'installed_state_schema_valid=%s\n' "$INSTALLED_STATE_SCHEMA_VALID"
     printf 'installed_state_version_match=%s\n' "$INSTALLED_STATE_VERSION_MATCH"
@@ -324,6 +349,8 @@ if [[ "$QUIET" == false ]]; then
   printf 'frontend_image_present=true\n'
   printf 'postgres_image_present=true\n'
   printf 'external_publication_enabled=%s\n' "$EXTERNAL_PUBLICATION_ENABLED"
+  printf 'external_publication_state_claim=%s\n' "$EXTERNAL_PUBLICATION_STATE_CLAIM"
+  printf 'external_publication_transaction_valid=%s\n' "$EXTERNAL_PUBLICATION_TRANSACTION_VALID"
   printf 'installed_state_present=%s\n' "$INSTALLED_STATE_PRESENT"
   printf 'installed_state_schema_valid=%s\n' "$INSTALLED_STATE_SCHEMA_VALID"
   printf 'installed_state_version_match=%s\n' "$INSTALLED_STATE_VERSION_MATCH"
