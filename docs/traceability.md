@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.5.2-alpha`
+## Instalacao isolada `0.5.3-alpha`
 
 | Requisito | Evidencia |
 |---|---|
@@ -11,11 +11,13 @@
 | Nginx | `docker/nginx.runtime.conf.template` e renderizacao atomica |
 | Persistencia | `/opt/devflow`, volume PostgreSQL e fila updater |
 | Retomada | `recalculate_resume_stage` e transacao schema 3 |
+| Symlink ativo | `activate_candidate_app_symlink`, rollback e commit atomicos antes do updater |
+| Gate da fila | `state/installation-in-progress` e `updater_processing_blocked` |
 | Administrador | bootstrap interno, senha `root:root 0600`, MFA obrigatorio |
 | Renovacao | `renew-certificate.sh` e timer systemd |
 | Update | pedido HMAC -> updater -> somente `update.sh` |
 | Rollback | backup autenticado, manutencao, restore e health |
 | Desinstalacao | recursos DevFlow e certificado nomeado, sem prune global |
-| Testes | 30 cenarios no validador de alinhamento |
+| Testes | 30 cenarios de alinhamento e 24 cenarios do ciclo de instalacao/updater |
 
 O Full Password permaneceu referencia somente leitura no commit `804008b5df5d0931ec5d95227fed44086f430d76`.

@@ -172,7 +172,8 @@ devflow_validate_checkout_version_consistency() {
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
     scripts/uninstall.sh scripts/diagnose.sh scripts/renew-certificate.sh scripts/updater-daemon.sh \
     scripts/validate-updater-request.mjs scripts/validate-shell-syntax.mjs \
-    scripts/validate-bootstrap-interface.mjs scripts/resolve-compose-image.py \
+    scripts/validate-bootstrap-interface.mjs scripts/validate-updater-installation-lifecycle.mjs \
+    scripts/resolve-compose-image.py \
     scripts/validate-isolated-architecture.mjs scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \
     scripts/validate-migration-image-permissions.mjs scripts/lib/common.sh scripts/lib/version.sh \
@@ -202,6 +203,7 @@ devflow_validate_git_tree_version_consistency() {
     scripts/version.sh scripts/health.sh scripts/uninstall.sh scripts/diagnose.sh \
     scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/validate-updater-request.mjs \
     scripts/validate-shell-syntax.mjs scripts/validate-bootstrap-interface.mjs \
+    scripts/validate-updater-installation-lifecycle.mjs \
     scripts/resolve-compose-image.py scripts/validate-isolated-architecture.mjs \
     scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \

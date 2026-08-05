@@ -9,8 +9,11 @@ PROCESSING_DIR="$REQUEST_ROOT/processing"
 PROCESSED_DIR="$REQUEST_ROOT/processed"
 FAILED_DIR="$REQUEST_ROOT/failed"
 LOCK_FILE="$REQUEST_ROOT/updater.lock"
+INSTALLATION_GATE_FILE="${INSTALLATION_GATE_FILE:-$APP_DIR/state/installation-in-progress}"
+INSTALLATION_PROCESSING_BLOCKED=unknown
 
 log() { printf '%s [DevFlow Updater] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+updater_processing_blocked() { [[ -e "$INSTALLATION_GATE_FILE" ]]; }
 mkdir -p "$REQUEST_DIR" "$PROCESSING_DIR" "$PROCESSED_DIR" "$FAILED_DIR"
 chown -R 100:100 "$REQUEST_ROOT"
 chmod 0700 "$REQUEST_ROOT" "$REQUEST_DIR" "$PROCESSING_DIR" "$PROCESSED_DIR" "$FAILED_DIR"
@@ -25,6 +28,18 @@ log 'Daemon iniciado; fila privada pronta.'
 
 while true; do
   touch "$REQUEST_ROOT/daemon.ready"
+  if updater_processing_blocked; then
+    if [[ "$INSTALLATION_PROCESSING_BLOCKED" != true ]]; then
+      log 'Instalacao em andamento; processamento da fila suspenso.'
+      INSTALLATION_PROCESSING_BLOCKED=true
+    fi
+    sleep 2
+    continue
+  fi
+  if [[ "$INSTALLATION_PROCESSING_BLOCKED" != false ]]; then
+    log 'Instalacao concluida; processamento da fila liberado.'
+    INSTALLATION_PROCESSING_BLOCKED=false
+  fi
   request=
   for candidate in "$REQUEST_DIR"/*.json; do
     [[ -f "$candidate" && ! -L "$candidate" ]] || continue

@@ -1,6 +1,6 @@
 # Instalacao isolada
 
-O DevFlow `0.5.2-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
+O DevFlow `0.5.3-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
 
 O fluxo publico comum e `sudo ./install.sh`. Quando nenhuma opcao de modo e fornecida, o bootstrap repassa `--install` explicitamente ao instalador interno. `--check`, `--dry-run` e `--resume` nunca sao convertidos em instalacao.
 
@@ -14,9 +14,11 @@ Fluxo material:
 4. reutilizar certificado valido ou executar Certbot standalone no host;
 5. validar validade, dominio/SAN, links sob `/etc/letsencrypt` e par chave/certificado;
 6. gerar `config/nginx/nginx.runtime.conf`;
-7. iniciar banco, migrations, backend, frontend, Nginx e updater nessa ordem;
-8. criar o Super Admin e validar HTTPS local com `curl --resolve`, sem `-k`;
-9. gravar estado schema v3 e habilitar timers de backup/renovacao.
+7. ativar atomicamente `/opt/devflow/app` para a release candidata e criar `state/installation-in-progress` como `root:root 0600`;
+8. iniciar banco, migrations, backend, frontend, Nginx e updater nessa ordem;
+9. manter o updater healthy, mas sem consumir a fila enquanto o marcador existir;
+10. criar o Super Admin e validar HTTPS local com `curl --resolve`, sem `-k`;
+11. gravar estado schema v3, confirmar o symlink, remover o marcador e habilitar timers de backup/renovacao.
 
 Persistencia:
 
@@ -25,4 +27,4 @@ Persistencia:
 /etc/letsencrypt/live/<dominio>
 ```
 
-Em falha, containers, volumes, imagens, fonte, configuracao e logs sao preservados. Use `sudo ./install.sh --resume --firewall-confirmed`; segredos existentes nao sao regenerados.
+Em falha, containers, volumes, imagens, fonte, configuracao e logs sao preservados. Se havia um `/opt/devflow/app` valido, o destino anterior e restaurado atomicamente; em instalacao inicial, somente o symlink candidato e removido. O marcador permanece para bloquear updates ate uma retomada concluida. Use `sudo ./install.sh --resume --firewall-confirmed`; segredos existentes nao sao regenerados.

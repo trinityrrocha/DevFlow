@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.5.2-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
+Versao atual: **0.5.3-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
 
 ## Instalacao
 
@@ -18,7 +18,7 @@ sudo ./install.sh
 
 Sem argumentos, o bootstrap seleciona a instalacao interativa, solicita dominio e e-mail, executa o preflight e exige duas confirmacoes numericas antes de alterar o host. Para automacao, continuam disponiveis `--check`, `--dry-run`, `--install` e `--resume`.
 
-O instalador exige confirmacoes numericas, nunca inicia uma instalacao sem modo explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. A senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs.
+O instalador exige confirmacoes numericas; o bootstrap transforma a chamada publica sem argumentos em `--install` explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. A senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs.
 
 Para uma tentativa parcial, inspecione primeiro o estado e retome:
 
@@ -29,7 +29,7 @@ docker volume ls --filter name=devflow
 sudo ./install.sh --resume --firewall-confirmed
 ```
 
-`--resume` ignora a etapa historica como fonte de verdade e recalcula o ponto material a partir de certificado, config Nginx, imagens, containers, banco, migration e bootstrap administrativo.
+`--resume` ignora a etapa historica como fonte de verdade e recalcula o ponto material a partir de certificado, config Nginx, imagens, containers, banco, migration e bootstrap administrativo. Uma falha no estagio 14 ativa a nova release em `/opt/devflow/app`, recria updater/edge quando necessario e preserva os servicos saudaveis anteriores.
 
 ## Arquitetura operacional
 
@@ -37,7 +37,7 @@ sudo ./install.sh --resume --firewall-confirmed
 - `devflow-frontend`: rede de borda, sem porta do host;
 - `devflow-backend`: redes de borda e interna, sem porta do host;
 - `devflow-db`: somente rede interna e volume persistente proprio;
-- `devflow-updater`: fila privada assinada e delegacao exclusiva ao `update.sh`;
+- `devflow-updater`: fila privada assinada, delegacao exclusiva ao `update.sh` e bloqueio de processamento enquanto `state/installation-in-progress` existir;
 - `/etc/letsencrypt`: certificado do host montado como somente leitura no Nginx;
 - `/opt/devflow/config/nginx/nginx.runtime.conf`: configuracao gerada somente apos validar o certificado.
 

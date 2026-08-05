@@ -67,6 +67,7 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-updater-request.mjs'), '// updater request fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-shell-syntax.mjs'), '// shell syntax fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-bootstrap-interface.mjs'), '// bootstrap interface fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-updater-installation-lifecycle.mjs'), '// updater lifecycle fixture\n');
   for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'renew-certificate.sh', 'updater-daemon.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
@@ -86,14 +87,14 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.5.2-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.5.3-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.5.2-alpha');
+  writeFixture(patchFixture, '0.5.3-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
-  writeFixture(minorFixture, '0.5.2-alpha');
+  writeFixture(minorFixture, '0.5.3-alpha');
   check('main after minor increment', validateDirectory(minorFixture).status === 0);
 
   const repositoryFixture = resolve(temporary, 'repository');

@@ -1,8 +1,8 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.5.2-alpha`. Nao aprovada para producao.
+Versao `0.5.3-alpha`. Nao aprovada para producao.
 
-Antes de qualquer nova tentativa em uma VPS que recebeu `0.5.0-alpha`, preserve evidencias:
+Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 
 ```bash
 sudo cat /opt/devflow/state/install-transaction.json
@@ -38,4 +38,16 @@ sudo systemctl status devflow-certificate-renewal.timer --no-pager
 docker ps --filter name=devflow
 ```
 
-Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada de estados parciais `0.5.0`/`0.5.1` para `0.5.2` dependem da execucao manual na VPS.
+Para a falha conhecida `failedStage=14-nginx-https` da versao `0.5.2-alpha`, use primeiro `--resume --firewall-confirmed`. A retomada ativa `/opt/devflow/app` antes do updater, preserva PostgreSQL/backend/frontend saudaveis e remove `installation-in-progress` somente apos Super Admin, health e `installation.json` aprovados.
+
+Depois da retomada, valide:
+
+```bash
+sudo /opt/devflow/app/scripts/version.sh
+sudo /opt/devflow/app/scripts/health.sh
+docker ps --filter name=devflow --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+docker logs --tail 100 devflow-updater
+sudo stat /opt/devflow/app /opt/devflow/config/super-admin-temporary-password
+```
+
+Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada do estado parcial para `0.5.3-alpha` dependem da execucao manual na VPS.

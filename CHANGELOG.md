@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.3-alpha] - 2026-08-04
+
+### Corrigido
+
+- o instalador ativa `/opt/devflow/app` atomicamente antes de criar ou iniciar o updater no estagio 14;
+- falhas restauram um symlink anterior validado ou removem somente o symlink candidato de uma instalacao inicial;
+- `installation-in-progress`, protegido como `root:root 0600`, mantem o daemon saudavel e bloqueia o consumo da fila ate o health e o estado final serem confirmados;
+- o updater ganhou `start_period`, diagnostico sanitizado de falha e gates explicitos para daemon, ready file, container e Nginx;
+- a retomada de uma falha no estagio 14 reconstrói/recria somente updater e edge quando necessario, preservando banco, backend, frontend e migration saudaveis.
+
+### Validacao local
+
+- 24 cenarios obrigatorios validam symlink antecipado, rollback, marcador, ready file, health, preservacao material e retomada do estagio 14;
+- Docker, Certbot e a retomada real na VPS permanecem pendentes de homologacao pelo usuario.
+
 ## [0.5.2-alpha] - 2026-08-04
 
 ### Corrigido

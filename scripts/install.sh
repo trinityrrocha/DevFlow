@@ -22,6 +22,13 @@ PUBLIC_REMOTE='https://github.com/trinityrrocha/DevFlow.git'
 PUBLIC_IP=
 DOMAIN_IPV4=
 RESUME_START_STAGE=05-images
+RESUME_UPDATER_IMAGE_REBUILD=false
+INSTALLATION_GATE_FILE="$DEVFLOW_STATE_ROOT/installation-in-progress"
+APP_SYMLINK_PREVIOUSLY_PRESENT=false
+PREVIOUS_APP_TARGET=
+APP_SYMLINK_CANDIDATE_TARGET=
+APP_SYMLINK_ACTIVATED=false
+APP_SYMLINK_COMMITTED=false
 
 usage() {
   cat <<'EOF'
@@ -407,16 +414,154 @@ service_healthy() {
   [[ "$status" == healthy ]]
 }
 
+valid_release_target() {
+  local target="${1:-}" resolved marker
+  resolved="$(readlink -f -- "$target" 2>/dev/null || true)"
+  [[ -n "$resolved" && "$resolved" == "$DEVFLOW_INSTALL_ROOT/releases/"* \
+    && -d "$resolved" && ! -L "$resolved" && -f "$resolved/.devflow-release" \
+    && ! -L "$resolved/.devflow-release" ]] || return 1
+  marker="$(tr -d '\r\n' < "$resolved/.devflow-release")"
+  [[ "$marker" =~ ^[0-9a-f]{40}$ && "$resolved" == "$DEVFLOW_INSTALL_ROOT/releases/$marker" ]]
+}
+
+replace_app_symlink_atomically() {
+  local target="$1" temporary
+  valid_release_target "$target" || die 'Destino do symlink app nao e uma release valida.'
+  temporary="$(mktemp -d "$DEVFLOW_INSTALL_ROOT/.app-link.XXXXXX")"
+  if ! ln -s -- "$target" "$temporary/app" \
+    || ! mv -Tf -- "$temporary/app" "$DEVFLOW_INSTALL_ROOT/app"; then
+    rm -rf -- "$temporary"
+    die 'Nao foi possivel trocar o symlink app atomicamente.'
+  fi
+  rmdir -- "$temporary"
+}
+
+validate_active_app_symlink() {
+  local resolved_candidate resolved_active
+  resolved_candidate="$(readlink -f -- "$RELEASE_DIR" 2>/dev/null || true)"
+  resolved_active="$(readlink -f -- "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
+  [[ -L "$DEVFLOW_INSTALL_ROOT/app" && -n "$resolved_candidate" \
+    && "$resolved_active" == "$resolved_candidate" \
+    && -f "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh" \
+    && -x "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh" ]]
+}
+
+activate_candidate_app_symlink() {
+  local active_path="$DEVFLOW_INSTALL_ROOT/app"
+  APP_SYMLINK_PREVIOUSLY_PRESENT=false
+  PREVIOUS_APP_TARGET=
+  APP_SYMLINK_CANDIDATE_TARGET="$(readlink -f -- "$RELEASE_DIR")"
+  valid_release_target "$APP_SYMLINK_CANDIDATE_TARGET" \
+    || die 'A release candidata nao passou pela validacao do symlink app.'
+  if [[ -L "$active_path" ]]; then
+    PREVIOUS_APP_TARGET="$(readlink -f -- "$active_path" 2>/dev/null || true)"
+    valid_release_target "$PREVIOUS_APP_TARGET" \
+      || die 'O symlink app anterior nao aponta para uma release valida.'
+    APP_SYMLINK_PREVIOUSLY_PRESENT=true
+  elif [[ -e "$active_path" ]]; then
+    die 'O caminho app existente nao e um symlink regular.'
+  fi
+  replace_app_symlink_atomically "$APP_SYMLINK_CANDIDATE_TARGET"
+  APP_SYMLINK_ACTIVATED=true
+  validate_active_app_symlink || die 'O symlink app ativo nao passou pelos gates do updater.'
+}
+
+restore_previous_app_symlink() {
+  local current_target
+  [[ "$APP_SYMLINK_ACTIVATED" == true && "$APP_SYMLINK_COMMITTED" == false ]] || return 0
+  current_target="$(readlink -f -- "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
+  if [[ "$current_target" != "$APP_SYMLINK_CANDIDATE_TARGET" ]]; then
+    log ERROR 'Rollback do symlink app ignorado porque o destino ativo mudou externamente.'
+    return 1
+  fi
+  if [[ "$APP_SYMLINK_PREVIOUSLY_PRESENT" == true ]]; then
+    valid_release_target "$PREVIOUS_APP_TARGET" || {
+      log ERROR 'Rollback do symlink app recusado: destino anterior deixou de ser valido.'
+      return 1
+    }
+    replace_app_symlink_atomically "$PREVIOUS_APP_TARGET"
+    log INFO "Symlink app restaurado para a release anterior: ${PREVIOUS_APP_TARGET##*/}."
+  else
+    rm -f -- "$DEVFLOW_INSTALL_ROOT/app"
+    log INFO 'Symlink app candidato removido apos falha da instalacao inicial.'
+  fi
+  APP_SYMLINK_ACTIVATED=false
+}
+
+commit_app_symlink() {
+  validate_active_app_symlink || die 'O symlink app definitivo diverge da release instalada.'
+  APP_SYMLINK_COMMITTED=true
+  APP_SYMLINK_ACTIVATED=false
+}
+
+create_installation_gate() {
+  install -o root -g root -m 0600 /dev/null "$INSTALLATION_GATE_FILE"
+  [[ -f "$INSTALLATION_GATE_FILE" && ! -L "$INSTALLATION_GATE_FILE" \
+    && "$(stat -c '%U:%G %a' "$INSTALLATION_GATE_FILE")" == 'root:root 600' ]] \
+    || die 'Nao foi possivel proteger o marcador installation-in-progress.'
+}
+
+report_updater_prerequisites() {
+  local target daemon_present=false daemon_executable=false gate_present=false
+  target="$(readlink -f -- "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
+  [[ -f "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh" ]] && daemon_present=true
+  [[ -x "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh" ]] && daemon_executable=true
+  [[ -f "$INSTALLATION_GATE_FILE" && ! -L "$INSTALLATION_GATE_FILE" ]] && gate_present=true
+  printf '%s\n' \
+    "active_app_symlink_present=$([[ -L "$DEVFLOW_INSTALL_ROOT/app" ]] && echo true || echo false)" \
+    "active_app_target=${target##*/}" \
+    "updater_daemon_present=$daemon_present" \
+    "updater_daemon_executable=$daemon_executable" \
+    "installation_gate_present=$gate_present"
+  validate_active_app_symlink && [[ "$gate_present" == true ]]
+}
+
+capture_updater_failure_diagnostics() {
+  log ERROR 'Diagnostico sanitizado do updater apos falha no estagio 14.'
+  docker logs --tail 100 devflow-updater 2>&1 | redact_stream || true
+  docker inspect --format \
+    'name={{.Name}} image={{.Config.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit_code={{.State.ExitCode}} error={{json .State.Error}} restart_count={{.RestartCount}}' \
+    devflow-updater 2>&1 | redact_stream || true
+}
+
+run_edge_updater_stage() {
+  local status=0 updater_id edge_id updater_running=false updater_ready=false
+  report_updater_prerequisites || die 'Preflight do updater falhou antes do estagio 14.'
+  if [[ "$RESUME_UPDATER_IMAGE_REBUILD" == true ]]; then
+    "${DEVFLOW_COMPOSE[@]}" build updater
+  fi
+  "${DEVFLOW_COMPOSE[@]}" up -d edge updater --wait || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    capture_updater_failure_diagnostics
+    return "$status"
+  fi
+  updater_id="$("${DEVFLOW_COMPOSE[@]}" ps -q updater 2>/dev/null || true)"
+  edge_id="$("${DEVFLOW_COMPOSE[@]}" ps -q edge 2>/dev/null || true)"
+  [[ -n "$updater_id" ]] && updater_running="$(docker inspect --format '{{.State.Running}}' "$updater_id" 2>/dev/null || true)"
+  docker exec devflow-updater test -f /var/lib/devflow-updater/daemon.ready 2>/dev/null && updater_ready=true
+  printf '%s\n' \
+    "updater_container_present=$([[ -n "$updater_id" ]] && echo true || echo false)" \
+    "updater_container_running=$updater_running" \
+    "updater_ready_file_present=$updater_ready" \
+    "updater_healthy=$([[ -n "$updater_id" ]] && service_healthy updater && echo true || echo false)" \
+    "edge_healthy=$([[ -n "$edge_id" ]] && service_healthy edge && echo true || echo false)"
+  [[ -n "$updater_id" && "$updater_running" == true && "$updater_ready" == true ]] \
+    && service_healthy updater && [[ -n "$edge_id" ]] && service_healthy edge
+}
+
 recalculate_resume_stage() {
   local service image expected_version actual_version latest migration required
   RESUME_START_STAGE=05-images
+  RESUME_UPDATER_IMAGE_REBUILD=false
   expected_version="$DEVFLOW_RELEASE_VERSION"
   for service in backend frontend updater; do
     image="$(compose_service_image_expected "$service" 2>/dev/null || true)"
-    actual_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image" 2>/dev/null || true)"
-    [[ -n "$image" && "$actual_version" == "$expected_version" ]] \
+    [[ -n "$image" ]] && docker image inspect "$image" >/dev/null 2>&1 \
       || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
   done
+  image="$(compose_service_image_expected updater)"
+  actual_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image" 2>/dev/null || true)"
+  [[ "$actual_version" == "$expected_version" ]] || RESUME_UPDATER_IMAGE_REBUILD=true
   RESUME_START_STAGE=07-certificate
   validate_devflow_certificate "$DEVFLOW_DOMAIN" /etc/letsencrypt >/dev/null 2>&1 \
     || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
@@ -513,6 +658,7 @@ installation_failed() {
   local code=$?
   trap - ERR EXIT INT TERM
   if [[ "$code" -ne 0 && "$TRANSACTION_STARTED" == true ]]; then
+    restore_previous_app_symlink || true
     if [[ "$INSTALL_TRANSACTION_ROOT_CAUSE" == none ]]; then
       install_transaction_fail "$CURRENT_INSTALL_STAGE" isolated-installation-failed || true
     fi
@@ -564,6 +710,10 @@ DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app.candidate"; compose_files
 if [[ "$MODE" == resume ]]; then recalculate_resume_stage; else RESUME_START_STAGE=05-images; fi
 install_transaction_begin "$DEVFLOW_RELEASE_VERSION" "$RELEASE_COMMIT"
 TRANSACTION_STARTED=true
+create_installation_gate
+activate_candidate_app_symlink
+DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"; compose_files
+"${DEVFLOW_COMPOSE[@]}" config --quiet
 for stage in 01-preflight 02-directories 03-source 04-private-configuration; do install_transaction_complete_stage "$stage"; done
 
 CURRENT_INSTALL_STAGE=05-images
@@ -616,7 +766,7 @@ service_healthy frontend || die 'Frontend nao ficou saudavel.'
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 
 CURRENT_INSTALL_STAGE=14-nginx-https
-if should_run "$CURRENT_INSTALL_STAGE"; then "${DEVFLOW_COMPOSE[@]}" up -d edge updater --wait; fi
+if should_run "$CURRENT_INSTALL_STAGE"; then run_edge_updater_stage; fi
 service_healthy edge || die 'Nginx nao ficou saudavel.'
 service_healthy updater || die 'Updater nao ficou saudavel.'
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
@@ -631,7 +781,8 @@ curl --resolve "$DEVFLOW_DOMAIN:443:127.0.0.1" --fail --silent --show-error "htt
 validate_devflow_certificate "$DEVFLOW_DOMAIN" /etc/letsencrypt
 db_id="$("${DEVFLOW_COMPOSE[@]}" ps -q db)"; [[ -n "$db_id" && -z "$(docker port "$db_id" 2>/dev/null || true)" ]] || die 'PostgreSQL publicou porta.'
 set_managed_env_value DEVFLOW_VERSION "$DEVFLOW_RELEASE_VERSION"; set_managed_env_value DEVFLOW_RELEASE_COMMIT "$RELEASE_COMMIT"
-ln -sfn "$RELEASE_DIR" "$DEVFLOW_INSTALL_ROOT/app"; rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
+validate_active_app_symlink || die 'O symlink app definitivo nao foi confirmado no health final.'
+rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"; DEVFLOW_INSTALLED_SOURCE_DIR="$DEVFLOW_INSTALL_ROOT/source"; DEVFLOW_IDENTITY_RELEASE_ROOT="$RELEASE_DIR"; DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
 export DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR DEVFLOW_IDENTITY_RELEASE_ROOT DEVFLOW_VERSION DEVFLOW_MIGRATION_VERSION
 resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null
@@ -639,6 +790,11 @@ DEVFLOW_APPLICATION_INSTALLED=true; DEVFLOW_APPLICATION_HEALTHY=true; DEVFLOW_CE
 export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY DEVFLOW_CERTIFICATE_ISSUED
 install_systemd_units
 write_installation_state
+installation_state_schema_valid "$DEVFLOW_STATE_ROOT/installation.json" || die 'installation.json nao foi confirmado antes de liberar o updater.'
+validate_active_app_symlink || die 'O symlink app divergiu antes de liberar o updater.'
+rm -f -- "$INSTALLATION_GATE_FILE"
+[[ ! -e "$INSTALLATION_GATE_FILE" ]] || die 'O marcador de instalacao nao pode ser removido.'
+commit_app_symlink
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 trap - ERR EXIT INT TERM
 
