@@ -1,10 +1,11 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.5.1-alpha`
+## Instalacao isolada `0.5.2-alpha`
 
 | Requisito | Evidencia |
 |---|---|
 | DNS/IP | `fetch_public_ipv4`, `resolve_domain_ipv4`, `validate_dns_alignment` |
+| Interface publica | sem argumentos -> `--install`; 10 cenarios em `validate-bootstrap-interface.mjs` |
 | Portas/firewall | `inspect_ports`, confirmacao numerica externa |
 | Certificado | Certbot standalone e `validate_devflow_certificate` |
 | Nginx | `docker/nginx.runtime.conf.template` e renderizacao atomica |

@@ -5,23 +5,55 @@ umask 077
 REPOSITORY_URL='https://github.com/trinityrrocha/DevFlow.git'
 SELECTED_REF=main
 EXPECTED_VERSION=
+SELECTED_MODE=
 TEMP_ROOT=
 FORWARDED_ARGS=()
 
 log() { printf '%s [bootstrap] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERRO: $*" >&2; exit 1; }
 
+select_public_mode() {
+  if [[ -z "$SELECTED_MODE" ]]; then
+    SELECTED_MODE=install
+    FORWARDED_ARGS=(--install "${FORWARDED_ARGS[@]}")
+  fi
+}
+
+bootstrap_success_message() {
+  case "$1" in
+    check) printf '%s\n' 'Bootstrap de verificação concluído.' 'Nenhuma alteração foi aplicada.' ;;
+    dry-run) printf '%s\n' 'Simulação concluída.' 'Nenhuma alteração foi aplicada.' ;;
+    install) printf '%s\n' 'Instalação do DevFlow concluída.' ;;
+    resume) printf '%s\n' 'Retomada da instalação concluída.' ;;
+    *) return 2 ;;
+  esac
+}
+
+run_internal_installer() {
+  local status
+  if DEVFLOW_BOOTSTRAP_REF=main "$@"; then
+    bootstrap_success_message "$SELECTED_MODE"
+  else
+    status=$?
+    if [[ "$status" -eq 20 ]]; then
+      return 0
+    fi
+    log "Instalador interno falhou com status=$status."
+    return "$status"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 DevFlow - bootstrap publico da instalacao isolada
 
-Uso principal seguro:
-  ./install.sh --check --domain HOST --admin-email EMAIL
+Uso principal:
+  sudo ./install.sh
 
 Automacao:
   ./install.sh --check
   sudo ./install.sh --dry-run --domain HOST --admin-email EMAIL
-  sudo ./install.sh --install --domain HOST --admin-email EMAIL
+  sudo ./install.sh --install --domain HOST --admin-email EMAIL --firewall-confirmed
   sudo ./install.sh --resume --firewall-confirmed
 EOF
 }
@@ -29,6 +61,12 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check|--dry-run|--install|--resume|--firewall-confirmed)
+      case "$1" in
+        --check) SELECTED_MODE=check ;;
+        --dry-run) SELECTED_MODE=dry-run ;;
+        --install) SELECTED_MODE=install ;;
+        --resume) SELECTED_MODE=resume ;;
+      esac
       FORWARDED_ARGS+=("$1"); shift ;;
     --domain|--admin-email|--email)
       [[ -n "${2:-}" ]] || die "$1 exige um valor."
@@ -47,6 +85,9 @@ while [[ $# -gt 0 ]]; do
     *) die "Opcao desconhecida: $1" ;;
   esac
 done
+
+select_public_mode
+printf 'mode=%s\ninteractive=%s\n' "$SELECTED_MODE" "$([[ -t 0 && -t 1 ]] && echo true || echo false)"
 
 [[ "$(uname -s)" == Linux ]] || die 'Este bootstrap pode ser executado somente em Linux.'
 [[ "$SELECTED_REF" == main ]] || die 'A instalacao alpha suporta somente a referencia main.'
@@ -101,5 +142,4 @@ fi
 
 printf 'repository=trinityrrocha/DevFlow\nref=main\nversion=%s\ncommit=%s\n' \
   "$DETECTED_VERSION" "$COMMIT"
-DEVFLOW_BOOTSTRAP_REF=main "$CHECKOUT/scripts/install.sh" "${FORWARDED_ARGS[@]}"
-log "Bootstrap concluido; version=$DETECTED_VERSION commit=$COMMIT"
+run_internal_installer "$CHECKOUT/scripts/install.sh" "${FORWARDED_ARGS[@]}"

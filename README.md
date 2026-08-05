@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.5.1-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
+Versao atual: **0.5.2-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
 
 ## Instalacao
 
@@ -13,10 +13,10 @@ Requisitos: Ubuntu 22.04/24.04 AMD64 ou ARM64, DNS A apontado para a VPS, portas
 ```bash
 wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
 chmod +x install.sh
-./install.sh --check --domain dev.example.com --admin-email admin@example.com
-sudo ./install.sh --dry-run --domain dev.example.com --admin-email admin@example.com
-sudo ./install.sh --install --domain dev.example.com --admin-email admin@example.com
+sudo ./install.sh
 ```
+
+Sem argumentos, o bootstrap seleciona a instalacao interativa, solicita dominio e e-mail, executa o preflight e exige duas confirmacoes numericas antes de alterar o host. Para automacao, continuam disponiveis `--check`, `--dry-run`, `--install` e `--resume`.
 
 O instalador exige confirmacoes numericas, nunca inicia uma instalacao sem modo explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. A senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs.
 

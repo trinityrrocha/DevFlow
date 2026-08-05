@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.2-alpha] - 2026-08-04
+
+### Corrigido
+
+- `sudo ./install.sh` agora seleciona explicitamente `--install` no bootstrap publico quando nenhuma opcao de modo e informada;
+- `--check`, `--dry-run`, `--install` e `--resume` preservam suas semanticas explicitas;
+- execucao nao interativa de instalacao exige dominio, e-mail administrativo e confirmacao do firewall antes de qualquer mutacao;
+- cancelamento informa `changes_applied=false`, falhas internas preservam o exit code e mensagens finais distinguem verificacao, simulacao, instalacao e retomada;
+- testes de interface reproduzem a chamada publica sem argumentos e impedem a regressao para um preflight sem instalacao.
+
+### Validacao local
+
+- o fluxo publico foi exercitado com fixtures Bash e stubs sem rede ou mutacoes privilegiadas;
+- a instalacao real na VPS, Docker e Certbot permanecem pendentes de execucao pelo usuario.
+
 ## [0.5.1-alpha] - 2026-08-04
 
 ### Corrigido

@@ -1,8 +1,10 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-04. Versao: `0.5.1-alpha`.
+Data de corte: 2026-08-04. Versao: `0.5.2-alpha`.
 
 Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, confirmacoes numericas, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, fila HMAC e atualizacao/rollback pelo motor unico `update.sh`.
+
+O bootstrap publico sem argumentos seleciona `--install`, preserva os modos explicitos, propaga falhas do instalador interno e diferencia conclusao, simulacao, verificacao, retomada e cancelamento.
 
 O fluxo ACME temporário do DevFlow foi removido e substituído por Certbot standalone.
 

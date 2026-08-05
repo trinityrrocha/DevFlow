@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.5.1-alpha`. Nao aprovada para producao.
+Versao `0.5.2-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS que recebeu `0.5.0-alpha`, preserve evidencias:
 
@@ -24,8 +24,10 @@ sudo ./install.sh --resume --firewall-confirmed
 Em servidor limpo, troque o ultimo comando por:
 
 ```bash
-sudo ./install.sh --install --domain dev.example.com --admin-email admin@example.com --firewall-confirmed
+sudo ./install.sh
 ```
+
+Em automacao sem TTY, use explicitamente `--install --domain DOMINIO --admin-email EMAIL --firewall-confirmed`.
 
 Validacao final:
 
@@ -36,4 +38,4 @@ sudo systemctl status devflow-certificate-renewal.timer --no-pager
 docker ps --filter name=devflow
 ```
 
-Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada `0.5.0` -> `0.5.1` dependem da execucao manual na VPS.
+Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada de estados parciais `0.5.0`/`0.5.1` para `0.5.2` dependem da execucao manual na VPS.

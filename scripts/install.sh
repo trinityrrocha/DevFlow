@@ -58,6 +58,24 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+validate_noninteractive_install_contract() {
+  if [[ "$MODE" == install && ! -t 0 ]]; then
+    [[ -n "$DOMAIN" && -n "$ADMIN_EMAIL_INPUT" && "$FIREWALL_CONFIRMED" == true ]] \
+      || die 'execucao nao interativa exige --domain, --admin-email e --firewall-confirmed.'
+  fi
+}
+
+validate_noninteractive_install_contract
+
+cancel_installation() {
+  local message="${1:-Instalacao cancelada.}"
+  printf '%s\n' "$message" "mode=$MODE" 'changes_applied=false'
+  if [[ "${DEVFLOW_BOOTSTRAP_REF:-}" == main ]]; then
+    exit 20
+  fi
+  exit 0
+}
+
 show_banner() {
   cat <<'EOF'
 ============================================================
@@ -92,18 +110,36 @@ show_summary() {
 
 Resumo da instalacao
 
-Modo: Isolado
-Dominio: $DOMAIN
-E-mail administrativo: $ADMIN_EMAIL_INPUT
-Diretorio: /opt/devflow
-Portas publicas: 80 e 443
-Certificado: Certbot standalone no host
-Servicos: PostgreSQL, backend, frontend, Nginx e updater
+Modo:
+  Isolado
+
+Dominio:
+  $DOMAIN
+
+E-mail administrativo:
+  $ADMIN_EMAIL_INPUT
+
+Diretorio:
+  /opt/devflow
+
+Portas publicas:
+  80 e 443
+
+Certificado:
+  Certbot standalone no host
+
+Servicos:
+  PostgreSQL
+  Backend
+  Frontend
+  Nginx
+  Updater
 EOF
   if [[ "$MODE" == install && -t 0 ]]; then
     prompt_numeric_confirmation initial-installation \
       'A instalacao isolada do DevFlow esta pronta para iniciar.' \
-      'INSTALAR DEVFLOW' 'CANCELAR' || { echo 'Instalacao cancelada.'; exit 0; }
+      'INSTALAR DEVFLOW' 'CANCELAR' \
+      || cancel_installation 'Instalacao cancelada.'
   fi
 }
 
@@ -113,7 +149,7 @@ confirm_external_firewall() {
   prompt_numeric_confirmation external-firewall \
     $'O Let\047s Encrypt precisa acessar externamente 80/TCP e 443/TCP.\nConfirme a liberacao no firewall do provedor.' \
     'AS PORTAS ESTAO LIBERADAS' 'CANCELAR' \
-    || { echo 'Instalacao cancelada antes do certificado.'; exit 0; }
+    || cancel_installation 'Instalacao cancelada antes do certificado.'
   FIREWALL_CONFIRMED=true
 }
 
@@ -496,12 +532,12 @@ else
 fi
 preflight
 if [[ "$MODE" == check ]]; then
-  printf 'installation_mode=isolated\npreflight=passed\nbase_packages_needed=%s\nchanges_applied=false\n' "$BASE_PACKAGES_NEEDED"
+  printf 'mode=check\ninstallation_mode=isolated\npreflight=passed\nbase_packages_needed=%s\nchanges_applied=false\n' "$BASE_PACKAGES_NEEDED"
   exit 0
 fi
 show_summary
 if [[ "$MODE" == dry-run ]]; then
-  printf '%s\n' 'certificate_strategy=certbot-standalone' 'nginx_runtime_after_certificate=true' 'changes_applied=false'
+  printf '%s\n' 'mode=dry-run' 'certificate_strategy=certbot-standalone' 'nginx_runtime_after_certificate=true' 'changes_applied=false'
   exit 0
 fi
 confirm_external_firewall
@@ -608,6 +644,7 @@ trap - ERR EXIT INT TERM
 
 cat <<EOF
 DevFlow instalado com sucesso.
+mode=$MODE
 URL: https://$DEVFLOW_DOMAIN
 Super Administrador: $ADMIN_EMAIL
 Senha temporaria protegida: $DEVFLOW_CONFIG_ROOT/super-admin-temporary-password

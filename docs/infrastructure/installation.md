@@ -1,6 +1,8 @@
 # Instalacao isolada
 
-O DevFlow `0.5.1-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
+O DevFlow `0.5.2-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
+
+O fluxo publico comum e `sudo ./install.sh`. Quando nenhuma opcao de modo e fornecida, o bootstrap repassa `--install` explicitamente ao instalador interno. `--check`, `--dry-run` e `--resume` nunca sao convertidos em instalacao.
 
 O preflight compara IPv4 publico obtido por fontes independentes com todos os registros A do dominio, identifica proprietarios das portas, valida recursos e solicita confirmacao numerica do firewall externo. Divergencia de IP, porta com dono desconhecido ou dependencia insegura bloqueia qualquer mutacao.
 

@@ -1,12 +1,12 @@
 # Primeiro deployment de homologacao
 
-O DevFlow `0.5.1-alpha` exige controle exclusivo de 80/443.
+O DevFlow `0.5.2-alpha` exige controle exclusivo de 80/443.
 
 1. Inspecione transacao, containers e volumes existentes.
 2. Configure todos os registros A para o IPv4 publico da VPS.
 3. Libere 80/TCP e 443/TCP no firewall externo.
-4. Execute `--check` e `--dry-run`.
-5. Use `--resume --firewall-confirmed` para tentativa parcial ou `--install` para host limpo.
+4. Em host limpo, execute `sudo ./install.sh` e confirme os dois menus numericos.
+5. Use `--resume --firewall-confirmed` somente para tentativa parcial ou flags completas em automacao sem TTY.
 6. Valide `health.sh`, `version.sh`, `installation.json` e o timer de renovacao.
 7. Leia a senha temporaria com root, troque-a imediatamente e conclua MFA.
 8. Execute manualmente `renew-certificate.sh --dry-run` somente depois da instalacao saudavel.
