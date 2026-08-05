@@ -1,44 +1,26 @@
 # Instalacao isolada
 
-O DevFlow 0.5.0-alpha possui um unico modo de instalacao. O servidor deve executar Ubuntu 22.04 ou 24.04, possuir DNS valido e disponibilizar exclusivamente as portas 80/443 ao DevFlow.
+O DevFlow `0.5.1-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
 
-## Fluxo comum
+O preflight compara IPv4 publico obtido por fontes independentes com todos os registros A do dominio, identifica proprietarios das portas, valida recursos e solicita confirmacao numerica do firewall externo. Divergencia de IP, porta com dono desconhecido ou dependencia insegura bloqueia qualquer mutacao.
 
-```bash
-wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
-chmod +x install.sh
-sudo ./install.sh
-```
+Fluxo material:
 
-O instalador solicita dominio e um unico e-mail administrativo, apresenta resumo numerico e executa 16 etapas transacionais: preflight, diretorios, fonte, configuracao, imagens, redes, banco, migrations, backend, frontend, Nginx HTTP, certificado, Nginx HTTPS, Super Admin, health e estado final. A conta administrativa e criada pela API interna; sua senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password` com modo `0600`, exigindo troca e MFA no primeiro acesso.
+1. preparar diretorios, fonte canonica e ambiente privado `0600`;
+2. construir backend, frontend e updater e baixar PostgreSQL/Nginx;
+3. parar somente `devflow-nginx` se uma tentativa parcial ocupar 80/443;
+4. reutilizar certificado valido ou executar Certbot standalone no host;
+5. validar validade, dominio/SAN, links sob `/etc/letsencrypt` e par chave/certificado;
+6. gerar `config/nginx/nginx.runtime.conf`;
+7. iniciar banco, migrations, backend, frontend, Nginx e updater nessa ordem;
+8. criar o Super Admin e validar HTTPS local com `curl --resolve`, sem `-k`;
+9. gravar estado schema v3 e habilitar timers de backup/renovacao.
 
-## Preflight
-
-O preflight valida Linux, Ubuntu suportado, AMD64/ARM64, root, memoria, disco, Git, curl ou wget, OpenSSL, Docker/Compose, DNS e portas. Dependencias base e Docker/Compose ausentes sao apresentados como instalacao planejada e obtidos somente dos repositorios oficiais depois da confirmacao. Se 80 ou 443 estiver ocupada, informa porta e proprietario e encerra sem adaptar o processo existente.
-
-## Persistencia
+Persistencia:
 
 ```text
-/opt/devflow/
-  app -> releases/<commit>
-  source/
-  releases/
-  config/
-  state/
-  logs/
-  backups/
-  storage/postgres/
-  storage/uploads/
-  storage/acme/
-  certificates/
+/opt/devflow/{source,releases,config,state,logs,backups,storage,updater}
+/etc/letsencrypt/live/<dominio>
 ```
 
-Excecoes no host: quatro unidades systemd exclusivas do DevFlow e locks em `/run/lock`. Docker pode ser instalado pelo repositorio oficial quando ausente.
-
-## Retomada
-
-```bash
-sudo ./install.sh --resume
-```
-
-A retomada exige `install-transaction.json` isolado valido e a configuracao privada existente. Segredos nao sao regenerados silenciosamente.
+Em falha, containers, volumes, imagens, fonte, configuracao e logs sao preservados. Use `sudo ./install.sh --resume --firewall-confirmed`; segredos existentes nao sao regenerados.

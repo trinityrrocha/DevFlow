@@ -8,3 +8,5 @@ process.env.JWT_SECRET = 'a'.repeat(64);
 process.env.ADMIN_BOOTSTRAP_TOKEN = 'b'.repeat(48);
 process.env.CONFIG_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 process.env.SUPER_ADMIN_EMAIL = 'admin@example.com';
+process.env.UPDATE_REQUEST_SECRET = 'u'.repeat(64);
+process.env.UPDATE_REQUEST_DIR = '/tmp/devflow-updater-test-requests';

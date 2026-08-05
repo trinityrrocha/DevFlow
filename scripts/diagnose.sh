@@ -45,10 +45,11 @@ collect() {
   python3 "$SCRIPT_DIR/validate-installation-state.py" validate "$DEVFLOW_STATE_ROOT/installation.json" 2>&1 \
     | redact_stream || true
   echo 'certificate:'
-  openssl x509 -in "$DEVFLOW_CERTIFICATE_PATH/live/$DEVFLOW_DOMAIN/fullchain.pem" \
-    -noout -subject -issuer -dates 2>&1 | redact_stream || true
+  validate_devflow_certificate "$DEVFLOW_DOMAIN" "$DEVFLOW_CERTIFICATE_PATH" 2>&1 | redact_stream || true
   echo 'renewal_timer:'
   systemctl is-active devflow-certificate-renewal.timer 2>&1 | redact_stream || true
+  printf 'certificate_renewal_dry_run_command=%s\n' \
+    'sudo /opt/devflow/app/scripts/renew-certificate.sh --dry-run'
   echo 'health:'
   "$SCRIPT_DIR/health.sh" --quiet 2>&1 | redact_stream || true
   echo 'recent_logs:'

@@ -15,20 +15,20 @@ usage() {
   cat <<'EOF'
 DevFlow - bootstrap publico da instalacao isolada
 
-Uso principal:
-  sudo ./install.sh
+Uso principal seguro:
+  ./install.sh --check --domain HOST --admin-email EMAIL
 
 Automacao:
   ./install.sh --check
   sudo ./install.sh --dry-run --domain HOST --admin-email EMAIL
   sudo ./install.sh --install --domain HOST --admin-email EMAIL
-  sudo ./install.sh --resume
+  sudo ./install.sh --resume --firewall-confirmed
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --check|--dry-run|--install|--resume)
+    --check|--dry-run|--install|--resume|--firewall-confirmed)
       FORWARDED_ARGS+=("$1"); shift ;;
     --domain|--admin-email|--email)
       [[ -n "${2:-}" ]] || die "$1 exige um valor."

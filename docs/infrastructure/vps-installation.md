@@ -1,38 +1,39 @@
 # Instalacao em VPS Linux para homologacao
 
-> Versão `0.5.0-alpha`: somente instalacao isolada. Nao aprovada para producao.
+Versao `0.5.1-alpha`. Nao aprovada para producao.
 
-Antes de instalar:
+Antes de qualquer nova tentativa em uma VPS que recebeu `0.5.0-alpha`, preserve evidencias:
 
-- aponte o DNS do dominio para a VPS;
-- libere 80/TCP e 443/TCP;
-- confirme que nenhuma outra aplicacao usa essas portas;
-- use Ubuntu 22.04 ou 24.04 com pelo menos 2 GiB RAM e 5 GiB livres.
+```bash
+sudo cat /opt/devflow/state/install-transaction.json
+docker ps -a --filter name=devflow
+docker volume ls --filter name=devflow
+sudo find /opt/devflow -maxdepth 3 -type f -printf '%p %m %u:%g\n' | sort
+```
+
+Baixe novamente o bootstrap publico, sem executar script por pipe:
 
 ```bash
 wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
 chmod +x install.sh
-./install.sh --check
+./install.sh --check --domain dev.example.com --admin-email admin@example.com
 sudo ./install.sh --dry-run --domain dev.example.com --admin-email admin@example.com
-sudo ./install.sh
+sudo ./install.sh --resume --firewall-confirmed
 ```
 
-Ao terminar:
+Em servidor limpo, troque o ultimo comando por:
 
 ```bash
-sudo /opt/devflow/app/scripts/health.sh
+sudo ./install.sh --install --domain dev.example.com --admin-email admin@example.com --firewall-confirmed
+```
+
+Validacao final:
+
+```bash
 sudo /opt/devflow/app/scripts/version.sh
-sudo cat /opt/devflow/state/installation.json
-docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+sudo /opt/devflow/app/scripts/health.sh
+sudo systemctl status devflow-certificate-renewal.timer --no-pager
+docker ps --filter name=devflow
 ```
 
-Esperado:
-
-```text
-installation_mode=isolated
-external_publication_enabled=true
-external_https_status=healthy
-overall_health=healthy
-```
-
-Docker real, ACME real e ARM64 real dependem da execucao manual nesta VPS.
+Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada `0.5.0` -> `0.5.1` dependem da execucao manual na VPS.

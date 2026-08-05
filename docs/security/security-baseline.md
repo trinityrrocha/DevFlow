@@ -10,7 +10,8 @@ O DevFlow controla somente recursos prefixados ou armazenados em seu namespace: 
 - PostgreSQL nao publica porta e conecta apenas a rede interna;
 - frontend conecta apenas a borda;
 - backend intermedia borda e rede interna;
-- Certbot acessa somente ACME/certificados e a borda.
+- o Certbot standalone do host atua antes do Nginx; o container Nginx recebe `/etc/letsencrypt` somente leitura;
+- o updater nao publica portas, valida pedidos HMAC e possui allowlist exclusiva `install-update`.
 
 ## Segredos
 
@@ -18,7 +19,7 @@ O ambiente privado, passphrase e token de bootstrap usam modo `0600`. Logs passa
 
 ## TLS e proxy
 
-O challenge ACME e comprovado por HTTP antes da emissao. A configuracao HTTPS somente e promovida depois de validar dominio/SAN. Nginx usa TLS 1.2/1.3, HSTS, CSP, headers de seguranca, limites, timeouts, gzip e rate limiting. Renovacao e reload atingem somente `devflow-nginx`.
+Antes da emissao, o instalador compara fontes independentes do IPv4 publico, todos os registros A e exige confirmacao do firewall. O Certbot usa modo standalone com 80/443 livres. A configuracao HTTPS e gerada somente depois de validar validade, dominio/SAN, symlinks sob `/etc/letsencrypt` e correspondencia da chave. Nginx usa TLS 1.2/1.3, HSTS, CSP, headers, limites, timeouts, gzip e rate limiting. Renovacao e reload atingem somente `devflow-nginx`.
 
 ## Supply chain e runtime
 
@@ -32,4 +33,4 @@ O challenge ACME e comprovado por HTTP antes da emissao. A configuracao HTTPS so
 
 ## Atualizacao via frontend
 
-O endpoint administrativo `GET /api/operations/update/capabilities` publica somente metadados imutaveis do contrato allowlisted e informa `executionAvailable=false`. Uma futura API de execucao devera chamar apenas `update-operation.sh`, sob MFA, auditoria e um servico operacional restrito. Nao existe endpoint para shell arbitrario e nenhuma tela foi implementada nesta fase.
+Somente o Super Admin pode consultar capacidades e criar um pedido de atualizacao. O backend grava JSON de schema estrito, nonce aleatorio e assinatura HMAC em volume privado. O `devflow-updater` valida tamanho, tipo, idade, ID, allowlist e assinatura em tempo constante e delega exclusivamente ao `update.sh`. Nenhum campo vira comando ou argumento de shell. O socket Docker permanece um privilegio de alto impacto, isolado no updater, e exige homologacao de seguranca antes de producao.

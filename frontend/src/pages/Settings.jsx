@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, FolderKanban, Layers3, Loader2, Plus, Trash2, Workflow } from 'lucide-react';
+import { Building2, FolderKanban, Layers3, Loader2, Plus, RefreshCw, Trash2, Workflow } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const emptyClient = { name: '', code: '', contact_name: '', contact_email: '', notes: '' };
 const emptyProject = {
@@ -24,6 +25,7 @@ const emptyWorkflow = {
 };
 
 export default function Settings() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [client, setClient] = useState(emptyClient);
   const [project, setProject] = useState(emptyProject);
@@ -36,6 +38,8 @@ export default function Settings() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [updateCapabilities, setUpdateCapabilities] = useState(null);
+  const [updateQueued, setUpdateQueued] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -57,6 +61,14 @@ export default function Settings() {
     window.addEventListener('devflow:company-switched', switched);
     return () => window.removeEventListener('devflow:company-switched', switched);
   }, [load]);
+
+  useEffect(() => {
+    if (user?.is_super_admin) {
+      api.get('/operations/update/capabilities').then(({ data: capabilities }) => {
+        setUpdateCapabilities(capabilities);
+      }).catch(() => setUpdateCapabilities(null));
+    }
+  }, [user?.is_super_admin]);
 
   const mutate = async (operation, message) => {
     setSaving(true);
@@ -82,6 +94,23 @@ export default function Settings() {
       </header>
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div>}
+
+      {user?.is_super_admin && updateCapabilities && <Section icon={RefreshCw} title="Atualizacao do sistema">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-sm text-slate-700">Versao instalada: <strong>{updateCapabilities.version}</strong></p>
+            <p className="mt-1 text-xs text-slate-500">O pedido e assinado e enviado a uma fila privada. Somente o motor transacional update.sh pode executa-lo.</p>
+            {updateQueued && <p className="mt-2 text-xs font-medium text-emerald-700">Pedido {updateQueued.id} enfileirado.</p>}
+          </div>
+          <button type="button" disabled={!updateCapabilities.enabled || saving} className="btn-primary" onClick={() => {
+            if (!window.confirm('Confirmar a verificacao e instalacao da nova versao do DevFlow?')) return;
+            mutate(async () => {
+              const { data: queued } = await api.post('/operations/update/requests');
+              setUpdateQueued(queued);
+            }, 'Pedido de atualizacao assinado e enfileirado.');
+          }}><RefreshCw className="mr-2 h-4 w-4" />Solicitar atualizacao</button>
+        </div>
+      </Section>}
 
       <Section icon={Building2} title="Clientes">
         <form onSubmit={(event) => {

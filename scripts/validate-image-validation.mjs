@@ -146,9 +146,9 @@ const transactionProbe = () => spawnSync(bash, ['-c', `
     chmod() { command chmod "$@" 2>/dev/null || true; }
   fi
   source "$2"
-  install_transaction_begin 0.5.0-alpha 0123456789012345678901234567890123456789
+  install_transaction_begin 0.5.1-alpha 0123456789012345678901234567890123456789
   install_transaction_complete_stage 05-images
-  grep -F '"resumeFromStage": "06-networks"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
+  grep -F '"resumeFromStage": "06-dns-and-firewall"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
   install_transaction_fail 05-images image-validation-runtime-error
   grep -F '"rootCause": "image-validation-runtime-error"' "$DEVFLOW_INSTALL_TRANSACTION_FILE"
 `, '_', commonPath, transactionPath], { encoding: 'utf8' });
@@ -226,9 +226,9 @@ try {
     'expected_migration_content_match=true',
     'image_validation_runtime=docker-run', 'image_validation_network=none', 'image_validation_probe=node']
     .every((field) => success.result.stdout.includes(field)));
-  check('stage 05 resumes at stage 06 with root cause support', transaction.status === 0
+  check('stage 05 resumes at DNS and firewall validation with root cause support', transaction.status === 0
     && transaction.stdout.includes('stage=05-images completed=true')
-    && transaction.stdout.includes('resume_from=06-networks')
+    && transaction.stdout.includes('resume_from=06-dns-and-firewall')
     && transaction.stdout.includes('root_cause=image-validation-runtime-error'));
   check('PostgreSQL storage is preserved', compose.includes('/opt/devflow/storage/postgres')
     && !validationBody.includes('volume'));

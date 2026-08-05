@@ -1,24 +1,16 @@
 # Roadmap inicial
 
-## Marco `0.5.0-alpha` — instalação isolada definitiva
+## Marco `0.5.1-alpha`
 
-- [x] remover arquitetura compartilhada e providers;
-- [x] adotar Compose unico com proxy e certificados proprios;
-- [x] simplificar instalador para dominio e e-mail administrativo;
-- [x] bloquear portas 80/443 ocupadas sem adaptacao automatica;
-- [x] implementar ACME HTTP seguido de promocao HTTPS;
-- [x] adotar `installation.json` schema v3 isolado;
-- [x] manter `update.sh` como motor unico com backup e rollback;
-- [x] alinhar health, diagnostico e uninstall ao namespace DevFlow;
-- [ ] executar homologacao privilegiada completa na VPS Linux;
-- [ ] implementar a interface administrativa de update sobre o contrato allowlisted;
-- [ ] executar Documento 004.
+- [x] substituir ACME temporario por Certbot standalone do host;
+- [x] validar DNS A por fontes independentes e portas fail-closed;
+- [x] montar certificado e Nginx runtime somente leitura;
+- [x] preservar containers na falha e recalcular `--resume` por estado real;
+- [x] incluir updater com fila privada HMAC e motor unico `update.sh`;
+- [x] renovar certificado por timer systemd e hook escopado;
+- [x] cobrir 30 cenarios obrigatorios com fixtures locais;
+- [ ] homologar instalacao/retomada em VPS AMD64 e ARM64;
+- [ ] homologar Certbot, renovacao, backup, restore e rollback reais;
+- [ ] executar o Documento 004.
 
-## Gates antes de producao
-
-- instalacao e retomada reais em AMD64 e ARM64;
-- emissao e renovacao real de certificado;
-- backup, restauracao e rollback induzido;
-- E2E, acessibilidade e carga;
-- revisao de seguranca e pentest;
-- aprovacao formal do Documento 004.
+Gates de producao: E2E, acessibilidade, carga, pentest, observabilidade, recuperacao de desastre e aprovacao formal do Documento 004.

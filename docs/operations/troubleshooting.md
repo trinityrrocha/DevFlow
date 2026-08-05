@@ -6,11 +6,11 @@ O instalador imprime `port=` e `owner=` e encerra sem alteracoes. Libere as port
 
 ## DNS nao resolve
 
-Confirme os registros A/AAAA e aguarde propagacao. O certificado nao e solicitado enquanto `getent ahosts DOMINIO` falhar.
+Confirme todos os registros A e aguarde propagacao. O certificado nao e solicitado se as duas fontes de IPv4 publico divergirem ou se qualquer conjunto DNS nao contiver o IP da VPS.
 
 ## ACME falha
 
-Confirme acesso externo a `http://DOMINIO/.well-known/acme-challenge/`, firewall e DNS. O Nginx permanece no estagio HTTP/503 e a transacao registra `12-certificate` para retomada.
+Confirme que DNS A aponta para a VPS, 80/443 chegam pelo firewall externo e nenhum processo ocupa as portas. O instalador usa Certbot standalone; nao existe Nginx temporario nem webroot ACME. Em uma tentativa parcial, somente `devflow-nginx` e parado, os demais containers permanecem, e a transacao registra `07-certificate` para `--resume`.
 
 ## Migration sem permissao
 

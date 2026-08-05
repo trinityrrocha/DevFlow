@@ -9,6 +9,9 @@ const update = read('scripts/update.sh');
 const operation = read('scripts/update-operation.sh');
 const restore = read('scripts/restore.sh');
 const health = read('scripts/health.sh');
+const daemon = read('scripts/updater-daemon.sh');
+const requestValidator = read('scripts/validate-updater-request.mjs');
+const updateService = read('backend/src/services/updateOperationService.js');
 const checks = [];
 const check = (label, condition) => {
   if (!condition) throw new Error(`Operations validation failed: ${label}`);
@@ -35,7 +38,10 @@ check('updater validates internal and external health', update.includes('health.
   && health.includes('skipped-maintenance') && health.includes('ALLOW_PENDING_STATE'));
 check('updater rolls back automatically', update.includes('rollback_update') && update.includes('restore.sh'));
 check('restore supports coordinated rollback', restore.includes('DEVFLOW_RESTORE_NO_START'));
-check('frontend contract delegates to single motor', operation.includes('exec "$SCRIPT_DIR/update.sh"'));
+check('all update entrypoints delegate to single motor', operation.includes('exec "$SCRIPT_DIR/update.sh"')
+  && daemon.includes('scripts/update.sh') && !daemon.includes('install.sh'));
+check('private queue requires signed allowlisted requests', updateService.includes("createHmac('sha256'")
+  && requestValidator.includes("operation !== 'install-update'") && requestValidator.includes('timingSafeEqual'));
 check('health is isolated and externally published', health.includes('installation_mode=isolated') && health.includes('external_publication_enabled=true'));
 
 console.log(`Isolated operational flows validated: ${checks.length} checks.`);

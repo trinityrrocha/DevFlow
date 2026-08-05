@@ -4,71 +4,61 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versão atual: **0.5.0-alpha**. O DevFlow oferece exclusivamente instalacao isolada: Nginx, certificados, containers, redes, storage, banco e atualizacoes proprios.
+Versao atual: **0.5.1-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
 
-## Instalacao rapida
+## Instalacao
 
-Em uma VPS Ubuntu 22.04 ou 24.04 com DNS apontado para o servidor e portas 80/443 livres:
+Requisitos: Ubuntu 22.04/24.04 AMD64 ou ARM64, DNS A apontado para a VPS, portas publicas 80/443 livres, 2 GiB de RAM e 5 GiB livres.
 
 ```bash
-wget -O install.sh \
-  https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
+wget -O install.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/bootstrap.sh
 chmod +x install.sh
-sudo ./install.sh
+./install.sh --check --domain dev.example.com --admin-email admin@example.com
+sudo ./install.sh --dry-run --domain dev.example.com --admin-email admin@example.com
+sudo ./install.sh --install --domain dev.example.com --admin-email admin@example.com
 ```
 
-O instalador pergunta somente:
+O instalador exige confirmacoes numericas, nunca inicia uma instalacao sem modo explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. A senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs.
 
-```text
-Dominio do DevFlow:
-E-mail administrativo:
-```
-
-O mesmo e-mail identifica o Super Administrador e o contato ACME. A conta e criada automaticamente com troca de senha e MFA obrigatorios. A senha temporaria fica protegida em `/opt/devflow/config/super-admin-temporary-password` (modo `0600`) e nenhum segredo e exibido pelo instalador.
-
-## Automacao e diagnostico
+Para uma tentativa parcial, inspecione primeiro o estado e retome:
 
 ```bash
-./install.sh --check
-sudo ./install.sh --dry-run \
-  --domain dev.example.com \
-  --admin-email admin@example.com
-sudo ./install.sh --install \
-  --domain dev.example.com \
-  --admin-email admin@example.com
-sudo ./install.sh --resume
+sudo cat /opt/devflow/state/install-transaction.json
+docker ps -a --filter name=devflow
+docker volume ls --filter name=devflow
+sudo ./install.sh --resume --firewall-confirmed
 ```
 
-Parametros de proxy compartilhado, provider, escopo interno e e-mails separados foram descontinuados e retornam erro explicito.
+`--resume` ignora a etapa historica como fonte de verdade e recalcula o ponto material a partir de certificado, config Nginx, imagens, containers, banco, migration e bootstrap administrativo.
 
-## Arquitetura isolada
+## Arquitetura operacional
 
-- `devflow-nginx`: unico servico publicado em 80/443;
-- `devflow-frontend`: somente rede `devflow_edge`;
-- `devflow-backend`: redes `devflow_edge` e `devflow_internal`;
-- `devflow-db`: somente `devflow_internal`, sem porta no host;
-- `devflow-certbot`: operacao ACME explicita;
-- persistencia integral sob `/opt/devflow`;
-- migrations `root:root 0755/0644`, legiveis e nao gravaveis por `devflow`.
-
-O DevFlow nao usa proxy, rede, certificado, container ou arquivo de outra aplicacao.
+- `devflow-nginx`: unico servico publicado nas portas 80/443;
+- `devflow-frontend`: rede de borda, sem porta do host;
+- `devflow-backend`: redes de borda e interna, sem porta do host;
+- `devflow-db`: somente rede interna e volume persistente proprio;
+- `devflow-updater`: fila privada assinada e delegacao exclusiva ao `update.sh`;
+- `/etc/letsencrypt`: certificado do host montado como somente leitura no Nginx;
+- `/opt/devflow/config/nginx/nginx.runtime.conf`: configuracao gerada somente apos validar o certificado.
 
 ## Operacao
 
 ```bash
+sudo /opt/devflow/app/scripts/version.sh
 sudo /opt/devflow/app/scripts/health.sh
 sudo /opt/devflow/app/scripts/diagnose.sh --output /opt/devflow/logs/diagnostic.txt
 sudo /opt/devflow/app/scripts/backup.sh
 sudo /opt/devflow/app/scripts/update.sh --check
 sudo /opt/devflow/app/scripts/update.sh
-sudo /opt/devflow/app/scripts/uninstall.sh
+sudo /opt/devflow/app/scripts/renew-certificate.sh --dry-run
+sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 ```
 
-`update.sh` e o unico motor de atualizacao. O contrato operacional em `update-operation.sh` permite que uma futura API autenticada reutilize o mesmo processo, sem aceitar comandos arbitrarios.
+`update.sh` continua sendo o unico motor de atualizacao: valida `origin/main`, exibe versoes e changelog, confirma a operacao no terminal ou valida um pedido HMAC da fila privada, cria e verifica backup, ativa manutencao, aplica migrations, valida health e executa rollback automatico em falha. O instalador nao possui modo de update.
 
 ## Documentacao
 
-- [Instalacao](docs/infrastructure/installation.md)
+- [Instalacao detalhada](docs/infrastructure/installation.md)
 - [VPS de homologacao](docs/infrastructure/vps-installation.md)
 - [Infraestrutura](docs/infrastructure/infrastructure.md)
 - [Update, backup e rollback](docs/infrastructure/update-backup-rollback.md)
@@ -76,4 +66,4 @@ sudo /opt/devflow/app/scripts/uninstall.sh
 - [Troubleshooting](docs/operations/troubleshooting.md)
 - [Estado de implementacao](docs/implementation-status.md)
 
-Os Documentos 001, 002 e 003 formam a baseline funcional. O Documento 004 ainda nao foi executado.
+Os Documentos 001, 002 e 003 formam a baseline. O Documento 004 ainda nao foi executado.

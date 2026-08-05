@@ -52,7 +52,7 @@ else
 fi
 report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
 
-for tuple in backend:backend_image frontend:frontend_image db:db_image edge:nginx_image certbot:certbot_image; do
+for tuple in backend:backend_image frontend:frontend_image db:db_image edge:nginx_image updater:updater_image; do
   service="${tuple%%:*}"; key="${tuple##*:}"
   image="$(compose_service_image_expected "$service" 2>/dev/null || true)"
   if [[ -n "$image" ]] && docker image inspect "$image" >/dev/null 2>&1; then
@@ -62,7 +62,7 @@ for tuple in backend:backend_image frontend:frontend_image db:db_image edge:ngin
   fi
 done
 
-for tuple in db:db backend:backend frontend:frontend edge:nginx; do
+for tuple in db:db backend:backend frontend:frontend updater:updater edge:nginx; do
   service="${tuple%%:*}"
   key="${tuple##*:}"
   if [[ "$service" == edge && "$INTERNAL_ONLY" == true ]]; then
@@ -113,18 +113,23 @@ else
 fi
 
 if [[ "$INTERNAL_ONLY" == false ]]; then
-  http_code="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 \
-    "http://$DEVFLOW_DOMAIN/" || true)"
+  resolve_ip="${DEVFLOW_HEALTH_RESOLVE_IP:-127.0.0.1}"
+  if [[ "${DEVFLOW_UPDATE_DAEMON:-false}" == true && "$resolve_ip" == 127.0.0.1 ]]; then
+    resolve_ip="$(docker inspect --format '{{(index .NetworkSettings.Networks "devflow_edge").IPAddress}}' devflow-nginx 2>/dev/null || true)"
+  fi
+  validate_ipv4 "$resolve_ip" || die 'Endereco de resolucao local do health invalido.'
+  http_code="$(curl --resolve "$DEVFLOW_DOMAIN:80:$resolve_ip" --silent --output /dev/null \
+    --write-out '%{http_code}' --max-time 20 "http://$DEVFLOW_DOMAIN/" || true)"
   [[ "$http_code" == 301 || "$http_code" == 308 ]] \
     && report PASS external_http redirect-https || report FAIL external_http "$http_code"
-  if curl --fail --silent --show-error --max-time 20 "https://$DEVFLOW_DOMAIN/api/health" >/dev/null; then
+  if curl --resolve "$DEVFLOW_DOMAIN:443:$resolve_ip" --fail --silent --show-error --max-time 20 \
+    "https://$DEVFLOW_DOMAIN/api/health" >/dev/null; then
     report PASS external_https healthy
   else
     report FAIL external_https unhealthy
   fi
   certificate="$DEVFLOW_CERTIFICATE_PATH/live/$DEVFLOW_DOMAIN/fullchain.pem"
-  if [[ -r "$certificate" ]] \
-    && openssl x509 -in "$certificate" -noout -checkhost "$DEVFLOW_DOMAIN" >/dev/null 2>&1; then
+  if validate_devflow_certificate "$DEVFLOW_DOMAIN" "$DEVFLOW_CERTIFICATE_PATH" >/dev/null; then
     report PASS certificate valid
   else
     report FAIL certificate invalid
@@ -134,8 +139,10 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
   else
     report FAIL certificate_expiration expiring
   fi
-  if systemctl is-enabled --quiet devflow-certificate-renewal.timer \
-    && systemctl is-active --quiet devflow-certificate-renewal.timer; then
+  if { command -v systemctl >/dev/null 2>&1 \
+      && systemctl is-enabled --quiet devflow-certificate-renewal.timer \
+      && systemctl is-active --quiet devflow-certificate-renewal.timer; } \
+    || [[ -f "$DEVFLOW_STATE_ROOT/host-units.installed" ]]; then
     report PASS certificate_renewal active
   else
     report FAIL certificate_renewal inactive

@@ -1,12 +1,14 @@
 # Primeiro deployment de homologacao
 
-O DevFlow 0.5.0-alpha requer VPS exclusiva para suas portas publicas.
+O DevFlow `0.5.1-alpha` exige controle exclusivo de 80/443.
 
-1. Configure DNS.
-2. Execute `./install.sh --check`.
-3. Execute o dry-run com dominio e e-mail.
-4. Execute `sudo ./install.sh`.
-5. Valide `health.sh`, estado schema v3, certificado e timer de renovacao.
-6. Consulte com `sudo` a senha temporaria em `/opt/devflow/config/super-admin-temporary-password`, entre com o e-mail administrativo e conclua a troca obrigatoria de senha e MFA.
+1. Inspecione transacao, containers e volumes existentes.
+2. Configure todos os registros A para o IPv4 publico da VPS.
+3. Libere 80/TCP e 443/TCP no firewall externo.
+4. Execute `--check` e `--dry-run`.
+5. Use `--resume --firewall-confirmed` para tentativa parcial ou `--install` para host limpo.
+6. Valide `health.sh`, `version.sh`, `installation.json` e o timer de renovacao.
+7. Leia a senha temporaria com root, troque-a imediatamente e conclua MFA.
+8. Execute manualmente `renew-certificate.sh --dry-run` somente depois da instalacao saudavel.
 
-Nao instale se 80/443 estiverem ocupadas. Nao mova ou adapte proxies de outras aplicacoes.
+Nao use `curl | bash`, nao use `-k`, nao remova volumes e nao rode `docker system prune`.

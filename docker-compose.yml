@@ -9,20 +9,18 @@ services:
       POSTGRES_USER: ${DB_USER:-devflow_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD obrigatoria}
       POSTGRES_DB: ${DB_NAME:-devflow_db}
-    expose:
-      - "5432"
+    expose: ["5432"]
     volumes:
-      - ${DEVFLOW_DB_DATA_PATH:-/opt/devflow/storage/postgres}:/var/lib/postgresql/data
-    labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
-      devflow.component: database
+      - devflow_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20
-    networks:
-      - devflow_internal
+    labels:
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
+      devflow.component: database
+    networks: [devflow_internal]
 
   backend:
     image: devflow-backend:${DEVFLOW_IMAGE_TAG:-latest}
@@ -31,25 +29,23 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.5.0-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.5.1-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.5.0-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.5.1-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
       MIGRATIONS_DIR: /database/migrations
       UPLOAD_DIR: /var/lib/devflow/uploads
-    expose:
-      - "3000"
+      UPDATE_REQUEST_DIR: /var/lib/devflow-updater/requests
+    expose: ["3000"]
     volumes:
       - ${DEVFLOW_UPLOADS_PATH:-/opt/devflow/storage/uploads}:/var/lib/devflow/uploads
-    labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
-      devflow.component: backend
+      - devflow_updater_requests:/var/lib/devflow-updater
     depends_on:
       db:
         condition: service_healthy
@@ -58,11 +54,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - devflow_internal
-      - devflow_edge
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
+      devflow.component: backend
+    networks: [devflow_internal, devflow_edge]
 
   frontend:
     image: devflow-frontend:${DEVFLOW_IMAGE_TAG:-latest}
@@ -72,38 +68,29 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.5.0-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.5.1-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
-    expose:
-      - "80"
+    expose: ["80"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12
+    security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
       devflow.component: frontend
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - devflow_edge
+    networks: [devflow_edge]
 
   edge:
     image: nginx:1.27-alpine
     container_name: devflow-nginx
     restart: unless-stopped
-    environment:
-      DEVFLOW_DOMAIN: ${DEVFLOW_DOMAIN:?DEVFLOW_DOMAIN obrigatorio}
-      NGINX_ENVSUBST_FILTER: DEVFLOW_DOMAIN
-    ports:
-      - "80:80"
-      - "443:443"
+    ports: ["80:80", "443:443"]
     volumes:
-      - ${DEVFLOW_NGINX_CONFIG_PATH:-/opt/devflow/config/nginx/active.conf.template}:/etc/nginx/templates/default.conf.template:ro
-      - ${DEVFLOW_ACME_PATH:-/opt/devflow/storage/acme}:/var/www/certbot:ro
-      - ${DEVFLOW_CERTIFICATE_PATH:-/opt/devflow/certificates}:/etc/letsencrypt:ro
+      - ${DEVFLOW_NGINX_CONFIG_PATH:-/opt/devflow/config/nginx/nginx.runtime.conf}:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -114,26 +101,54 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
       devflow.component: proxy
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - devflow_edge
+    networks: [devflow_edge]
 
-  certbot:
-    image: certbot/certbot:v3.2.0
-    container_name: devflow-certbot
-    profiles: ["operations"]
+  updater:
+    image: devflow-updater:${DEVFLOW_IMAGE_TAG:-latest}
+    container_name: devflow-updater
+    build:
+      context: .
+      dockerfile: docker/updater/Dockerfile
+      args:
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.5.1-alpha}
+        DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
+    restart: unless-stopped
+    command: ["bash", "/opt/devflow/app/scripts/updater-daemon.sh"]
+    env_file:
+      - ${DEVFLOW_ENV_FILE:-.env}
+    environment:
+      APP_DIR: /opt/devflow
+      UPDATER_REQUEST_DIR: /var/lib/devflow-updater
     volumes:
-      - ${DEVFLOW_ACME_PATH:-/opt/devflow/storage/acme}:/var/www/certbot
-      - ${DEVFLOW_CERTIFICATE_PATH:-/opt/devflow/certificates}:/etc/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/devflow:/opt/devflow
+      - /run/lock/devflow:/run/lock/devflow
+      - devflow_updater_requests:/var/lib/devflow-updater
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/lib/devflow-updater/daemon.ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
-      devflow.component: certificate
-    networks:
-      - devflow_edge
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
+      devflow.component: updater
+    networks: [devflow_internal, devflow_edge]
+
+volumes:
+  devflow_postgres_data:
+    name: devflow_postgres_data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DEVFLOW_DB_DATA_PATH:-/opt/devflow/storage/postgres}
+  devflow_updater_requests:
+    name: devflow_updater_requests
 
 networks:
   devflow_internal:

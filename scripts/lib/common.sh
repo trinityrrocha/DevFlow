@@ -110,6 +110,7 @@ DEVFLOW_REQUIRED_PRIVATE_ENV_KEYS=(
   JWT_SECRET
   ADMIN_BOOTSTRAP_TOKEN
   CONFIG_ENCRYPTION_KEY
+  UPDATE_REQUEST_SECRET
   SUPER_ADMIN_EMAIL
   BACKUP_PASSPHRASE_FILE
 )
@@ -208,7 +209,7 @@ load_devflow_env() {
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-      DEVFLOW_VERSION|DEVFLOW_RELEASE_COMMIT|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|DEVFLOW_ENV_FILE|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|ADMIN_EMAIL|LETSENCRYPT_EMAIL|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DEVFLOW_ACME_PATH|DEVFLOW_CERTIFICATE_PATH|DEVFLOW_NGINX_CONFIG_PATH|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL|UPDATE_API_ENABLED)
+      DEVFLOW_VERSION|DEVFLOW_RELEASE_COMMIT|DEVFLOW_IMAGE_TAG|DEVFLOW_SOURCE_DIR|DEVFLOW_ENV_FILE|NODE_ENV|PORT|TZ|APP_ORIGIN|VITE_API_URL|DEVFLOW_DOMAIN|ADMIN_EMAIL|LETSENCRYPT_EMAIL|DEVFLOW_DB_DATA_PATH|DEVFLOW_UPLOADS_PATH|DEVFLOW_ACME_PATH|DEVFLOW_CERTIFICATE_PATH|DEVFLOW_NGINX_CONFIG_PATH|DEVFLOW_UPDATER_ROOT|DB_HOST|DB_PORT|DB_USER|DB_PASSWORD|DB_NAME|JWT_SECRET|ADMIN_BOOTSTRAP_TOKEN|CONFIG_ENCRYPTION_KEY|UPDATE_REQUEST_SECRET|SUPER_ADMIN_EMAIL|SESSION_ABSOLUTE_HOURS|SESSION_IDLE_MINUTES|UPLOAD_DIR|MAX_UPLOAD_MB|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|SMTP_PASSWORD|SMTP_FROM|BACKUP_ARCHIVE_DIR|BACKUP_RETENTION_DAYS|BACKUP_MAX_RESTORE_MB|BACKUP_PASSPHRASE_FILE|LOG_LEVEL|DEVFLOW_LOG_ROOT|METRICS_REFRESH_SECONDS|UPDATE_CHANNEL|UPDATE_API_ENABLED)
         export "$key=$value"
         ;;
       *) die "$DEVFLOW_ENV_FILE contém variável não permitida: $key" ;;
@@ -218,24 +219,93 @@ load_devflow_env() {
 }
 
 validate_runtime_paths() {
-  local db_path uploads_path acme_path certificate_path nginx_path backups_path passphrase_path
+  local db_path uploads_path certificate_path nginx_path updater_path backups_path passphrase_path
   db_path="$(realpath -m "${DEVFLOW_DB_DATA_PATH:-}")"
   uploads_path="$(realpath -m "${DEVFLOW_UPLOADS_PATH:-}")"
-  acme_path="$(realpath -m "${DEVFLOW_ACME_PATH:-}")"
   certificate_path="$(realpath -m "${DEVFLOW_CERTIFICATE_PATH:-}")"
   nginx_path="$(realpath -m "${DEVFLOW_NGINX_CONFIG_PATH:-}")"
+  updater_path="$(realpath -m "${DEVFLOW_UPDATER_ROOT:-}")"
   backups_path="$(realpath -m "${BACKUP_ARCHIVE_DIR:-}")"
   passphrase_path="$(realpath -m "${BACKUP_PASSPHRASE_FILE:-}")"
-  [[ "$db_path" == "$DEVFLOW_INSTALL_ROOT/storage/postgres" ]] || die 'Caminho persistente do PostgreSQL inválido.'
-  [[ "$uploads_path" == "$DEVFLOW_INSTALL_ROOT/storage/uploads" ]] || die 'Caminho persistente de uploads inválido.'
-  [[ "$acme_path" == "$DEVFLOW_INSTALL_ROOT/storage/acme" ]] || die 'Caminho ACME inválido.'
-  [[ "$certificate_path" == "$DEVFLOW_INSTALL_ROOT/certificates" ]] || die 'Caminho de certificados inválido.'
-  [[ "$nginx_path" == "$DEVFLOW_CONFIG_ROOT/nginx/active.conf.template" ]] || die 'Caminho da configuração Nginx inválido.'
-  [[ "$backups_path" == "$DEVFLOW_INSTALL_ROOT/backups" ]] || die 'Caminho de backups inválido.'
-  [[ "$passphrase_path" == "$DEVFLOW_CONFIG_ROOT/backup.passphrase" ]] || die 'Caminho da passphrase de backup inválido.'
+  [[ "$db_path" == "$DEVFLOW_INSTALL_ROOT/storage/postgres" ]] || die 'Caminho persistente do PostgreSQL invalido.'
+  [[ "$uploads_path" == "$DEVFLOW_INSTALL_ROOT/storage/uploads" ]] || die 'Caminho persistente de uploads invalido.'
+  [[ "$certificate_path" == /etc/letsencrypt ]] || die 'Caminho de certificados invalido.'
+  [[ "$nginx_path" == "$DEVFLOW_CONFIG_ROOT/nginx/nginx.runtime.conf" ]] || die 'Caminho da configuracao Nginx invalido.'
+  [[ "$updater_path" == "$DEVFLOW_INSTALL_ROOT/updater" ]] || die 'Caminho do updater invalido.'
+  [[ "$backups_path" == "$DEVFLOW_INSTALL_ROOT/backups" ]] || die 'Caminho de backups invalido.'
+  [[ "$passphrase_path" == "$DEVFLOW_CONFIG_ROOT/backup.passphrase" ]] || die 'Caminho da passphrase de backup invalido.'
   [[ "${ADMIN_EMAIL:-}" == "${SUPER_ADMIN_EMAIL:-}" \
     && "${ADMIN_EMAIL:-}" == "${LETSENCRYPT_EMAIL:-}" ]] \
-    || die 'ADMIN_EMAIL deve ser a autoridade única para administrador e certificado.'
+    || die 'ADMIN_EMAIL deve ser a autoridade unica para administrador e certificado.'
+}
+
+validate_ipv4() {
+  local value="${1:-}" octet
+  local -a octets
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS='.' read -r -a octets <<< "$value"
+  for octet in "${octets[@]}"; do
+    (( 10#$octet >= 0 && 10#$octet <= 255 )) || return 1
+  done
+}
+
+validate_devflow_certificate() {
+  local domain="${1:-${DEVFLOW_DOMAIN:-}}" certificate_root="${2:-/etc/letsencrypt}"
+  local fullchain="$certificate_root/live/$domain/fullchain.pem"
+  local private_key="$certificate_root/live/$domain/privkey.pem"
+  local resolved_chain resolved_key certificate_public key_public
+  CERTIFICATE_PRESENT=false
+  CERTIFICATE_DOMAIN_MATCH=false
+  CERTIFICATE_KEY_MATCH=false
+  CERTIFICATE_VALID=false
+  validate_domain "$domain" || return 1
+  resolved_chain="$(readlink -f "$fullchain" 2>/dev/null || true)"
+  resolved_key="$(readlink -f "$private_key" 2>/dev/null || true)"
+  if [[ "$resolved_chain" == "$certificate_root/"* && "$resolved_key" == "$certificate_root/"* \
+    && -f "$resolved_chain" && -f "$resolved_key" && ! -L "$resolved_chain" && ! -L "$resolved_key" ]]; then
+    CERTIFICATE_PRESENT=true
+  else
+    return 1
+  fi
+  if openssl x509 -in "$resolved_chain" -noout -checkend 0 >/dev/null 2>&1 \
+    && openssl x509 -in "$resolved_chain" -noout -checkhost "$domain" >/dev/null 2>&1; then
+    CERTIFICATE_DOMAIN_MATCH=true
+  fi
+  certificate_public="$(openssl x509 -in "$resolved_chain" -pubkey -noout 2>/dev/null \
+    | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}' || true)"
+  key_public="$(openssl pkey -in "$resolved_key" -pubout -outform DER 2>/dev/null \
+    | sha256sum | awk '{print $1}' || true)"
+  if [[ -n "$certificate_public" && "$certificate_public" == "$key_public" ]]; then
+    CERTIFICATE_KEY_MATCH=true
+  fi
+  if [[ "$CERTIFICATE_PRESENT" == true && "$CERTIFICATE_DOMAIN_MATCH" == true \
+    && "$CERTIFICATE_KEY_MATCH" == true ]]; then
+    CERTIFICATE_VALID=true
+  fi
+  printf '%s\n' \
+    "certificate_present=$CERTIFICATE_PRESENT" \
+    "certificate_domain_match=$CERTIFICATE_DOMAIN_MATCH" \
+    "certificate_key_match=$CERTIFICATE_KEY_MATCH" \
+    "certificate_valid=$CERTIFICATE_VALID"
+  [[ "$CERTIFICATE_VALID" == true ]]
+}
+
+render_runtime_nginx_config() {
+  local release_root="${1:-${DEVFLOW_APP_ROOT:-}}" destination="${2:-${DEVFLOW_NGINX_CONFIG_PATH:-}}"
+  local template temporary
+  validate_domain "${DEVFLOW_DOMAIN:-}" || return 1
+  template="$release_root/docker/nginx.runtime.conf.template"
+  [[ -f "$template" && ! -L "$template" && "$destination" == "$DEVFLOW_CONFIG_ROOT/nginx/nginx.runtime.conf" ]] \
+    || return 1
+  validate_devflow_certificate "$DEVFLOW_DOMAIN" /etc/letsencrypt >/dev/null || return 1
+  install -d -m 0750 "$DEVFLOW_CONFIG_ROOT/nginx"
+  temporary="$(mktemp "$DEVFLOW_CONFIG_ROOT/nginx/.nginx.runtime.XXXXXX.conf")"
+  sed "s/__DEVFLOW_DOMAIN__/$DEVFLOW_DOMAIN/g" "$template" > "$temporary"
+  grep -Fq "server_name $DEVFLOW_DOMAIN;" "$temporary" \
+    && grep -Fq "/etc/letsencrypt/live/$DEVFLOW_DOMAIN/fullchain.pem" "$temporary" \
+    || { rm -f -- "$temporary"; return 1; }
+  chmod 0640 "$temporary"
+  mv -f -- "$temporary" "$destination"
 }
 
 set_managed_env_value() {
@@ -297,13 +367,14 @@ DB_NAME=devflow_validation
 JWT_SECRET=placeholder-structural-validation-placeholder-structural-validation
 ADMIN_BOOTSTRAP_TOKEN=placeholder-structural-validation-placeholder
 CONFIG_ENCRYPTION_KEY=placeholder-structural-validation
+UPDATE_REQUEST_SECRET=placeholder-structural-validation-placeholder-structural-validation
 SUPER_ADMIN_EMAIL=validation@example.invalid
 BACKUP_PASSPHRASE_FILE=/tmp/devflow-structural-validation.passphrase
 DEVFLOW_DB_DATA_PATH=/opt/devflow/storage/postgres
 DEVFLOW_UPLOADS_PATH=/opt/devflow/storage/uploads
-DEVFLOW_ACME_PATH=/opt/devflow/storage/acme
-DEVFLOW_CERTIFICATE_PATH=/opt/devflow/certificates
-DEVFLOW_NGINX_CONFIG_PATH=/opt/devflow/config/nginx/active.conf.template
+DEVFLOW_CERTIFICATE_PATH=/etc/letsencrypt
+DEVFLOW_NGINX_CONFIG_PATH=/opt/devflow/config/nginx/nginx.runtime.conf
+DEVFLOW_UPDATER_ROOT=/opt/devflow/updater
 EOF
   local -a structure_compose=()
   if ! build_devflow_compose_command "$app_root" "$temporary" structure_compose devflow-validation application; then

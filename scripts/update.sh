@@ -12,10 +12,16 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHECK_ONLY=false
 ROLLBACK_REQUESTED=false
 EXPECTED_UPDATE_VERSION=
+REQUEST_FILE=
+DAEMON_MODE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true; shift ;;
     --rollback) ROLLBACK_REQUESTED=true; shift ;;
+    --request-file)
+      [[ -n "${2:-}" ]] || die '--request-file exige um arquivo.'
+      REQUEST_FILE="$2"; DAEMON_MODE=true; shift 2
+      ;;
     --expected-version)
       [[ -n "${2:-}" ]] || die '--expected-version exige um valor.'
       EXPECTED_UPDATE_VERSION="$2"
@@ -52,11 +58,21 @@ command -v tar >/dev/null 2>&1 || die 'tar é obrigatório para validar a consis
 command -v docker >/dev/null 2>&1 || die 'Docker não está disponível.'
 docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 não está disponível.'
 
-exec 9>/run/lock/devflow-update.lock
+install -d -m 0750 /run/lock/devflow
+exec 9>/run/lock/devflow/update.lock
 flock -n 9 || die 'Outra atualização DevFlow está em andamento.'
 
 load_devflow_env
 validate_runtime_paths
+if [[ "$DAEMON_MODE" == true ]]; then
+  [[ "${DEVFLOW_UPDATE_DAEMON:-false}" == true \
+    && "$REQUEST_FILE" == /var/lib/devflow-updater/processing/*.json \
+    && -f "$REQUEST_FILE" && ! -L "$REQUEST_FILE" ]] || die 'Contexto do updater daemon invalido.'
+  request_id="${REQUEST_FILE##*/}"; request_id="${request_id%.json}"
+  node "$SCRIPT_DIR/validate-updater-request.mjs" "$REQUEST_FILE" "$request_id" >/dev/null \
+    || die 'Solicitacao assinada do updater invalida.'
+  [[ "$ROLLBACK_REQUESTED" == false && "$CHECK_ONLY" == false ]] || die 'O daemon aceita somente install-update.'
+fi
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Diretório instalado inesperado.'
 validate_domain "$DEVFLOW_DOMAIN"
 check_capacity "$DEVFLOW_INSTALL_ROOT"
@@ -94,10 +110,15 @@ SOURCE_OLD_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
 devflow_semver_is_valid "$OLD_VERSION" || die 'Versão instalada inválida.'
 [[ "${DEVFLOW_VERSION:-}" == "$OLD_VERSION" ]] \
   || die 'DEVFLOW_VERSION diverge da release instalada; corrija a configuração antes de atualizar.'
+if [[ "$DAEMON_MODE" == false ]]; then
 for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer; do
   [[ -f "$unit_file" ]] || die "Unidade obrigatória ausente: $unit_file"
   managed_file "$unit_file" '# Managed by DevFlow installer.' || die "$unit_file pertence a outro sistema."
 done
+else
+  [[ -f "$DEVFLOW_STATE_ROOT/host-units.installed" ]] \
+    || die 'O host nao confirmou a instalacao das unidades operacionais.'
+fi
 DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR"
 DEVFLOW_VERSION="$OLD_VERSION"
 DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
@@ -179,9 +200,13 @@ Plano de atualização:
 
 Log sanitizado: $UPDATE_LOG
 EOF
+if [[ "$DAEMON_MODE" == false ]]; then
 require_numeric_confirmation application-update \
   "A atualização do DevFlow de $OLD_VERSION para $NEW_VERSION está pronta." \
   'ATUALIZAR DEVFLOW'
+else
+  log INFO "Atualizacao autorizada por solicitacao assinada: $request_id"
+fi
 
 else
   install -d -m 0750 "$DEVFLOW_LOG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/releases"
@@ -226,6 +251,29 @@ BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
 [[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
+
+pause_backup_schedule() {
+  [[ "$DAEMON_MODE" == true ]] && return 0
+  systemctl stop devflow-backup.timer
+  BACKUP_TIMER_PAUSED=true
+  if systemctl is-active --quiet devflow-backup.service; then
+    systemctl start devflow-backup.timer || true
+    BACKUP_TIMER_PAUSED=false
+    return 1
+  fi
+}
+
+refresh_host_units() {
+  local release="$1" unit_name
+  [[ "$DAEMON_MODE" == true ]] && return 0
+  for unit_name in devflow-backup.service devflow-backup.timer \
+    devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
+    install -m 0644 "$release/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name" || return 1
+  done
+  systemctl daemon-reload
+  systemctl enable --now devflow-backup.timer devflow-certificate-renewal.timer
+  BACKUP_TIMER_PAUSED=false
+}
 
 write_update_transaction() {
   local state="$1" temporary
@@ -291,8 +339,12 @@ maintenance_compose_for() {
 }
 
 maintenance_http_ok() {
-  local status
-  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  local status resolve_ip=127.0.0.1
+  if [[ "$DAEMON_MODE" == true ]]; then
+    resolve_ip="$(docker inspect --format '{{(index .NetworkSettings.Networks "devflow_edge").IPAddress}}' devflow-maintenance 2>/dev/null || true)"
+  fi
+  validate_ipv4 "$resolve_ip" || return 1
+  status="$(curl --resolve "$DEVFLOW_DOMAIN:443:$resolve_ip" --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --max-time 20 "https://$DEVFLOW_DOMAIN/" || true)"
   [[ "$status" == 503 ]]
 }
@@ -354,7 +406,7 @@ rollback_update() {
   set_compose_for "$OLD_RELEASE_DIR"
   "${DEVFLOW_COMPOSE[@]}" stop backend frontend
   [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  "${DEVFLOW_COMPOSE[@]}" build backend frontend
+  "${DEVFLOW_COMPOSE[@]}" build backend frontend updater
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível reconstruir as imagens anteriores.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-restore
@@ -375,7 +427,7 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-proxy
-  install -m 0644 "$OLD_RELEASE_DIR/docker/nginx/isolated-https.conf.template" "$DEVFLOW_NGINX_CONFIG_PATH"
+  render_runtime_nginx_config "$OLD_RELEASE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
   restore_proxy_for "$OLD_RELEASE_DIR"
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
@@ -383,17 +435,8 @@ rollback_update() {
     "$CANDIDATE_DIR/scripts/health.sh"
   [[ $? -eq 0 ]] || { log ERROR 'Health check público após rollback falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
-  for unit_name in devflow-backup.service devflow-backup.timer \
-    devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
-    install -m 0644 "$OLD_RELEASE_DIR/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name"
-    [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  done
-  systemctl daemon-reload
-  [[ $? -eq 0 ]] || { log ERROR 'systemd daemon-reload falhou durante o rollback.'; rollback_failures=$((rollback_failures + 1)); }
-  if systemctl enable --now devflow-backup.timer devflow-certificate-renewal.timer; then
-    BACKUP_TIMER_PAUSED=false
-  else
-    log ERROR 'Não foi possível restaurar o timer de backup.'
+  if ! refresh_host_units "$OLD_RELEASE_DIR"; then
+    log ERROR 'Nao foi possivel restaurar as unidades operacionais do host.'
     rollback_failures=$((rollback_failures + 1))
   fi
 
@@ -441,7 +484,7 @@ update_failed() {
   if [[ "$ROLLBACK_ARMED" == false && "$CANDIDATE_CREATED" == true && "$CANDIDATE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* ]]; then
     rm -rf -- "$CANDIDATE_DIR"
   fi
-  if [[ "$ROLLBACK_ARMED" == false && "$BACKUP_TIMER_PAUSED" == true ]]; then
+  if [[ "$DAEMON_MODE" == false && "$ROLLBACK_ARMED" == false && "$BACKUP_TIMER_PAUSED" == true ]]; then
     systemctl start devflow-backup.timer || true
   fi
   if [[ "$ROLLBACK_ARMED" == true ]]; then
@@ -499,11 +542,7 @@ candidate_version="$(devflow_validate_directory_version_consistency "$CANDIDATE_
 [[ "$candidate_version" == "$NEW_VERSION" ]] || die 'Release candidata possui versão divergente.'
 [[ -x "$CANDIDATE_DIR/scripts/health.sh" && -r "$CANDIDATE_DIR/docker-compose.maintenance.yml" ]] \
   || die 'Release candidata não contém os componentes transacionais obrigatórios.'
-systemctl stop devflow-backup.timer
-BACKUP_TIMER_PAUSED=true
-if systemctl is-active --quiet devflow-backup.service; then
-  systemctl start devflow-backup.timer || true
-  BACKUP_TIMER_PAUSED=false
+if ! pause_backup_schedule; then
   die 'Um backup agendado ainda está ativo; a atualização foi cancelada antes de qualquer mutação.'
 fi
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app.candidate"
@@ -511,7 +550,7 @@ ROLLBACK_ARMED=true
 
 UPDATE_PHASE=source
 SOURCE_ADVANCED=true
-git -C "$SOURCE_DIR" merge --ff-only "$NEW_SHA"
+GIT_TERMINAL_PROMPT=0 git -C "$SOURCE_DIR" pull --ff-only origin main
 [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || die 'Checkout ficou inconsistente após fast-forward.'
 [[ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" == "$NEW_SHA" ]] || die 'Checkout não atingiu o commit esperado.'
 
@@ -519,12 +558,13 @@ export DEVFLOW_VERSION="$NEW_VERSION"
 export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
-"${DEVFLOW_COMPOSE[@]}" build backend frontend
+render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
+"${DEVFLOW_COMPOSE[@]}" build backend frontend updater
 candidate_backend_image="$(resolve_compose_service_image backend)" \
   || die 'A imagem candidata do backend não pôde ser resolvida após a build.'
 candidate_backend_image_id="$(docker image inspect --format '{{.Id}}' "$candidate_backend_image")"
-candidate_expected_migration="$(find "$CANDIDATE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
-  | LC_ALL=C sort | tail -n1)"
+candidate_expected_migration="$(find "$CANDIDATE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -print \
+  | sed 's#.*/##' | LC_ALL=C sort | tail -n1)"
 candidate_expected_migration_sha256="$(sha256sum "$CANDIDATE_DIR/database/migrations/$candidate_expected_migration" | awk '{print $1}')"
 candidate_image_validation_status=0
 validate_backend_migration_image "$candidate_backend_image" "$candidate_expected_migration" \
@@ -563,7 +603,7 @@ set_managed_env_value DEVFLOW_RELEASE_COMMIT "$NEW_SHA"
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
 
 UPDATE_PHASE=proxy
-install -m 0644 "$CANDIDATE_DIR/docker/nginx/isolated-https.conf.template" "$DEVFLOW_NGINX_CONFIG_PATH"
+render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
 restore_proxy_for "$CANDIDATE_DIR"
 MAINTENANCE_ACTIVE=false
 
@@ -574,13 +614,7 @@ DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
 
 UPDATE_PHASE=finalize
 rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
-for unit_name in devflow-backup.service devflow-backup.timer \
-  devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
-  install -m 0644 "$CANDIDATE_DIR/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name"
-done
-systemctl daemon-reload
-systemctl enable --now devflow-backup.timer devflow-certificate-renewal.timer
-BACKUP_TIMER_PAUSED=false
+refresh_host_units "$CANDIDATE_DIR"
 DEVFLOW_VERSION="$NEW_VERSION"
 DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 DEVFLOW_IDENTITY_RELEASE_ROOT="$CANDIDATE_DIR"

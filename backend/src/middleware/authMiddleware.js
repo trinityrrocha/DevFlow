@@ -71,6 +71,13 @@ function requireAdmin(req, _res, next) {
   next();
 }
 
+function requireSuperAdmin(req, _res, next) {
+  if (req.user?.is_super_admin !== true) {
+    return next(new AppError('SUPER_ADMIN_REQUIRED', 'Acao permitida apenas para o Super Admin.', 403));
+  }
+  next();
+}
+
 function requirePermission(code) {
   return (req, _res, next) => {
     if (!hasPermission(req.user, code)) {
@@ -80,4 +87,4 @@ function requirePermission(code) {
   };
 }
 
-module.exports = { requireAuth, requireAdmin, requirePermission };
+module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requirePermission };

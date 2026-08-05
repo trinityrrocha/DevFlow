@@ -1,9 +1,10 @@
 const express = require('express');
 const controller = require('../controllers/updateOperationController');
-const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
+const { requireAuth, requireSuperAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireSuperAdmin);
 router.get('/capabilities', controller.getCapabilities);
+router.post('/requests', controller.createRequest);
 
 module.exports = router;

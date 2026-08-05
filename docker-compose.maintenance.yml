@@ -13,15 +13,14 @@ services:
       - "443:443"
     volumes:
       - ./docker/nginx/maintenance.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ${DEVFLOW_ACME_PATH:-/opt/devflow/storage/acme}:/var/www/certbot:ro
-      - ${DEVFLOW_CERTIFICATE_PATH:-/opt/devflow/certificates}:/etc/letsencrypt:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 5s
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.0-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.5.1-alpha}
       devflow.component: maintenance
     networks:
       - devflow_edge

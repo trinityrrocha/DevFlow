@@ -34,7 +34,7 @@ const check = (name, condition) => {
 };
 
 const writeFixture = (directory, version, { frontendVersion = version } = {}) => {
-  for (const child of ['backend/src/config', 'backend/src', 'backend/scripts', 'frontend', 'scripts/lib', 'docs/infrastructure']) mkdirSync(resolve(directory, child), { recursive: true });
+  for (const child of ['backend/src/config', 'backend/src', 'backend/scripts', 'frontend', 'docker/updater', 'scripts/lib', 'docs/infrastructure']) mkdirSync(resolve(directory, child), { recursive: true });
   writeFileSync(resolve(directory, 'VERSION'), `${version}\n`);
   writeFileSync(resolve(directory, 'package.json'), `{\n  "name": "devflow",\n  "version": "${version}"\n}\n`);
   writeFileSync(resolve(directory, 'backend/package.json'), `{\n  "name": "backend",\n  "version": "${version}"\n}\n`);
@@ -45,12 +45,14 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, '.env.example'), `DEVFLOW_VERSION=${version}\n`);
   writeFileSync(resolve(directory, 'docker-compose.yml'), `version: \${DEVFLOW_VERSION:-${version}}\nservices:\n  backend:\n    image: devflow-backend:\${DEVFLOW_IMAGE_TAG:-latest}\n  frontend:\n    image: devflow-frontend:\${DEVFLOW_IMAGE_TAG:-latest}\n`);
   writeFileSync(resolve(directory, 'docker-compose.maintenance.yml'), `version: \${DEVFLOW_VERSION:-${version}}\n`);
-  writeFileSync(resolve(directory, 'README.md'), `Versão atual: **${version}**\n`);
+  writeFileSync(resolve(directory, 'docker/nginx.runtime.conf.template'), 'server_name __DEVFLOW_DOMAIN__;\n');
+  writeFileSync(resolve(directory, 'docker/updater/Dockerfile'), 'FROM docker:27-cli\n');
+  writeFileSync(resolve(directory, 'README.md'), `Versao atual: **${version}**\n`);
   writeFileSync(resolve(directory, 'CHANGELOG.md'), `## [${version}]\n`);
-  writeFileSync(resolve(directory, 'docs/implementation-status.md'), `Versão: \`${version}\`.\n`);
-  writeFileSync(resolve(directory, 'docs/infrastructure/vps-installation.md'), `Versão \`${version}\`.\n`);
+  writeFileSync(resolve(directory, 'docs/implementation-status.md'), `Versao: \`${version}\`.\n`);
+  writeFileSync(resolve(directory, 'docs/infrastructure/vps-installation.md'), `Versao \`${version}\`.\n`);
   writeFileSync(resolve(directory, 'docs/roadmap.md'), `## Marco \`${version}\`\n`);
-  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Instalação isolada \`${version}\`\n`);
+  writeFileSync(resolve(directory, 'docs/traceability.md'), `## Instalacao isolada \`${version}\`\n`);
   writeFileSync(resolve(directory, 'scripts/bootstrap.sh'), '#!/usr/bin/env bash\nsource scripts/lib/version.sh\nDETECTED_VERSION=dynamic\n');
   writeFileSync(resolve(directory, 'scripts/lib/common.sh'), 'source scripts/lib/version.sh\n');
   writeFileSync(resolve(directory, 'scripts/lib/version.sh'), '# fixture uses the tested library externally\n');
@@ -62,7 +64,9 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.py'), '# state validator fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.mjs'), '// state tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-migration-image-permissions.mjs'), '// migration permission tests fixture\n');
-  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh']) {
+  writeFileSync(resolve(directory, 'scripts/validate-updater-request.mjs'), '// updater request fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-shell-syntax.mjs'), '// shell syntax fixture\n');
+  for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'renew-certificate.sh', 'updater-daemon.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
   }
@@ -81,14 +85,14 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.5.0-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.5.1-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.5.0-alpha');
+  writeFixture(patchFixture, '0.5.1-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
-  writeFixture(minorFixture, '0.5.0-alpha');
+  writeFixture(minorFixture, '0.5.1-alpha');
   check('main after minor increment', validateDirectory(minorFixture).status === 0);
 
   const repositoryFixture = resolve(temporary, 'repository');
@@ -97,7 +101,7 @@ try {
   runGit(repositoryFixture, ['config', 'user.name', 'trinityrrocha']);
   runGit(repositoryFixture, ['config', 'user.email', 'trinityrocha@sti1.com.br']);
   runGit(repositoryFixture, ['add', '-A']);
-  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh']) {
+  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'renew-certificate.sh', 'updater-daemon.sh']) {
     runGit(repositoryFixture, ['update-index', '--chmod=+x', `scripts/${script}`]);
   }
   runGit(repositoryFixture, ['commit', '-m', 'test: version policy fixture']);

@@ -20,6 +20,7 @@ process.env.DB_PASSWORD = 'migration-test-placeholder';
 process.env.DB_NAME = 'devflow_test';
 process.env.JWT_SECRET = 'migration-test-jwt-placeholder-that-is-long-enough-for-validation-000000';
 process.env.ADMIN_BOOTSTRAP_TOKEN = 'migration-test-bootstrap-placeholder-that-is-long-enough-000000';
+process.env.UPDATE_REQUEST_SECRET = 'migration-test-update-request-secret-placeholder-that-is-long-enough-000000';
 process.env.CONFIG_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
 process.env.SUPER_ADMIN_EMAIL = 'migration-test@example.invalid';
 const require = createRequire(import.meta.url);
@@ -119,9 +120,10 @@ try {
     && dockerfile.startsWith('FROM node:22-alpine'));
   check('PostgreSQL 16 Alpine remains selected', compose.includes('image: postgres:16-alpine'));
 
-  check('resume retains migration stage', install.includes('--resume') && transaction.includes('08-migrations'));
+  check('resume retains migration stage', install.includes('--resume') && transaction.includes('11-migrations'));
   check('backend image is always built before migrations', install.indexOf('build backend frontend') < install.indexOf('run_devflow_migrations'));
-  check('database is preserved on installation failure', !install.includes('down --volumes') && install.includes('dados, logs e imagens foram preservados'));
+  check('database is preserved on installation failure', !install.includes('down --volumes')
+    && install.includes('Containers existentes foram preservados'));
   check('migration runtime is non-root', dockerfile.includes('USER devflow') && !common.includes('--user root'));
   check('migration flow is independent from neighboring applications', !install.toLowerCase().includes('fullpassword') && !update.toLowerCase().includes('fullpassword'));
   if (checks.length !== 20) throw new Error(`Expected 20 checks, got ${checks.length}`);

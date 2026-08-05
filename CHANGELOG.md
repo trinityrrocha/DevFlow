@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.1-alpha] - 2026-08-04
+
+### Corrigido
+
+- O fluxo ACME temporário do DevFlow foi removido e substituído por Certbot standalone.
+- DNS A e IPv4 publico agora sao comparados por fontes independentes; portas e firewall falham de forma fechada.
+- certificado, SAN, validade, symlinks e chave privada sao validados antes da geracao do Nginx runtime;
+- falhas de instalacao preservam containers e `--resume` recalcula o ponto material da instalacao parcial;
+- PostgreSQL, backend, frontend, Nginx e updater seguem inicializacao ordenada e health checks reais;
+- renovacao usa Certbot do host, timer systemd e reload escopado ao `devflow-nginx`;
+- frontend/backend podem criar somente pedidos HMAC `install-update`; o daemon privado delega exclusivamente ao `update.sh`.
+
+### Validacao local
+
+- 30 cenarios obrigatorios cobrem standalone, DNS, portas, certificado, Compose, ordem, retomada, admin, renovacao, updater, rollback e desinstalacao;
+- Docker, Compose, Certbot, ACME, systemd e AMD64/ARM64 reais permanecem pendentes de homologacao manual na VPS.
+
 > Entradas anteriores a `0.5.0-alpha` descrevem a arquitetura compartilhada historica, descontinuada e removida como caminho operacional.
 
 ## [0.5.0-alpha] - 2026-08-04

@@ -6,6 +6,7 @@ Description=Agendamento da renovacao HTTPS do DevFlow
 OnCalendar=*-*-* 03,15:20:00
 Persistent=true
 RandomizedDelaySec=30m
+AccuracySec=1m
 Unit=devflow-certificate-renewal.service
 
 [Install]

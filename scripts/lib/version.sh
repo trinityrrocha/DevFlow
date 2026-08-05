@@ -146,15 +146,15 @@ devflow_validate_directory_version_consistency() {
   grep -Fq "DEVFLOW_VERSION:-$version" "$root/docker-compose.maintenance.yml" || return 1
   grep -Fq 'image: devflow-backend:${DEVFLOW_IMAGE_TAG:-latest}' "$root/docker-compose.yml" || return 1
   grep -Fq 'image: devflow-frontend:${DEVFLOW_IMAGE_TAG:-latest}' "$root/docker-compose.yml" || return 1
-  grep -Fq "Versão atual: **$version**" "$root/README.md" || return 1
+  grep -Fq "Versao atual: **$version**" "$root/README.md" || return 1
   grep -Fq "## [$version]" "$root/CHANGELOG.md" || return 1
-  grep -Fq "Versão: \`$version\`" "$root/docs/implementation-status.md" || return 1
-  grep -Fq "Versão \`$version\`" "$root/docs/infrastructure/vps-installation.md" || return 1
+  grep -Fq "Versao: \`$version\`" "$root/docs/implementation-status.md" || return 1
+  grep -Fq "Versao \`$version\`" "$root/docs/infrastructure/vps-installation.md" || return 1
   grep -Fq "## Marco \`$version\`" "$root/docs/roadmap.md" || return 1
-  grep -Fq "## Instalação isolada \`$version\`" "$root/docs/traceability.md" || return 1
+  grep -Fq "## Instalacao isolada \`$version\`" "$root/docs/traceability.md" || return 1
   grep -Fq 'scripts/lib/version.sh' "$root/scripts/bootstrap.sh" || return 1
   for package_file in scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
-    scripts/uninstall.sh scripts/diagnose.sh; do
+    scripts/uninstall.sh scripts/diagnose.sh scripts/renew-certificate.sh; do
     grep -Fq 'lib/common.sh' "$root/$package_file" || return 1
   done
   grep -Eq "EXPECTED_VERSION=['\"][0-9]" "$root/scripts/bootstrap.sh" && return 1
@@ -166,11 +166,12 @@ devflow_validate_checkout_version_consistency() {
   [[ -n "$root" && -d "$root/.git" ]] || return 1
   for tracked_file in VERSION package.json backend/package.json frontend/package.json \
     backend/src/config/env.js backend/src/app.js backend/scripts/migration-image-contract.js \
-    .env.example docker-compose.yml \
+    .env.example docker-compose.yml docker/nginx.runtime.conf.template docker/updater/Dockerfile \
     docker-compose.maintenance.yml README.md CHANGELOG.md docs/implementation-status.md \
     docs/infrastructure/vps-installation.md docs/roadmap.md docs/traceability.md \
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
-    scripts/uninstall.sh scripts/diagnose.sh scripts/resolve-compose-image.py \
+    scripts/uninstall.sh scripts/diagnose.sh scripts/renew-certificate.sh scripts/updater-daemon.sh \
+    scripts/validate-updater-request.mjs scripts/validate-shell-syntax.mjs scripts/resolve-compose-image.py \
     scripts/validate-isolated-architecture.mjs scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \
     scripts/validate-migration-image-permissions.mjs scripts/lib/common.sh scripts/lib/version.sh \
@@ -193,10 +194,13 @@ devflow_validate_git_tree_version_consistency() {
   if ! git -C "$repository" archive "$commit" \
     VERSION package.json backend/package.json frontend/package.json backend/src/config/env.js \
     backend/src/app.js backend/scripts/migration-image-contract.js .env.example docker-compose.yml \
+    docker/nginx.runtime.conf.template docker/updater/Dockerfile \
     docker-compose.maintenance.yml README.md \
     CHANGELOG.md docs/implementation-status.md docs/infrastructure/vps-installation.md \
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
     scripts/version.sh scripts/health.sh scripts/uninstall.sh scripts/diagnose.sh \
+    scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/validate-updater-request.mjs \
+    scripts/validate-shell-syntax.mjs \
     scripts/resolve-compose-image.py scripts/validate-isolated-architecture.mjs \
     scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \

@@ -1,19 +1,11 @@
-# Estado de implementação
+# Estado de implementacao
 
-Data de corte: 2026-08-04. Versão: `0.5.0-alpha`.
+Data de corte: 2026-08-04. Versao: `0.5.1-alpha`.
 
-## Arquitetura vigente
+Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, confirmacoes numericas, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, fila HMAC e atualizacao/rollback pelo motor unico `update.sh`.
 
-O DevFlow possui somente instalacao isolada. O Compose entrega PostgreSQL, backend, frontend, Nginx e Certbot proprios, redes `devflow_internal`/`devflow_edge`, persistencia em `/opt/devflow`, HTTPS ACME e estado final schema v3.
+O fluxo ACME temporário do DevFlow foi removido e substituído por Certbot standalone.
 
-Foram removidos como caminhos operacionais: providers de Nginx no host, adapter de proxy externo, overlays compartilhados, publicacao posterior, migracao de proxy, escopo interno, reconciliacao compartilhada e reparos especificos de convivencia.
+Nao executado nesta estacao Windows: Docker/Compose real, Certbot/ACME real, systemd real, firewall real, VPS, AMD64/ARM64 real, backup/restore contra PostgreSQL real e rollback induzido real.
 
-O instalador interativo solicita dominio e um unico e-mail administrativo. Instalacao, resume, update, backup, restore, health, diagnostico e uninstall permanecem fail-closed e limitados aos recursos DevFlow.
-
-`update.sh` continua como motor unico, usado pelo terminal e pelo contrato `update-operation.sh`. O backend expoe apenas `GET /api/operations/update/capabilities`, autenticado e administrativo, para descrever o contrato futuro. Esse endpoint nao executa atualizacoes; `executionAvailable=false`, `UPDATE_API_ENABLED=false` por padrao e nenhuma execucao arbitraria foi exposta ao frontend.
-
-## Validacao pendente
-
-Ainda dependem de VPS Linux: instalacao completa, Docker/Compose reais, DNS/ACME, HTTPS e renovacao, ARM64 real, backup/restauracao, rollback induzido, carga, acessibilidade e pentest.
-
-> O DevFlow esta preparado para homologacao, nao para producao. O Documento 004 ainda nao foi executado.
+O Documento 004 nao foi iniciado. O DevFlow permanece alpha e nao aprovado para producao.

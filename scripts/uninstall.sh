@@ -65,7 +65,7 @@ ATENCAO: serao removidos exatamente:
   containers e redes do projeto devflow
   $DEVFLOW_INSTALL_ROOT/storage/postgres
   $DEVFLOW_INSTALL_ROOT/storage/uploads
-  $DEVFLOW_INSTALL_ROOT/certificates
+  certificado Certbot exclusivo: $DEVFLOW_DOMAIN
   $DEVFLOW_INSTALL_ROOT/config
   $DEVFLOW_INSTALL_ROOT/state
   $DEVFLOW_INSTALL_ROOT/backups
@@ -83,7 +83,7 @@ EOF
   "${DEVFLOW_COMPOSE[@]}" down --remove-orphans
 fi
 
-for image in devflow-backend:latest devflow-frontend:latest; do
+for image in devflow-backend:latest devflow-frontend:latest devflow-updater:latest; do
   docker image inspect "$image" >/dev/null 2>&1 && docker image rm "$image" >/dev/null || true
 done
 
@@ -100,6 +100,11 @@ done
 systemctl daemon-reload
 
 if [[ "$MODE" == purge ]]; then
+  command -v certbot >/dev/null 2>&1 \
+    || die 'Certbot do host e obrigatorio para remover o certificado exclusivo com seguranca.'
+  certbot certificates --cert-name "$DEVFLOW_DOMAIN" >/dev/null 2>&1 \
+    && certbot delete --non-interactive --cert-name "$DEVFLOW_DOMAIN" \
+    || die 'A remocao certificada do certificado DevFlow falhou; dados locais foram preservados.'
   resolved_root="$(realpath -m "$DEVFLOW_INSTALL_ROOT")"
   [[ "$resolved_root" == /opt/devflow ]] || die 'Purge recusado para caminho inesperado.'
   rm -rf -- "$resolved_root"
