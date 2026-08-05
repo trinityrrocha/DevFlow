@@ -37,10 +37,9 @@ Se o diagnostico confirmar release, commit, containers, certificado, migration, 
 
 ```bash
 sudo ./scripts/repair-installation-state.sh --repair
-sudo /opt/devflow/app/scripts/health.sh
 ```
 
-O reparador cria um backup `installation.json.backup-<UTC>`, nao executa build/migration e nao altera banco, certificado, Super Admin ou senha. Nao use o reparador se qualquer pre-condicao material falhar.
+O reparador cria um backup `installation.json.backup-<UTC>`, executa o health da copia nova em processo separado, nao executa build/migration e nao altera banco, certificado, Super Admin ou senha. Nao use o reparador se qualquer pre-condicao material falhar. Em `0.5.3-alpha`, execute o health de `/opt/devflow/app` somente depois de concluir a atualizacao para `0.5.4-alpha`, pois a release antiga ainda possui o parser defeituoso.
 
 ## MFA e CSRF
 

@@ -64,10 +64,9 @@ git switch main
 git pull --ff-only origin main
 sudo ./scripts/repair-installation-state.sh --check
 sudo ./scripts/repair-installation-state.sh --repair
-sudo /opt/devflow/app/scripts/health.sh
 ```
 
-Depois do reparo, a atualizacao continua pertencendo exclusivamente ao motor transacional:
+O modo `--repair` ja executa o `health.sh` da copia nova em processo separado. Nao execute ainda o `health.sh` de `/opt/devflow/app`: enquanto a release ativa for `0.5.3-alpha`, esse arquivo ainda contem o parser que motivou o reparo. Em seguida, a atualizacao continua pertencendo exclusivamente ao motor transacional:
 
 ```bash
 sudo ./scripts/update.sh --check
