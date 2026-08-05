@@ -29,6 +29,9 @@ PREVIOUS_APP_TARGET=
 APP_SYMLINK_CANDIDATE_TARGET=
 APP_SYMLINK_ACTIVATED=false
 APP_SYMLINK_COMMITTED=false
+CREDENTIAL_TTY_AVAILABLE=false
+TEMPORARY_PASSWORD_GENERATED=false
+INITIAL_CREDENTIALS_PENDING_FILE="$DEVFLOW_STATE_ROOT/initial-credentials-pending"
 
 usage() {
   cat <<'EOF'
@@ -619,10 +622,33 @@ obtain_certificate() {
   printf 'certificate_reused=false\ncertificate_issued=true\n'
 }
 
+ensure_temporary_admin_password() {
+  local password_file="$DEVFLOW_CONFIG_ROOT/super-admin-temporary-password"
+  local temporary
+  if [[ ! -e "$password_file" && ! -L "$password_file" ]]; then
+    temporary="$(mktemp "$DEVFLOW_CONFIG_ROOT/.super-admin-password.XXXXXX")"
+    printf 'Aa1!%s\n' "$(openssl rand -base64 36 | tr -d '\n')" > "$temporary"
+    chown root:root "$temporary"; chmod 0600 "$temporary"
+    mv -f -- "$temporary" "$password_file"
+    TEMPORARY_PASSWORD_GENERATED=true
+  fi
+  [[ -f "$password_file" && ! -L "$password_file" \
+    && "$(stat -c '%u:%g %a' "$password_file")" == '0:0 600' ]] \
+    || die 'O arquivo da senha temporaria nao atende root:root 0600.'
+}
+
 bootstrap_super_admin() {
   local password_file="$DEVFLOW_CONFIG_ROOT/super-admin-temporary-password"
-  local payload_file container_payload=/tmp/devflow-bootstrap-admin.json password token
-  if [[ ! -e "$password_file" ]]; then printf 'Aa1!%s\n' "$(openssl rand -base64 36 | tr -d '\n')" > "$password_file"; chmod 0600 "$password_file"; fi
+  local payload_file container_payload=/tmp/devflow-bootstrap-admin.json password token required
+  required="$(docker exec devflow-backend node -e \
+    "fetch('http://127.0.0.1:3000/api/auth/bootstrap/status').then(r=>r.json()).then(v=>process.stdout.write(String(v.required))).catch(()=>process.exit(1))")"
+  [[ "$required" == true || "$required" == false ]] || die 'A API nao confirmou o estado do Super Admin.'
+  if [[ "$required" == false ]]; then
+    printf '%s\n' 'super_admin_created=false' 'temporary_password_regenerated=false'
+    return 0
+  fi
+  ensure_temporary_admin_password
+  install -o root -g root -m 0600 /dev/null "$INITIAL_CREDENTIALS_PENDING_FILE"
   password="$(tr -d '\r\n' < "$password_file")"; token="$(tr -d '\r\n' < "$DEVFLOW_CONFIG_ROOT/bootstrap-token")"
   payload_file="$(mktemp "$DEVFLOW_CONFIG_ROOT/.bootstrap-admin.XXXXXX.json")"
   printf '{"name":"Super Administrador","email":"%s","password":"%s","company_name":"DevFlow","bootstrap_token":"%s"}\n' \
@@ -639,6 +665,27 @@ bootstrap_super_admin() {
     die 'A API recusou o bootstrap idempotente do Super Administrador.'
   fi
   docker exec -u 0 devflow-backend rm -f -- "$container_payload"
+  printf 'super_admin_created=true\ntemporary_password_generated=%s\n' "$TEMPORARY_PASSWORD_GENERATED"
+}
+
+show_initial_credentials() {
+  local password_file="$DEVFLOW_CONFIG_ROOT/super-admin-temporary-password" password
+  [[ -f "$INITIAL_CREDENTIALS_PENDING_FILE" && ! -L "$INITIAL_CREDENTIALS_PENDING_FILE" ]] || return 0
+  if [[ "$CREDENTIAL_TTY_AVAILABLE" == true ]]; then
+    password="$(tr -d '\r\n' < "$password_file")"
+    printf '%s\n' \
+      '============================================================' \
+      ' CREDENCIAIS INICIAIS DO DEVFLOW' \
+      '============================================================' \
+      '' 'Super Administrador:' "  $ADMIN_EMAIL" '' 'Senha temporaria:' "  $password" '' \
+      'Troque a senha no primeiro acesso.' \
+      'A configuracao de MFA e opcional por padrao.' '' \
+      'Arquivo protegido:' "  $password_file" >&3
+    password=
+  else
+    printf 'initial_credentials_displayed=false\ninitial_credentials_path=%s\n' "$password_file"
+  fi
+  rm -f -- "$INITIAL_CREDENTIALS_PENDING_FILE"
 }
 
 install_systemd_units() {
@@ -696,6 +743,7 @@ install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONF
   "$DEVFLOW_INSTALL_ROOT/storage/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_INSTALL_ROOT/updater" \
   /run/lock/devflow
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
+if [[ -t 1 && -w /dev/tty ]]; then exec 3>/dev/tty; CREDENTIAL_TTY_AVAILABLE=true; fi
 touch "$INSTALL_LOG"; chmod 0640 "$INSTALL_LOG"; exec > >(redact_stream | tee -a "$INSTALL_LOG") 2>&1
 
 prepare_source
@@ -784,19 +832,30 @@ set_managed_env_value DEVFLOW_VERSION "$DEVFLOW_RELEASE_VERSION"; set_managed_en
 validate_active_app_symlink || die 'O symlink app definitivo nao foi confirmado no health final.'
 rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
 DEVFLOW_APP_ROOT="$DEVFLOW_INSTALL_ROOT/app"; DEVFLOW_INSTALLED_SOURCE_DIR="$DEVFLOW_INSTALL_ROOT/source"; DEVFLOW_IDENTITY_RELEASE_ROOT="$RELEASE_DIR"; DEVFLOW_VERSION="$DEVFLOW_RELEASE_VERSION"
-export DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR DEVFLOW_IDENTITY_RELEASE_ROOT DEVFLOW_VERSION DEVFLOW_MIGRATION_VERSION
+DEVFLOW_INSTALLATION_STATE_VALIDATOR="$DEVFLOW_INSTALL_ROOT/app/scripts/validate-installation-state.py"
+export DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR DEVFLOW_IDENTITY_RELEASE_ROOT DEVFLOW_VERSION DEVFLOW_MIGRATION_VERSION DEVFLOW_INSTALLATION_STATE_VALIDATOR
 resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null
 DEVFLOW_APPLICATION_INSTALLED=true; DEVFLOW_APPLICATION_HEALTHY=true; DEVFLOW_CERTIFICATE_ISSUED=true
 export DEVFLOW_APPLICATION_INSTALLED DEVFLOW_APPLICATION_HEALTHY DEVFLOW_CERTIFICATE_ISSUED
 install_systemd_units
 write_installation_state
-installation_state_schema_valid "$DEVFLOW_STATE_ROOT/installation.json" || die 'installation.json nao foi confirmado antes de liberar o updater.'
+if ! installation_state_schema_valid "$DEVFLOW_STATE_ROOT/installation.json"; then
+  diagnose_installation_state "$DEVFLOW_STATE_ROOT/installation.json" || true
+  die 'installation.json nao foi confirmado pelo codigo instalado.'
+fi
+load_installation_state "$DEVFLOW_STATE_ROOT/installation.json" || die 'installation.json nao pode ser recarregado pelo codigo instalado.'
+health_output=; health_status=0
+health_output="$("$DEVFLOW_INSTALL_ROOT/app/scripts/health.sh" --quiet)" || health_status=$?
+printf '%s\n' "$health_output"
+[[ "$health_status" -eq 0 && "$health_output" == *'overall_health=healthy'* ]] \
+  || die 'O health instalado em novo processo recusou o estado final.'
 validate_active_app_symlink || die 'O symlink app divergiu antes de liberar o updater.'
 rm -f -- "$INSTALLATION_GATE_FILE"
 [[ ! -e "$INSTALLATION_GATE_FILE" ]] || die 'O marcador de instalacao nao pode ser removido.'
 commit_app_symlink
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 trap - ERR EXIT INT TERM
+show_initial_credentials
 
 cat <<EOF
 DevFlow instalado com sucesso.
@@ -804,12 +863,5 @@ mode=$MODE
 URL: https://$DEVFLOW_DOMAIN
 Super Administrador: $ADMIN_EMAIL
 Senha temporaria protegida: $DEVFLOW_CONFIG_ROOT/super-admin-temporary-password
-certificate_valid=true
-db_healthy=true
-backend_healthy=true
-frontend_healthy=true
-nginx_healthy=true
-external_https_status=healthy
-overall_health=healthy
 O DevFlow permanece em homologacao e nao esta aprovado para producao.
 EOF

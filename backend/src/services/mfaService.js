@@ -100,10 +100,6 @@ async function confirmSetup(userId, code) {
        WHERE user_id = $1`,
       [userId]
     );
-    await client.query(
-      'UPDATE users SET must_configure_mfa=FALSE,updated_at=CURRENT_TIMESTAMP WHERE id=$1',
-      [userId]
-    );
     await client.query('COMMIT');
     return recoveryCodes;
   } catch (error) {
@@ -112,6 +108,19 @@ async function confirmSetup(userId, code) {
   } finally {
     client.release();
   }
+}
+
+async function disable(userId) {
+  await db.transaction(async (client) => {
+    await client.query('DELETE FROM user_mfa_recovery_codes WHERE user_id=$1', [userId]);
+    await client.query(
+      `UPDATE user_mfa_settings
+       SET encrypted_secret=NULL,pending_encrypted_secret=NULL,enabled=FALSE,
+           confirmed_at=NULL,updated_at=CURRENT_TIMESTAMP
+       WHERE user_id=$1`,
+      [userId]
+    );
+  });
 }
 
 async function verifyFactor(userId, code, recoveryCode) {
@@ -152,5 +161,6 @@ module.exports = {
   getSettings,
   startSetup,
   confirmSetup,
-  verifyFactor
+  verifyFactor,
+  disable
 };

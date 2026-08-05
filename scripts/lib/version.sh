@@ -170,9 +170,11 @@ devflow_validate_checkout_version_consistency() {
     docker-compose.maintenance.yml README.md CHANGELOG.md docs/implementation-status.md \
     docs/infrastructure/vps-installation.md docs/roadmap.md docs/traceability.md \
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
-    scripts/uninstall.sh scripts/diagnose.sh scripts/renew-certificate.sh scripts/updater-daemon.sh \
+    scripts/uninstall.sh scripts/diagnose.sh scripts/repair-installation-state.sh \
+    scripts/renew-certificate.sh scripts/updater-daemon.sh \
     scripts/validate-updater-request.mjs scripts/validate-shell-syntax.mjs \
     scripts/validate-bootstrap-interface.mjs scripts/validate-updater-installation-lifecycle.mjs \
+    scripts/validate-auth-state-recovery.mjs \
     scripts/resolve-compose-image.py \
     scripts/validate-isolated-architecture.mjs scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \
@@ -201,9 +203,10 @@ devflow_validate_git_tree_version_consistency() {
     CHANGELOG.md docs/implementation-status.md docs/infrastructure/vps-installation.md \
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
     scripts/version.sh scripts/health.sh scripts/uninstall.sh scripts/diagnose.sh \
+    scripts/repair-installation-state.sh \
     scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/validate-updater-request.mjs \
     scripts/validate-shell-syntax.mjs scripts/validate-bootstrap-interface.mjs \
-    scripts/validate-updater-installation-lifecycle.mjs \
+    scripts/validate-updater-installation-lifecycle.mjs scripts/validate-auth-state-recovery.mjs \
     scripts/resolve-compose-image.py scripts/validate-isolated-architecture.mjs \
     scripts/audit-compose-command.mjs \
     scripts/validate-installation-state.py scripts/validate-installation-state.mjs \

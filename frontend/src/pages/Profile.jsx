@@ -92,7 +92,7 @@ export default function Profile() {
           Esta conta usa uma senha temporária. A troca é obrigatória antes de acessar as demais áreas.
         </div>
       )}
-      {user.must_configure_mfa && !user.must_change_password && (
+      {user.mfa_setup_required && !user.must_change_password && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           A configuração do MFA é obrigatória para liberar as demais áreas do DevFlow.
         </div>

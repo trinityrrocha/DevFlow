@@ -1,6 +1,7 @@
 const { SESSION_COOKIE, validateSession } = require('../services/sessionService');
 const { AppError } = require('../utils/errors');
 const { hasPermission } = require('../services/tenantService');
+const { requiresMfaSetup } = require('../services/mfaPolicyService');
 
 async function requireAuth(req, _res, next) {
   try {
@@ -14,7 +15,8 @@ async function requireAuth(req, _res, next) {
       email: session.email,
       is_super_admin: session.is_super_admin,
       must_change_password: session.must_change_password,
-      must_configure_mfa: session.must_configure_mfa,
+      mfa_enabled: session.mfa_enabled === true,
+      mfa_enforcement_mode: session.mfa_enforcement_mode || 'optional',
       token_version: session.token_version,
       company_id: session.company_id,
       company_name: session.company_name,
@@ -25,6 +27,7 @@ async function requireAuth(req, _res, next) {
       permissions: session.permissions || [],
       access_level: session.is_super_admin || session.roles?.includes('ADMIN') ? 'ADMIN' : 'USER'
     };
+    req.user.mfa_setup_required = requiresMfaSetup(req.user, req.user.mfa_enforcement_mode);
     const passwordChangeAllowed = new Set([
       '/api/auth/me',
       '/api/auth/csrf',
@@ -47,7 +50,7 @@ async function requireAuth(req, _res, next) {
       '/api/auth/mfa/setup/confirm',
       '/api/users/profile/password'
     ]);
-    if (req.user.must_configure_mfa && !req.user.must_change_password
+    if (req.user.mfa_setup_required && !req.user.must_change_password
       && !mfaSetupAllowed.has(req.originalUrl.split('?')[0])) {
       throw new AppError(
         'MFA_SETUP_REQUIRED',

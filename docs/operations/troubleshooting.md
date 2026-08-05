@@ -24,6 +24,28 @@ sudo /opt/devflow/app/scripts/diagnose.sh --output /opt/devflow/logs/diagnostic.
 
 O relatorio e sanitizado e nao inclui ambiente privado, tokens, chaves, dados pessoais ou anexos.
 
+## Estado instalado schema v3 invalido
+
+Use uma copia limpa e atual do repositorio para diagnosticar o estado, sem reinstalar:
+
+```bash
+cd /tmp/DevFlow
+sudo ./scripts/repair-installation-state.sh --check
+```
+
+Se o diagnostico confirmar release, commit, containers, certificado, migration, Super Admin e credencial preservados, repare somente o JSON:
+
+```bash
+sudo ./scripts/repair-installation-state.sh --repair
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+O reparador cria um backup `installation.json.backup-<UTC>`, nao executa build/migration e nao altera banco, certificado, Super Admin ou senha. Nao use o reparador se qualquer pre-condicao material falhar.
+
+## MFA e CSRF
+
+MFA e opcional por padrao; a troca da senha temporaria continua obrigatoria. Um usuario que ja habilitou MFA continua informando o segundo fator no login. Se a API responder `CSRF_INVALID`, o cliente renova o token e repete somente uma vez. `FORBIDDEN`, `MFA_POLICY_FORBIDDEN` e falhas de sessao nao acionam esse retry.
+
 ## Update falhou
 
 Consulte o ultimo `update-report.txt` e log sanitizado. O motor tenta restaurar backup, release, containers e Nginx isolado. Nao remova a release ou backup anterior antes da analise.

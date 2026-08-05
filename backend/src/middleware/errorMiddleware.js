@@ -40,8 +40,10 @@ async function errorHandler(error, req, res, _next) {
       });
     }
     return res.status(error.status).json({
-      code: error.code,
-      error: error.message,
+      error: {
+        code: error.code,
+        message: error.code === 'CSRF_INVALID' ? 'Token CSRF inv\u00e1lido.' : error.message
+      },
       ...(error.details ? { details: error.details } : {})
     });
   }

@@ -60,12 +60,16 @@ async function validateSession(token) {
             s.token_version AS session_version,
             s.expires_at, s.idle_expires_at, s.last_seen_at,
             u.name,u.email,u.is_super_admin,u.is_active,
-            u.must_change_password,u.must_configure_mfa,u.token_version
+            u.must_change_password,u.token_version,
+            COALESCE(mfa.enabled,FALSE) AS mfa_enabled,
+            COALESCE(policy.enforcement_mode,'optional') AS mfa_enforcement_mode
      FROM user_sessions s
      JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
      JOIN company_memberships m ON m.id=s.membership_id AND m.company_id=s.company_id
        AND m.user_id=s.user_id AND m.is_active=TRUE
      JOIN companies c ON c.id=s.company_id AND c.is_active=TRUE AND c.deleted_at IS NULL
+     LEFT JOIN user_mfa_settings mfa ON mfa.user_id=u.id
+     LEFT JOIN mfa_policy_settings policy ON policy.singleton=TRUE
      WHERE s.id = $1 AND s.user_id = $2 AND s.token_hash = $3 AND s.revoked_at IS NULL
        AND s.company_id=$4 AND s.membership_id=$5`,
     [decoded.sid, decoded.sub, tokenHash(token), decoded.cid, decoded.mid]

@@ -26,11 +26,11 @@ export default function DashboardLayout({ children }) {
   };
 
   useEffect(() => {
-    if (user.must_change_password || user.must_configure_mfa) return undefined;
+    if (user.must_change_password || user.mfa_setup_required) return undefined;
     refreshNotifications();
     const timer = window.setInterval(refreshNotifications, 15000);
     return () => window.clearInterval(timer);
-  }, [user.must_change_password, user.must_configure_mfa]);
+  }, [user.must_change_password, user.mfa_setup_required]);
 
   useEffect(() => {
     const close = (event) => {
@@ -125,7 +125,7 @@ export default function DashboardLayout({ children }) {
             ) : <p className="text-sm text-slate-500">{user.company_name || 'Gestão do ciclo de desenvolvimento'}</p>}
           </div>
           <div className="flex items-center gap-2">
-            {!user.must_change_password && !user.must_configure_mfa && <div className="relative" ref={notificationRef}>
+            {!user.must_change_password && !user.mfa_setup_required && <div className="relative" ref={notificationRef}>
               <button onClick={openNotifications} className="relative rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Notificações">
                 <Bell className="h-5 w-5" />
                 {notifications.unread_count > 0 && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />}
@@ -147,14 +147,14 @@ export default function DashboardLayout({ children }) {
                 </div>
               )}
             </div>}
-            {!user.must_change_password && !user.must_configure_mfa && <button onClick={() => setNewTaskOpen(true)} className="btn-primary">
+            {!user.must_change_password && !user.mfa_setup_required && <button onClick={() => setNewTaskOpen(true)} className="btn-primary">
               <Plus className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Nova Tarefa</span>
             </button>}
           </div>
         </header>
 
         <main className="flex-1 p-4 md:p-8">
-          {(user.must_change_password || user.must_configure_mfa) && location.pathname !== '/profile' ? (
+          {(user.must_change_password || user.mfa_setup_required) && location.pathname !== '/profile' ? (
             <div className="mx-auto max-w-2xl rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
               Conclua os requisitos de segurança em <Link to="/profile" className="font-semibold underline">Meu perfil</Link> para liberar o sistema.
             </div>

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.4-alpha] - 2026-08-05
+
+### Corrigido
+
+- a politica persistente de MFA passa a usar `optional` por padrao, com opcoes `admins` e `all` controladas exclusivamente pelo Super Admin e auditadas;
+- a troca obrigatoria da senha temporaria permanece independente da configuracao voluntaria de MFA;
+- tokens CSRF sao vinculados a sessao, enviados pelo cliente HTTP central em operacoes mutaveis e renovados com no maximo uma repeticao para `CSRF_INVALID`;
+- a rota de setup de MFA deixa de ser confundida com a rota isenta de verificacao do segundo fator;
+- a leitura shell do `schemaVersion` numerico foi corrigida e o instalador agora valida/recarrega o estado com o codigo instalado antes de executar um novo processo de health;
+- a senha inicial e exibida uma unica vez no TTY original, somente depois do health aprovado, sem passar pelo log;
+- `repair-installation-state.sh` permite diagnosticar ou reparar apenas o estado schema v3 de uma instalacao existente, preservando dados, identidade, certificado e credencial.
+
+### Validacao local
+
+- 40 cenarios obrigatorios cobrem MFA, CSRF, estado instalado, reparo e credencial inicial;
+- testes unitarios exercitam a politica de MFA e o contrato CSRF vinculado a sessao;
+- VPS, Docker, Certbot, systemd, navegador e aplicativo autenticador reais permanecem pendentes de homologacao pelo usuario.
+
 ## [0.5.3-alpha] - 2026-08-04
 
 ### Corrigido

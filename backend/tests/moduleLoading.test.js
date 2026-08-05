@@ -6,6 +6,7 @@ describe('carregamento estrutural do backend', () => {
       'auditService',
       'catalogService',
       'dashboardService',
+      'mfaPolicyService',
       'mfaService',
       'notificationService',
       'sessionService',

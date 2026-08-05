@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.5.3-alpha`. Nao aprovada para producao.
+Versao `0.5.4-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 
@@ -50,4 +50,30 @@ docker logs --tail 100 devflow-updater
 sudo stat /opt/devflow/app /opt/devflow/config/super-admin-temporary-password
 ```
 
-Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a retomada do estado parcial para `0.5.3-alpha` dependem da execucao manual na VPS.
+Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a recuperacao operacional para `0.5.4-alpha` dependem da execucao manual na VPS.
+
+## Recuperacao manual do estado da instalacao 0.5.3-alpha
+
+O procedimento abaixo deve ser executado pelo operador; ele nao foi executado nesta estacao. Nao substitua por `curl | bash`.
+
+```bash
+cd /tmp
+git clone https://github.com/trinityrrocha/DevFlow.git DevFlow-repair
+cd DevFlow-repair
+git switch main
+git pull --ff-only origin main
+sudo ./scripts/repair-installation-state.sh --check
+sudo ./scripts/repair-installation-state.sh --repair
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+Depois do reparo, a atualizacao continua pertencendo exclusivamente ao motor transacional:
+
+```bash
+sudo ./scripts/update.sh --check
+sudo ./scripts/update.sh
+sudo /opt/devflow/app/scripts/version.sh
+sudo /opt/devflow/app/scripts/health.sh
+```
+
+Revise a saida de `--check` antes de usar `--repair`. O script falha fechado se a release, o commit, qualquer container, certificado, migration, Super Admin ou arquivo de senha nao puder ser confirmado.

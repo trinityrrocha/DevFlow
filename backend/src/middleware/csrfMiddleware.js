@@ -12,11 +12,12 @@ function safeEqual(left, right) {
 }
 
 function csrfProtection(req, _res, next) {
-  if (safeMethods.has(req.method) || exemptPaths.has(req.path) || !req.cookies?.devflow_session) return next();
+  const sessionToken = req.cookies?.devflow_session;
+  if (safeMethods.has(req.method) || exemptPaths.has(req.path) || !sessionToken) return next();
   const cookie = req.cookies?.[CSRF_COOKIE];
   const header = req.get(CSRF_HEADER);
-  if (cookie && header && safeEqual(cookie, header) && verifyToken(cookie)) return next();
+  if (cookie && header && safeEqual(cookie, header) && verifyToken(cookie, sessionToken)) return next();
   return next(new AppError('CSRF_INVALID', 'Token CSRF inválido. Recarregue a página.', 403));
 }
 
-module.exports = { csrfProtection };
+module.exports = { exemptPaths, safeMethods, csrfProtection };

@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.5.3-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
+Versao atual: **0.5.4-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
 
 ## Instalacao
 
@@ -18,7 +18,9 @@ sudo ./install.sh
 
 Sem argumentos, o bootstrap seleciona a instalacao interativa, solicita dominio e e-mail, executa o preflight e exige duas confirmacoes numericas antes de alterar o host. Para automacao, continuam disponiveis `--check`, `--dry-run`, `--install` e `--resume`.
 
-O instalador exige confirmacoes numericas; o bootstrap transforma a chamada publica sem argumentos em `--install` explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. A senha temporaria fica em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs.
+O instalador exige confirmacoes numericas; o bootstrap transforma a chamada publica sem argumentos em `--install` explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. Depois do health final, a senha temporaria e exibida uma unica vez no TTY original e permanece em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs. Sem TTY, somente esse caminho e informado.
+
+MFA e recomendado, mas opcional por padrao. Quem o habilita continua obrigado a informar o segundo fator no login. O Super Admin pode alterar a politica persistente em **Cadastros e configuracao > Politica de autenticacao multifator** para `optional`, `admins` ou `all`; a mudanca e protegida por CSRF, auditada e nao desabilita fatores ja cadastrados.
 
 Para uma tentativa parcial, inspecione primeiro o estado e retome:
 
@@ -46,6 +48,7 @@ sudo ./install.sh --resume --firewall-confirmed
 ```bash
 sudo /opt/devflow/app/scripts/version.sh
 sudo /opt/devflow/app/scripts/health.sh
+sudo /opt/devflow/app/scripts/repair-installation-state.sh --check
 sudo /opt/devflow/app/scripts/diagnose.sh --output /opt/devflow/logs/diagnostic.txt
 sudo /opt/devflow/app/scripts/backup.sh
 sudo /opt/devflow/app/scripts/update.sh --check
@@ -55,6 +58,8 @@ sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 ```
 
 `update.sh` continua sendo o unico motor de atualizacao: valida `origin/main`, exibe versoes e changelog, confirma a operacao no terminal ou valida um pedido HMAC da fila privada, cria e verifica backup, ativa manutencao, aplica migrations, valida health e executa rollback automatico em falha. O instalador nao possui modo de update.
+
+Para uma instalacao `0.5.3-alpha` cujo unico erro seja o estado schema v3, obtenha uma copia limpa da `main` e execute primeiro `sudo scripts/repair-installation-state.sh --check`. Use `--repair` somente depois de revisar o diagnostico. O reparador nao instala, nao constroi imagens, nao executa migrations e nao altera banco, Super Admin, senha ou certificado.
 
 ## Documentacao
 

@@ -19,7 +19,8 @@ async function recordAudit({
   previousValues,
   newValues,
   status = 'SUCCESS',
-  queryable = db
+  queryable = db,
+  strict = false
 }) {
   try {
     await queryable.query(
@@ -43,6 +44,7 @@ async function recordAudit({
       ]
     );
   } catch (error) {
+    if (strict) throw error;
     safeLogError('Falha ao registrar auditoria.', error);
   }
 }

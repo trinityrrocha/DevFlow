@@ -7,6 +7,12 @@ const { AppError, assert } = require('../utils/errors');
 const { createSession, revokeSession, SESSION_COOKIE, cookieOptions } = require('../services/sessionService');
 const { issueCsrf, csrfCookieOptions, CSRF_COOKIE } = require('../services/csrfService');
 const mfaService = require('../services/mfaService');
+const {
+  getMfaPolicy,
+  updateMfaPolicy,
+  isMfaRequiredForUser,
+  requiresMfaSetup
+} = require('../services/mfaPolicyService');
 const { recordAudit } = require('../services/auditService');
 const {
   bootstrapCompany,
@@ -42,7 +48,9 @@ const serializeUser = (user) => ({
   email: user.email,
   is_super_admin: user.is_super_admin === true,
   must_change_password: user.must_change_password === true,
-  must_configure_mfa: user.must_configure_mfa === true,
+  mfa_enabled: user.mfa_enabled === true,
+  mfa_enforcement_mode: user.mfa_enforcement_mode || 'optional',
+  mfa_setup_required: user.mfa_setup_required === true,
   company_id: user.company_id,
   company_name: user.company_name,
   company_slug: user.company_slug,
@@ -53,6 +61,18 @@ const serializeUser = (user) => ({
   access_level: user.is_super_admin || user.roles?.includes('ADMIN') ? 'ADMIN' : 'USER'
 });
 
+async function loadAuthSecurityContext(user) {
+  const mfa = await mfaService.getSettings(user.id);
+  const policy = await getMfaPolicy();
+  const authUser = {
+    ...user,
+    mfa_enabled: mfa?.enabled === true,
+    mfa_enforcement_mode: policy.enforcement_mode
+  };
+  authUser.mfa_setup_required = requiresMfaSetup(authUser, policy.enforcement_mode);
+  return authUser;
+}
+
 async function loadLoginUser(email) {
   return (await db.query(
     `SELECT u.* FROM users u
@@ -62,13 +82,14 @@ async function loadLoginUser(email) {
 }
 
 async function completeLogin(req, res, user) {
-  const token = await createSession(req, user);
+  const authUser = await loadAuthSecurityContext(user);
+  const token = await createSession(req, authUser);
   res.cookie(SESSION_COOKIE, token, cookieOptions());
-  issueCsrf(res);
-  req.user = serializeUser(user);
+  issueCsrf(res, token);
+  req.user = serializeUser(authUser);
   await recordAudit({ req, operation: 'LOGIN', entityType: 'USER', entityId: user.id });
   return res.status(200).json({
-    user: serializeUser(user),
+    user: serializeUser(authUser),
     companies: await listUserCompanies(user.id)
   });
 }
@@ -97,8 +118,8 @@ async function bootstrap(req, res) {
     const existing = await client.query('SELECT 1 FROM users WHERE is_super_admin = TRUE AND deleted_at IS NULL');
     assert(!existing.rowCount, 'BOOTSTRAP_COMPLETED', 'A configuração inicial já foi concluída.', 409);
     const inserted = await client.query(
-      `INSERT INTO users (name,email,password_hash,is_super_admin,must_change_password)
-       VALUES ($1,$2,$3,TRUE,TRUE)
+      `INSERT INTO users (name,email,password_hash,is_super_admin,must_change_password,must_configure_mfa)
+       VALUES ($1,$2,$3,TRUE,TRUE,FALSE)
        RETURNING *`,
       [payload.name, payload.email, await argon2.hash(payload.password, { type: argon2.argon2id })]
     );
@@ -168,10 +189,10 @@ async function switchCompany(req, res) {
   )).rows[0];
   assert(user, 'USER_NOT_FOUND', 'Usuário não encontrado.', 404);
   await revokeSession(req.cookies?.[SESSION_COOKIE], 'company_switched');
-  const context = { ...user, ...membership };
+  const context = await loadAuthSecurityContext({ ...user, ...membership });
   const token = await createSession(req, context);
   res.cookie(SESSION_COOKIE, token, cookieOptions());
-  issueCsrf(res);
+  issueCsrf(res, token);
   req.user = serializeUser(context);
   await recordAudit({
     req,
@@ -185,8 +206,8 @@ async function switchCompany(req, res) {
   });
 }
 
-async function csrf(_req, res) {
-  issueCsrf(res);
+async function csrf(req, res) {
+  issueCsrf(res, req.cookies?.[SESSION_COOKIE]);
   res.json({ message: 'Token CSRF renovado.' });
 }
 
@@ -204,7 +225,12 @@ async function mfaStatus(req, res) {
     'SELECT COUNT(*)::integer AS total FROM user_mfa_recovery_codes WHERE user_id = $1 AND used_at IS NULL',
     [req.user.id]
   );
-  res.json({ enabled: settings?.enabled === true, recovery_codes_remaining: count.rows[0].total });
+  res.json({
+    enabled: settings?.enabled === true,
+    recovery_codes_remaining: count.rows[0].total,
+    enforcement_mode: req.user.mfa_enforcement_mode,
+    setup_required: req.user.mfa_setup_required === true
+  });
 }
 
 async function startMfa(req, res) {
@@ -220,6 +246,51 @@ async function confirmMfa(req, res) {
   res.json({ enabled: true, recovery_codes: recoveryCodes });
 }
 
+async function disableMfa(req, res) {
+  assert(
+    !isMfaRequiredForUser(req.user, req.user.mfa_enforcement_mode),
+    'MFA_POLICY_FORBIDDEN',
+    'A politica atual exige MFA para esta conta.',
+    403
+  );
+  const payload = z.object({
+    current_password: z.string().min(1).max(1024),
+    code: z.string().optional(),
+    recovery_code: z.string().optional()
+  }).parse(req.body);
+  const user = await loadLoginUser(req.user.email);
+  assert(
+    user && await argon2.verify(user.password_hash, payload.current_password).catch(() => false),
+    'CURRENT_PASSWORD_INVALID',
+    'A senha atual esta incorreta.',
+    400
+  );
+  assert(
+    await mfaService.verifyFactor(user.id, payload.code, payload.recovery_code),
+    'MFA_CODE_INVALID',
+    'Codigo MFA invalido.',
+    400
+  );
+  await mfaService.disable(user.id);
+  await recordAudit({ req, operation: 'MFA_DISABLED', entityType: 'USER', entityId: user.id });
+  res.json({ enabled: false });
+}
+
+async function mfaPolicy(_req, res) {
+  res.json(await getMfaPolicy());
+}
+
+async function setMfaPolicy(req, res) {
+  const { enforcement_mode: enforcementMode } = z.object({
+    enforcement_mode: z.enum(['optional', 'admins', 'all'])
+  }).parse(req.body);
+  const updated = await updateMfaPolicy(req, enforcementMode);
+  res.json({
+    ...updated,
+    message: 'Politica de autenticacao multifator atualizada. MFA ja configurado permanece ativo.'
+  });
+}
+
 module.exports = {
   passwordSchema,
   bootstrapStatus,
@@ -232,5 +303,8 @@ module.exports = {
   logout,
   mfaStatus,
   startMfa,
-  confirmMfa
+  confirmMfa,
+  disableMfa,
+  mfaPolicy,
+  setMfaPolicy
 };

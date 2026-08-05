@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.5.3-alpha`
+## Instalacao isolada `0.5.4-alpha`
 
 | Requisito | Evidencia |
 |---|---|
@@ -13,11 +13,15 @@
 | Retomada | `recalculate_resume_stage` e transacao schema 3 |
 | Symlink ativo | `activate_candidate_app_symlink`, rollback e commit atomicos antes do updater |
 | Gate da fila | `state/installation-in-progress` e `updater_processing_blocked` |
-| Administrador | bootstrap interno, senha `root:root 0600`, MFA obrigatorio |
+| Administrador | bootstrap interno, senha `root:root 0600`, troca obrigatoria e MFA opcional por padrao |
+| Politica MFA | registro persistente `optional`/`admins`/`all`, API Super Admin e auditoria estrita |
+| CSRF | cookie/header central, vinculo com sessao, comparacao constante e um retry exclusivo de `CSRF_INVALID` |
+| Estado final | schema v3, parser numerico corrigido, validador e health instalados em novo processo |
+| Reparo de estado | `repair-installation-state.sh --check|--repair`, sem build/migration/mutacao material |
 | Renovacao | `renew-certificate.sh` e timer systemd |
 | Update | pedido HMAC -> updater -> somente `update.sh` |
 | Rollback | backup autenticado, manutencao, restore e health |
 | Desinstalacao | recursos DevFlow e certificado nomeado, sem prune global |
-| Testes | 30 cenarios de alinhamento e 24 cenarios do ciclo de instalacao/updater |
+| Testes | suites existentes e 40 cenarios adicionais de MFA, CSRF, estado e credencial |
 
 O Full Password permaneceu referencia somente leitura no commit `804008b5df5d0931ec5d95227fed44086f430d76`.

@@ -71,7 +71,7 @@ check('20 failed installation preserves containers', transaction.includes('"cont
   && install.includes('Containers existentes foram preservados'));
 check('21 admin uses one authority and protected temporary password', install.includes('ADMIN_EMAIL=$ADMIN_EMAIL_INPUT')
   && install.includes('SUPER_ADMIN_EMAIL=$ADMIN_EMAIL_INPUT') && install.includes('LETSENCRYPT_EMAIL=$ADMIN_EMAIL_INPUT')
-  && install.includes('super-admin-temporary-password') && install.includes('chmod 0600 "$password_file"'));
+  && install.includes('super-admin-temporary-password') && install.includes("== '0:0 600'"));
 check('22 renewal runs host Certbot and reloads only DevFlow Nginx', renewal.includes('renew --cert-name "$DEVFLOW_DOMAIN"')
   && renewal.includes('docker exec devflow-nginx nginx -s reload'));
 check('23 renewal dry-run is explicit and never automatic', renewal.includes('--dry-run')

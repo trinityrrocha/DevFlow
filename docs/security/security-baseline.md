@@ -15,7 +15,15 @@ O DevFlow controla somente recursos prefixados ou armazenados em seu namespace: 
 
 ## Segredos
 
-O ambiente privado, passphrase e token de bootstrap usam modo `0600`. Logs passam por sanitizacao. Segredos sao gerados com OpenSSL, nunca exibidos nem versionados.
+O ambiente privado, passphrase e token de bootstrap usam modo `0600`. Logs passam por sanitizacao. Segredos sao gerados com OpenSSL e nunca versionados. A senha temporaria do Super Admin e a unica excecao de exibicao: aparece uma vez, depois do health aprovado, diretamente no TTY preservado e nunca no fluxo capturado por `tee`. Sem TTY, apenas o caminho protegido e informado.
+
+## Autenticacao multifator
+
+A autoridade de obrigatoriedade e o backend, por meio de uma politica persistida no banco com os valores fechados `optional`, `admins` e `all`. Ausencia de registro resulta em `optional`. A troca obrigatoria da senha temporaria e independente do setup de MFA. Usuarios que voluntariamente habilitam MFA continuam sujeitos ao segundo fator no login, mesmo em modo opcional. Somente o Super Admin altera a politica; a operacao e transacional e a auditoria e obrigatoria.
+
+## CSRF
+
+O contrato usa o cookie `devflow_csrf` e o header `X-CSRF-Token`. O token possui aleatoriedade criptografica, assinatura HMAC vinculada ao hash da sessao, `Secure` em producao, `SameSite=Lax` e path `/`. O cliente HTTP central envia cookies e o token atual em `POST`, `PUT`, `PATCH` e `DELETE`. Login, bootstrap e verificacao do desafio MFA usam isencoes exatas; as rotas de setup, confirmacao, desativacao e politica permanecem protegidas. Somente `CSRF_INVALID` pode renovar o token e repetir uma requisicao, uma unica vez.
 
 ## TLS e proxy
 

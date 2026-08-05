@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, FolderKanban, Layers3, Loader2, Plus, RefreshCw, Trash2, Workflow } from 'lucide-react';
+import { Building2, FolderKanban, Layers3, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -40,6 +40,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [updateCapabilities, setUpdateCapabilities] = useState(null);
   const [updateQueued, setUpdateQueued] = useState(null);
+  const [mfaPolicy, setMfaPolicy] = useState(null);
+  const [selectedMfaPolicy, setSelectedMfaPolicy] = useState('optional');
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +69,10 @@ export default function Settings() {
       api.get('/operations/update/capabilities').then(({ data: capabilities }) => {
         setUpdateCapabilities(capabilities);
       }).catch(() => setUpdateCapabilities(null));
+      api.get('/auth/mfa/policy').then(({ data: policy }) => {
+        setMfaPolicy(policy);
+        setSelectedMfaPolicy(policy.enforcement_mode);
+      }).catch(() => setMfaPolicy(null));
     }
   }, [user?.is_super_admin]);
 
@@ -109,6 +115,33 @@ export default function Settings() {
               setUpdateQueued(queued);
             }, 'Pedido de atualizacao assinado e enfileirado.');
           }}><RefreshCw className="mr-2 h-4 w-4" />Solicitar atualizacao</button>
+        </div>
+      </Section>}
+
+      {user?.is_super_admin && mfaPolicy && <Section icon={ShieldCheck} title="Politica de autenticacao multifator">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <label className="text-sm font-medium text-slate-700">
+            Obrigatoriedade de MFA
+            <select
+              value={selectedMfaPolicy}
+              onChange={(event) => setSelectedMfaPolicy(event.target.value)}
+              className="field mt-1"
+            >
+              <option value="optional">Opcional para todos</option>
+              <option value="admins">Obrigatorio para administradores</option>
+              <option value="all">Obrigatorio para todos</option>
+            </select>
+            <span className="mt-2 block text-xs font-normal text-slate-500">
+              A alteracao afeta somente a obrigatoriedade. MFA ja configurado por usuarios permanece ativo.
+            </span>
+          </label>
+          <button type="button" disabled={saving || selectedMfaPolicy === mfaPolicy.enforcement_mode} className="btn-primary" onClick={() => {
+            if (!window.confirm('Confirmar a alteracao da politica global de MFA? Usuarios abrangidos precisarao configurar o segundo fator.')) return;
+            mutate(async () => {
+              const { data: updated } = await api.patch('/auth/mfa/policy', { enforcement_mode: selectedMfaPolicy });
+              setMfaPolicy(updated);
+            }, 'Politica de MFA atualizada.');
+          }}>Aplicar politica</button>
         </div>
       </Section>}
 

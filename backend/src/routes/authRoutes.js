@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const controller = require('../controllers/authController');
-const { requireAuth } = require('../middleware/authMiddleware');
+const { requireAuth, requireSuperAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 const authLimiter = rateLimit({
@@ -23,5 +23,8 @@ router.post('/logout', requireAuth, controller.logout);
 router.get('/mfa/status', requireAuth, controller.mfaStatus);
 router.post('/mfa/setup/start', requireAuth, controller.startMfa);
 router.post('/mfa/setup/confirm', requireAuth, controller.confirmMfa);
+router.post('/mfa/disable', requireAuth, controller.disableMfa);
+router.get('/mfa/policy', requireAuth, requireSuperAdmin, controller.mfaPolicy);
+router.patch('/mfa/policy', requireAuth, requireSuperAdmin, controller.setMfaPolicy);
 
 module.exports = router;

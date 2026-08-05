@@ -661,6 +661,20 @@ installation_state_schema_valid() {
   python3 "$validator" validate "$state_file" >/dev/null 2>&1
 }
 
+diagnose_installation_state() {
+  local state_file="${1:-$DEVFLOW_STATE_ROOT/installation.json}"
+  local validator="${DEVFLOW_INSTALLATION_STATE_VALIDATOR:-$DEVFLOW_SOURCE_ROOT/scripts/validate-installation-state.py}"
+  local diagnostic status=0
+  diagnostic="$(python3 "$validator" validate "$state_file" 2>&1)" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    printf '%s\n' 'installed_state_schema_valid=true'
+    return 0
+  fi
+  printf 'installed_state_schema_valid=false\ninstalled_state_diagnostic=%s\n' \
+    "$(printf '%s\n' "$diagnostic" | redact_stream | head -n1)"
+  return "$status"
+}
+
 write_installation_state() {
   local report="$DEVFLOW_STATE_ROOT/installation.json" validator
   resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
@@ -696,7 +710,7 @@ write_installation_state() {
 installation_state_value() {
   local key="$1" state_file="${2:-$DEVFLOW_STATE_ROOT/installation.json}"
   [[ "$key" =~ ^[A-Za-z][A-Za-z0-9_]*$ && -r "$state_file" ]] || return 1
-  sed -nE "s/^[[:space:]]*\"$key\"[[:space:]]*:[[:space:]]*(\"([^\"]*)\"|(true|false)|[0-9]+),?[[:space:]]*$/\\2\\3/p" "$state_file"
+  sed -nE "s/^[[:space:]]*\"$key\"[[:space:]]*:[[:space:]]*(\"([^\"]*)\"|(true|false)|([0-9]+)),?[[:space:]]*$/\\2\\3\\4/p" "$state_file"
 }
 
 prepare_installation_state_operational_values() {
