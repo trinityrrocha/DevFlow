@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.5.4-alpha`
+## Instalacao isolada `0.5.5-alpha`
 
 | Requisito | Evidencia |
 |---|---|
@@ -17,6 +17,7 @@
 | Politica MFA | registro persistente `optional`/`admins`/`all`, API Super Admin e auditoria estrita |
 | CSRF | cookie/header central, vinculo com sessao, comparacao constante e um retry exclusivo de `CSRF_INVALID` |
 | Estado final | schema v3, parser numerico corrigido, validador e health instalados em novo processo |
+| Saida final | logger drenado antes do bloco de credenciais; nenhum diagnostico posterior no terminal |
 | Reparo de estado | `repair-installation-state.sh --check|--repair`, sem build/migration/mutacao material |
 | Renovacao | `renew-certificate.sh` e timer systemd |
 | Update | pedido HMAC -> updater -> somente `update.sh` |

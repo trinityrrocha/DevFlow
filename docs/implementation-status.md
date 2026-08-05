@@ -1,10 +1,12 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-05. Versao: `0.5.4-alpha`.
+Data de corte: 2026-08-05. Versao: `0.5.5-alpha`.
 
 Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, confirmacoes numericas, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, fila HMAC e atualizacao/rollback pelo motor unico `update.sh`.
 
 Nesta versao, MFA e opcional por padrao e possui politica persistente `optional`/`admins`/`all`, API e controle de Super Admin auditado. O CSRF e vinculado a sessao e centralizado no cliente HTTP. A troca da senha inicial continua obrigatoria e separada do MFA.
+
+A conclusao interativa fecha e aguarda o pipeline sanitizado de log antes de escrever as credenciais no TTY original. Nenhum resumo ou diagnostico e enviado ao terminal depois do delimitador final; a informacao operacional continua no arquivo de instalacao.
 
 O bootstrap publico sem argumentos seleciona `--install`, preserva os modos explicitos, propaga falhas do instalador interno e diferencia conclusao, simulacao, verificacao, retomada e cancelamento.
 

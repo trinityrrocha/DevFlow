@@ -32,6 +32,7 @@ APP_SYMLINK_COMMITTED=false
 CREDENTIAL_TTY_AVAILABLE=false
 TEMPORARY_PASSWORD_GENERATED=false
 INITIAL_CREDENTIALS_PENDING_FILE="$DEVFLOW_STATE_ROOT/initial-credentials-pending"
+INSTALL_LOGGER_PID=
 
 usage() {
   cat <<'EOF'
@@ -675,17 +676,30 @@ show_initial_credentials() {
     password="$(tr -d '\r\n' < "$password_file")"
     printf '%s\n' \
       '============================================================' \
-      ' CREDENCIAIS INICIAIS DO DEVFLOW' \
+      'CREDENCIAIS INICIAIS DO DEVFLOW' \
       '============================================================' \
       '' 'Super Administrador:' "  $ADMIN_EMAIL" '' 'Senha temporaria:' "  $password" '' \
       'Troque a senha no primeiro acesso.' \
       'A configuracao de MFA e opcional por padrao.' '' \
-      'Arquivo protegido:' "  $password_file" >&3
+      '============================================================' >&3
     password=
   else
-    printf 'initial_credentials_displayed=false\ninitial_credentials_path=%s\n' "$password_file"
+    printf 'initial_credentials_displayed=false\ninitial_credentials_path=%s\n' "$password_file" >> "$INSTALL_LOG"
   fi
   rm -f -- "$INITIAL_CREDENTIALS_PENDING_FILE"
+}
+
+finish_installation_logging() {
+  exec 1>&- 2>&-
+  if [[ -n "$INSTALL_LOGGER_PID" ]]; then wait "$INSTALL_LOGGER_PID" || true; fi
+  cat >> "$INSTALL_LOG" <<EOF
+DevFlow instalado com sucesso.
+mode=$MODE
+URL: https://$DEVFLOW_DOMAIN
+Super Administrador: $ADMIN_EMAIL
+Senha temporaria protegida: $DEVFLOW_CONFIG_ROOT/super-admin-temporary-password
+O DevFlow permanece em homologacao e nao esta aprovado para producao.
+EOF
 }
 
 install_systemd_units() {
@@ -745,6 +759,7 @@ install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONF
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 if [[ -t 1 && -w /dev/tty ]]; then exec 3>/dev/tty; CREDENTIAL_TTY_AVAILABLE=true; fi
 touch "$INSTALL_LOG"; chmod 0640 "$INSTALL_LOG"; exec > >(redact_stream | tee -a "$INSTALL_LOG") 2>&1
+INSTALL_LOGGER_PID=$!
 
 prepare_source
 [[ -z "$EXPECTED_VERSION" || "$EXPECTED_VERSION" == "$DEVFLOW_RELEASE_VERSION" ]] || die 'Versao esperada divergente.'
@@ -855,13 +870,5 @@ rm -f -- "$INSTALLATION_GATE_FILE"
 commit_app_symlink
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 trap - ERR EXIT INT TERM
+finish_installation_logging
 show_initial_credentials
-
-cat <<EOF
-DevFlow instalado com sucesso.
-mode=$MODE
-URL: https://$DEVFLOW_DOMAIN
-Super Administrador: $ADMIN_EMAIL
-Senha temporaria protegida: $DEVFLOW_CONFIG_ROOT/super-admin-temporary-password
-O DevFlow permanece em homologacao e nao esta aprovado para producao.
-EOF

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.5-alpha] - 2026-08-05
+
+### Corrigido
+
+- a conclusao interativa agora drena o logger antes de exibir as credenciais iniciais no TTY original;
+- o bloco de credenciais passa a ser a ultima saida visivel e remove caminho protegido, resumo, health e diagnosticos internos;
+- informacoes operacionais continuam preservadas no log de instalacao, inclusive em execucao sem TTY.
+
+### Validacao local
+
+- os testes estruturais confirmam a ordem de drenagem, o delimitador final e a ausencia de saida posterior ao bloco;
+- a instalacao real na VPS permanece pendente de homologacao pelo usuario.
+
 ## [0.5.4-alpha] - 2026-08-05
 
 ### Corrigido

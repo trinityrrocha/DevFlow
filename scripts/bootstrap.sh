@@ -23,8 +23,7 @@ bootstrap_success_message() {
   case "$1" in
     check) printf '%s\n' 'Bootstrap de verificação concluído.' 'Nenhuma alteração foi aplicada.' ;;
     dry-run) printf '%s\n' 'Simulação concluída.' 'Nenhuma alteração foi aplicada.' ;;
-    install) printf '%s\n' 'Instalação do DevFlow concluída.' ;;
-    resume) printf '%s\n' 'Retomada da instalação concluída.' ;;
+    install|resume) return 0 ;;
     *) return 2 ;;
   esac
 }

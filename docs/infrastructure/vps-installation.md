@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.5.4-alpha`. Nao aprovada para producao.
+Versao `0.5.5-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 
@@ -50,7 +50,7 @@ docker logs --tail 100 devflow-updater
 sudo stat /opt/devflow/app /opt/devflow/config/super-admin-temporary-password
 ```
 
-Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a recuperacao operacional para `0.5.4-alpha` dependem da execucao manual na VPS.
+Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a recuperacao operacional para `0.5.5-alpha` dependem da execucao manual na VPS.
 
 ## Recuperacao manual do estado da instalacao 0.5.3-alpha
 

@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.5.4-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
+Versao atual: **0.5.5-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
 
 ## Instalacao
 
@@ -18,7 +18,7 @@ sudo ./install.sh
 
 Sem argumentos, o bootstrap seleciona a instalacao interativa, solicita dominio e e-mail, executa o preflight e exige duas confirmacoes numericas antes de alterar o host. Para automacao, continuam disponiveis `--check`, `--dry-run`, `--install` e `--resume`.
 
-O instalador exige confirmacoes numericas; o bootstrap transforma a chamada publica sem argumentos em `--install` explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. Depois do health final, a senha temporaria e exibida uma unica vez no TTY original e permanece em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs. Sem TTY, somente esse caminho e informado.
+O instalador exige confirmacoes numericas; o bootstrap transforma a chamada publica sem argumentos em `--install` explicito e nunca atualiza uma instalacao concluida. O e-mail informado e a autoridade unica para Super Admin e Let's Encrypt. Depois do health final, o logger e drenado e a senha temporaria e exibida uma unica vez no TTY original; o bloco de credenciais e a ultima saida visivel. O arquivo permanece em `/opt/devflow/config/super-admin-temporary-password`, `root:root 0600`, sem aparecer em logs. Sem TTY, os metadados finais ficam somente no log e a senha nao e exibida.
 
 MFA e recomendado, mas opcional por padrao. Quem o habilita continua obrigado a informar o segundo fator no login. O Super Admin pode alterar a politica persistente em **Cadastros e configuracao > Politica de autenticacao multifator** para `optional`, `admins` ou `all`; a mudanca e protegida por CSRF, auditada e nao desabilita fatores ja cadastrados.
 

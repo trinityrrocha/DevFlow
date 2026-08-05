@@ -70,11 +70,11 @@ try {
     && failed.stderr.includes('status=23') && !failed.stdout.includes('concluída'));
 
   const messages = run("for mode in check dry-run install resume; do printf '%s:' \"$mode\"; bootstrap_success_message \"$mode\" | tr '\\n' '|'; echo; done");
-  check('10 final message is specific to every mode', messages.status === 0
+  check('10 check and dry-run report completion while install and resume remain silent', messages.status === 0
     && messages.stdout.includes('check:Bootstrap de verificação concluído.|Nenhuma alteração foi aplicada.|')
     && messages.stdout.includes('dry-run:Simulação concluída.|Nenhuma alteração foi aplicada.|')
-    && messages.stdout.includes('install:Instalação do DevFlow concluída.|')
-    && messages.stdout.includes('resume:Retomada da instalação concluída.|'));
+    && messages.stdout.includes('install:\n')
+    && messages.stdout.includes('resume:\n'));
 
   console.log(`Bootstrap interface validated: ${checks.length} scenarios, including no-argument --install forwarding.`);
 } finally {

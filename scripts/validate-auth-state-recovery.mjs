@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -20,6 +22,9 @@ const settings = read('frontend/src/pages/Settings.jsx');
 const common = read('scripts/lib/common.sh');
 const install = read('scripts/install.sh');
 const repair = read('scripts/repair-installation-state.sh');
+const bash = process.env.DEVFLOW_TEST_BASH
+  || (process.platform === 'win32' && existsSync('C:\\Program Files\\Git\\bin\\bash.exe')
+    ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
 const checks = [];
 const check = (label, condition) => {
   if (!condition) throw new Error(`Auth/state recovery validation failed: ${label}`);
@@ -78,10 +83,18 @@ check('25 installer writes schema v3 atomically', common.includes('"schemaVersio
   && read('scripts/validate-installation-state.py').includes('os.replace(temporary, destination)'));
 check('26 installed validator is authoritative', install.includes('DEVFLOW_INSTALL_ROOT/app/scripts/validate-installation-state.py'));
 check('27 installed health runs in a new process', install.includes('"$DEVFLOW_INSTALL_ROOT/app/scripts/health.sh" --quiet'));
-const finalInstallerMessage = install.slice(install.indexOf('cat <<EOF\nDevFlow instalado com sucesso.'));
-check('28 invalid state prevents success and no hardcoded health remains', install.indexOf('health_status')
-  < install.indexOf('DevFlow instalado com sucesso.')
-  && !finalInstallerMessage.includes('overall_health=healthy'));
+const finalInstallerFlow = install.slice(install.lastIndexOf('trap - ERR EXIT INT TERM'));
+const credentialsFunction = install.slice(
+  install.indexOf('show_initial_credentials()'),
+  install.indexOf('finish_installation_logging()')
+);
+const completionLoggingFunction = install.slice(
+  install.indexOf('finish_installation_logging()'),
+  install.indexOf('install_systemd_units()')
+);
+check('28 invalid state prevents completion and no hardcoded health remains', install.indexOf('health_status')
+  < install.lastIndexOf('finish_installation_logging')
+  && !finalInstallerFlow.includes('overall_health=healthy'));
 check('29 repair tool has check mode', repair.includes('--check|--repair') && repair.includes('if [[ "$MODE" == check ]]'));
 check('30 repair tool writes and reloads schema v3', repair.includes('write_installation_state')
   && repair.includes('load_installation_state "$state_file"'));
@@ -91,12 +104,64 @@ check('32 repair tool does not alter certificates', repair.includes('validate_de
 check('33 repair tool only reads Super Admin', repair.includes('SELECT EXISTS(SELECT 1 FROM users')
   && !repair.includes('/api/auth/bootstrap'));
 
-check('34 initial password uses original TTY descriptor', install.includes('exec 3>/dev/tty')
-  && install.includes('Senha temporaria:') && install.includes('>&3'));
-check('35 non-TTY output contains path only', install.includes('initial_credentials_displayed=false')
-  && install.includes('initial_credentials_path='));
-check('36 password bypasses tee and is not in normal completion block', install.includes('"  $password"')
-  && !finalInstallerMessage.includes('"  $password"'));
+const runCredentialFixture = (ttyAvailable) => {
+  const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-final-credentials-'));
+  const fixture = resolve(temporary, 'fixture.sh');
+  writeFileSync(fixture, `set -Eeuo pipefail\n${credentialsFunction}\n`);
+  const body = `
+root="$2"
+DEVFLOW_CONFIG_ROOT="$root/config"
+DEVFLOW_STATE_ROOT="$root/state"
+INSTALL_LOG="$root/install.log"
+INITIAL_CREDENTIALS_PENDING_FILE="$DEVFLOW_STATE_ROOT/initial-credentials-pending"
+ADMIN_EMAIL=contato@example.invalid
+CREDENTIAL_TTY_AVAILABLE=${ttyAvailable ? 'true' : 'false'}
+mkdir -p "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_STATE_ROOT"
+printf '%s\\n' 'Aa1!fixture-password' > "$DEVFLOW_CONFIG_ROOT/super-admin-temporary-password"
+: > "$INITIAL_CREDENTIALS_PENDING_FILE"
+: > "$INSTALL_LOG"
+exec 3> "$root/terminal.txt"
+show_initial_credentials
+`;
+  const result = spawnSync(bash, ['-c', `source "$1"; ${body}`, '_', fixture, temporary], { encoding: 'utf8' });
+  const output = readFileSync(resolve(temporary, 'terminal.txt'), 'utf8');
+  const log = readFileSync(resolve(temporary, 'install.log'), 'utf8');
+  rmSync(temporary, { recursive: true, force: true });
+  return { result, output, log };
+};
+const interactiveCredentials = runCredentialFixture(true);
+const nonInteractiveCredentials = runCredentialFixture(false);
+const expectedCredentials = [
+  '============================================================',
+  'CREDENCIAIS INICIAIS DO DEVFLOW',
+  '============================================================',
+  '',
+  'Super Administrador:',
+  '  contato@example.invalid',
+  '',
+  'Senha temporaria:',
+  '  Aa1!fixture-password',
+  '',
+  'Troque a senha no primeiro acesso.',
+  'A configuracao de MFA e opcional por padrao.',
+  '',
+  '============================================================',
+  ''
+].join('\n');
+check('34 initial password uses original TTY descriptor and exact closing delimiter', install.includes('exec 3>/dev/tty')
+  && interactiveCredentials.result.status === 0 && interactiveCredentials.output === expectedCredentials);
+check('35 terminal credentials omit protected path and non-TTY metadata goes only to log', !credentialsFunction.includes("'Arquivo protegido:'")
+  && credentialsFunction.includes('initial_credentials_path=%s\\n\' "$password_file" >> "$INSTALL_LOG"')
+  && completionLoggingFunction.includes('cat >> "$INSTALL_LOG"')
+  && nonInteractiveCredentials.result.status === 0 && nonInteractiveCredentials.output === ''
+  && nonInteractiveCredentials.log.includes('initial_credentials_displayed=false')
+  && nonInteractiveCredentials.log.includes('initial_credentials_path='));
+check('36 logger is drained before credentials and nothing prints afterward', install.includes('INSTALL_LOGGER_PID=$!')
+  && finalInstallerFlow.includes('finish_installation_logging\nshow_initial_credentials')
+  && finalInstallerFlow.trimEnd().endsWith('show_initial_credentials')
+  && ['Arquivo protegido:', 'installation_mode=', 'external_publication_enabled=', 'overall_health=',
+    'updater_healthy=', 'edge_healthy=', 'stage=', 'resume_from=', 'mode=$MODE', 'URL:',
+    'DevFlow instalado com sucesso.'].every((token) => !credentialsFunction.includes(token)));
 check('37 password is absent from installation state', !common.slice(common.indexOf('write_installation_state()'), common.indexOf('installation_state_value()')).includes('password'));
 check('38 temporary password enforces root root 0600', install.includes("== '0:0 600'"));
 check('39 resume checks bootstrap before generating any password', install.indexOf('required="$(docker exec devflow-backend')

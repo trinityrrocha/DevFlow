@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.5.4-alpha`
+## Marco `0.5.5-alpha`
 
 - [x] substituir ACME temporario por Certbot standalone do host;
 - [x] validar DNS A por fontes independentes e portas fail-closed;
