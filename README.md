@@ -4,7 +4,9 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.5.5-alpha**. O DevFlow usa instalacao isolada com PostgreSQL, backend, frontend, Nginx e updater proprios. O certificado e emitido pelo Certbot do host em modo standalone antes da criacao do Nginx.
+Versao atual: **0.6.0-alpha**. Esta fase substitui a barra lateral por navegacao superior responsiva e separa Clientes e Projetos em paginas proprias, preservando a instalacao isolada e o updater existentes.
+
+Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
 ## Instalacao
 

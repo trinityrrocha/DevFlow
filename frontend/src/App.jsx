@@ -9,12 +9,16 @@ import Users from './pages/Users';
 import Profile from './pages/Profile';
 import Audit from './pages/Audit';
 import Settings from './pages/Settings';
+import Clients from './pages/Clients';
+import Projects from './pages/Projects';
+import { LEGACY_ROUTES } from './navigation';
 
-function ProtectedRoute({ admin = false, children }) {
+function ProtectedRoute({ permission, superAdmin = false, children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Carregando sessão segura...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (admin && user.access_level !== 'ADMIN') return <Navigate to="/" replace />;
+  if (superAdmin && !user.is_super_admin) return <Navigate to="/dashboard" replace />;
+  if (permission && !user.is_super_admin && !user.permissions?.includes(permission)) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -23,14 +27,21 @@ export default function App() {
   if (pathname === '/login') return <Login />;
 
   let page;
-  if (pathname === '/') page = <Dashboard />;
-  else if (pathname === '/tasks') page = <Tasks />;
-  else if (/^\/tasks\/[^/]+$/.test(pathname)) page = <TaskDetail />;
+  if (LEGACY_ROUTES[pathname]) page = <Navigate to={LEGACY_ROUTES[pathname]} replace />;
+  else if (/^\/tasks\/[^/]+$/.test(pathname)) page = <Navigate to={pathname.replace('/tasks/', '/task/')} replace />;
+  else if (pathname === '/dashboard') page = <Dashboard />;
+  else if (pathname === '/task') page = <Tasks />;
+  else if (/^\/task\/[^/]+$/.test(pathname)) page = <TaskDetail />;
   else if (pathname === '/profile') page = <Profile />;
-  else if (pathname === '/users') page = <ProtectedRoute admin><Users /></ProtectedRoute>;
-  else if (pathname === '/audit') page = <ProtectedRoute admin><Audit /></ProtectedRoute>;
-  else if (pathname === '/settings') page = <ProtectedRoute admin><Settings /></ProtectedRoute>;
-  else page = <Navigate to="/" replace />;
+  else if (pathname === '/team') page = <ProtectedRoute permission="users.manage"><Users /></ProtectedRoute>;
+  else if (pathname === '/clients') page = <ProtectedRoute permission="clients.view"><Clients /></ProtectedRoute>;
+  else if (pathname === '/projects') page = <ProtectedRoute permission="projects.view"><Projects /></ProtectedRoute>;
+  else if (pathname === '/audit') page = <ProtectedRoute permission="audit.view"><Audit /></ProtectedRoute>;
+  else if (pathname === '/settings/security/mfa') page = <ProtectedRoute superAdmin><Settings section="mfa" /></ProtectedRoute>;
+  else if (pathname === '/settings/modules/catalogs') page = <ProtectedRoute permission="catalogs.manage"><Settings section="catalogs" /></ProtectedRoute>;
+  else if (pathname === '/settings/modules/workflows') page = <ProtectedRoute permission="catalogs.manage"><Settings section="workflows" /></ProtectedRoute>;
+  else if (pathname === '/settings/updates') page = <ProtectedRoute superAdmin><Settings section="updates" /></ProtectedRoute>;
+  else page = <Navigate to="/dashboard" replace />;
 
   return (
     <ProtectedRoute>

@@ -11,3 +11,4 @@ allowBuilds:
 
 overrides:
   'brace-expansion@<1.1.18': 1.1.18
+  'js-yaml@>=4.0.0 <4.3.1': 4.3.1

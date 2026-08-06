@@ -37,7 +37,7 @@ export function useNavigate() {
 
 export function useParams() {
   const { pathname } = useLocation();
-  const taskMatch = pathname.match(/^\/tasks\/([^/]+)$/);
+  const taskMatch = pathname.match(/^\/(?:task|tasks)\/([^/]+)$/);
   return taskMatch ? { id: decodeURIComponent(taskMatch[1]) } : {};
 }
 

@@ -1,6 +1,16 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.5.5-alpha`
+## Instalacao isolada `0.6.0-alpha`
+
+| Fase 1 | Evidencia |
+|---|---|
+| Navegacao superior | `frontend/src/layouts/DashboardLayout.jsx` e `frontend/src/navigation.test.js` |
+| Rotas compativeis | `frontend/src/App.jsx`, `frontend/src/navigation.js` |
+| Clientes | `/api/catalogs/clients`, `frontend/src/pages/Clients.jsx` |
+| Projetos/equipe | `/api/catalogs/projects`, `frontend/src/pages/Projects.jsx` |
+| Autorizacao | migration `003_navigation_catalog_permissions.sql` e `catalogAuthorization.test.js` |
+
+## Infraestrutura preservada
 
 | Requisito | Evidencia |
 |---|---|

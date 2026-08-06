@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0-alpha] - 2026-08-06
+
+### Adicionado
+
+- navegacao superior responsiva com dropdowns acessiveis, operacao por teclado e indicacao de rota ativa;
+- paginas proprias de Clientes e Projetos com pesquisa, filtros, paginacao, edicao, ativacao e exclusao protegida por vinculos;
+- permissoes `clients.view`, `clients.manage` e `projects.view`, aplicadas no backend por tenant;
+- associacao de equipe aos projetos e contagem dos vinculos de tarefas.
+
+### Alterado
+
+- rotas canonicas passam a usar `/dashboard`, `/task`, `/team`, `/clients` e `/projects`, com redirecionamentos das rotas anteriores;
+- botao Nova Tarefa foi removido do layout global e movido para a pagina de tarefas;
+- MFA, catalogos, fluxos e atualizacoes foram separados em rotas de Sistema.
+
 ## [0.5.5-alpha] - 2026-08-05
 
 ### Corrigido

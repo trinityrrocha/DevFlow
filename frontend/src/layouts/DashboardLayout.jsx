@@ -1,27 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Bug, ClipboardList, Gauge, GitPullRequest, LogOut, Menu, Plus, Settings2, UserCircle, Users, X } from 'lucide-react';
+import { Bell, Bug, ChevronDown, LogOut, Menu, UserCircle, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import NewTaskModal from '../components/NewTaskModal';
 import { formatDate } from '../utils/formatters';
+import { routeIsActive, visibleNavigation } from '../navigation';
 
 export default function DashboardLayout({ children }) {
   const { user, companies, logout, switchCompany } = useAuth();
-  const location = useLocation();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState({ notifications: [], unread_count: 0 });
   const notificationRef = useRef(null);
+  const profileRef = useRef(null);
+  const navigation = visibleNavigation(user);
 
   const refreshNotifications = async () => {
     try {
       const response = await api.get('/notifications');
       setNotifications(response.data);
     } catch {
-      // Session interceptor handles authentication failures.
+      // Authentication failures are handled by the API interceptor.
     }
   };
 
@@ -33,20 +35,33 @@ export default function DashboardLayout({ children }) {
   }, [user.must_change_password, user.mfa_setup_required]);
 
   useEffect(() => {
-    const close = (event) => {
+    const closeOutside = (event) => {
       if (!notificationRef.current?.contains(event.target)) setNotificationsOpen(false);
+      if (!profileRef.current?.contains(event.target)) setProfileOpen(false);
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    const closeEscape = (event) => {
+      if (event.key === 'Escape') {
+        setNotificationsOpen(false);
+        setProfileOpen(false);
+        setMobileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+    };
   }, []);
 
   const openNotifications = async () => {
     const opening = !notificationsOpen;
     setNotificationsOpen(opening);
+    setProfileOpen(false);
     if (!opening) return;
-    const unreadIds = notifications.notifications.filter((item) => !item.read_at).map((item) => item.id);
-    if (unreadIds.length) {
-      await api.post('/notifications/read', { ids: unreadIds }).catch(() => {});
+    const ids = notifications.notifications.filter((item) => !item.read_at).map((item) => item.id);
+    if (ids.length) {
+      await api.post('/notifications/read', { ids }).catch(() => {});
       setNotifications((current) => ({
         unread_count: 0,
         notifications: current.notifications.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() }))
@@ -54,142 +69,112 @@ export default function DashboardLayout({ children }) {
     }
   };
 
-  const links = [
-    { to: '/', label: 'Dashboard', icon: Gauge },
-    { to: '/tasks', label: 'Tarefas', icon: GitPullRequest },
-    ...(user.permissions?.includes('projects.manage') ? [
-      { to: '/settings', label: 'Cadastros', icon: Settings2 }
-    ] : []),
-    ...(user.permissions?.includes('users.manage') ? [
-      { to: '/users', label: 'Equipe', icon: Users },
-    ] : []),
-    ...(user.permissions?.includes('audit.view') ? [
-      { to: '/audit', label: 'Auditoria', icon: ClipboardList }
-    ] : []),
-    { to: '/profile', label: 'Meu perfil', icon: UserCircle }
-  ];
-
-  const isActive = (to) => to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
-
   const doLogout = async () => {
     await logout();
     navigate('/login');
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <aside className="hidden w-64 shrink-0 flex-col bg-slate-900 text-white md:flex">
-        <Brand />
-        <nav className="flex-1 space-y-1 px-3 py-5">
-          {links.map(({ to, label: text, icon: Icon }) => (
-            <Link key={to} to={to} className={`flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-colors ${
-              isActive(to) ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-            }`}>
-              <Icon className="h-5 w-5" /> {text}
-            </Link>
-          ))}
-        </nav>
-        <div className="border-t border-slate-800 p-4">
-          <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500 font-semibold">{user.name?.[0]}</span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="text-xs text-slate-400">{user.is_super_admin ? 'Super Admin' : user.access_level === 'ADMIN' ? 'Administrador' : user.profiles?.[0] || 'Usuário'}</p>
-            </div>
-          </div>
-          <button onClick={doLogout} className="flex w-full items-center gap-3 rounded-md px-4 py-2 text-sm text-slate-300 hover:bg-red-500/10 hover:text-red-400">
-            <LogOut className="h-5 w-5" /> Sair
+    <div className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
+        <div className="mx-auto flex h-16 max-w-screen-2xl items-center gap-3 px-4 lg:px-8">
+          <button type="button" onClick={() => setMobileOpen((open) => !open)} className="rounded-md p-2 text-slate-600 lg:hidden" aria-label="Alternar menu principal" aria-expanded={mobileOpen} aria-controls="mobile-navigation">
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-        </div>
-      </aside>
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2" aria-label="DevFlow - Dashboard">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white"><Bug className="h-5 w-5" /></span>
+            <span className="hidden font-bold text-slate-900 sm:inline">DevFlow</span>
+          </Link>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-8">
-          <div className="flex items-center gap-3 md:hidden">
-            <button onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-slate-600" aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>
-            <span className="font-bold text-slate-900">DevFlow</span>
-          </div>
-          <div className="hidden md:block">
-            {companies.length > 1 ? (
-              <select
-                value={user.company_id}
-                onChange={async (event) => {
-                  await switchCompany(event.target.value);
-                  navigate('/');
-                }}
-                className="field min-w-56 py-2"
-                aria-label="Empresa ativa"
-              >
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
-            ) : <p className="text-sm text-slate-500">{user.company_name || 'Gestão do ciclo de desenvolvimento'}</p>}
-          </div>
-          <div className="flex items-center gap-2">
-            {!user.must_change_password && !user.mfa_setup_required && <div className="relative" ref={notificationRef}>
-              <button onClick={openNotifications} className="relative rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Notificações">
-                <Bell className="h-5 w-5" />
-                {notifications.unread_count > 0 && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />}
-              </button>
-              {notificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-                  <div className="border-b border-slate-200 px-4 py-3"><p className="text-sm font-semibold">Notificações</p></div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {notifications.notifications.length === 0 && <p className="p-5 text-center text-sm text-slate-500">Nenhuma notificação.</p>}
-                    {notifications.notifications.map((item) => (
-                      <button key={item.id} onClick={() => { setNotificationsOpen(false); if (item.task_id) navigate(`/tasks/${item.task_id}`); }}
-                        className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50">
-                        <p className="text-sm font-medium text-slate-800">{item.title}</p>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.body}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{formatDate(item.created_at)}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>}
-            {!user.must_change_password && !user.mfa_setup_required && <button onClick={() => setNewTaskOpen(true)} className="btn-primary">
-              <Plus className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Nova Tarefa</span>
-            </button>}
-          </div>
-        </header>
-
-        <main className="flex-1 p-4 md:p-8">
-          {(user.must_change_password || user.mfa_setup_required) && location.pathname !== '/profile' ? (
-            <div className="mx-auto max-w-2xl rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
-              Conclua os requisitos de segurança em <Link to="/profile" className="font-semibold underline">Meu perfil</Link> para liberar o sistema.
-            </div>
-          ) : children}
-        </main>
-      </div>
-
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900 text-white md:hidden">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4"><Brand /><button onClick={() => setMobileOpen(false)} className="p-2" aria-label="Fechar menu"><X className="h-5 w-5" /></button></div>
-          <nav className="space-y-2 p-4">
-            {links.map(({ to, label: text, icon: Icon }) => (
-              <Link key={to} to={to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-md px-4 py-3 text-slate-200 hover:bg-slate-800"><Icon className="h-5 w-5" />{text}</Link>
-            ))}
+          <nav className="hidden flex-1 items-center gap-1 lg:flex" aria-label="Navegacao principal">
+            {navigation.map((group) => group.items
+              ? <NavigationDropdown key={group.label} group={group} pathname={pathname} />
+              : <TopLink key={group.to} item={group} pathname={pathname} />)}
           </nav>
-        </div>
-      )}
 
-      <NewTaskModal
-        open={newTaskOpen}
-        onClose={() => setNewTaskOpen(false)}
-        onCreated={(task) => {
-          setNewTaskOpen(false);
-          navigate(`/tasks/${task.id}`);
-        }}
-      />
+          <div className="ml-auto flex items-center gap-1">
+            {!user.must_change_password && !user.mfa_setup_required && <div className="relative" ref={notificationRef}>
+              <button type="button" onClick={openNotifications} className="relative rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label={`Notificacoes: ${notifications.unread_count} nao lidas`} aria-expanded={notificationsOpen} aria-controls="notifications-menu">
+                <Bell className="h-5 w-5" />
+                {notifications.unread_count > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-bold leading-5 text-white">{Math.min(notifications.unread_count, 99)}</span>}
+              </button>
+              {notificationsOpen && <NotificationMenu id="notifications-menu" data={notifications.notifications} onNavigate={(id) => { setNotificationsOpen(false); if (id) navigate(`/task/${id}`); }} />}
+            </div>}
+
+            <div className="relative" ref={profileRef}>
+              <button type="button" onClick={() => { setProfileOpen((open) => !open); setNotificationsOpen(false); }} className="flex items-center gap-2 rounded-md p-2 text-slate-700 hover:bg-slate-100" aria-label="Abrir menu do perfil" aria-haspopup="menu" aria-expanded={profileOpen} aria-controls="profile-menu">
+                <UserCircle className="h-6 w-6" /><span className="hidden max-w-32 truncate text-sm font-medium md:inline">{user.name}</span><ChevronDown className="hidden h-4 w-4 md:block" />
+              </button>
+              {profileOpen && <div id="profile-menu" role="menu" className="absolute right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                <div className="border-b border-slate-100 px-3 py-2"><p className="truncate text-sm font-semibold">{user.name}</p><p className="truncate text-xs text-slate-500">{user.email}</p></div>
+                {companies.length > 1 && <label className="block px-3 py-2 text-xs font-medium text-slate-600">Empresa ativa<select value={user.company_id} onChange={async (event) => { await switchCompany(event.target.value); navigate('/dashboard'); }} className="field mt-1">{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>}
+                <Link role="menuitem" to="/profile" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm hover:bg-slate-50">Meu perfil</Link>
+                <button role="menuitem" type="button" onClick={doLogout} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-red-700 hover:bg-red-50"><LogOut className="h-4 w-4" />Sair</button>
+              </div>}
+            </div>
+          </div>
+        </div>
+
+        {mobileOpen && <nav id="mobile-navigation" className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white p-4 lg:hidden" aria-label="Navegacao principal movel">
+          {navigation.map((group) => group.items
+            ? <div key={group.label} className="mb-3"><p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{group.label}</p>{group.items.map((item) => <TopLink key={item.to} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} mobile />)}</div>
+            : <TopLink key={group.to} item={group} pathname={pathname} onClick={() => setMobileOpen(false)} mobile />)}
+        </nav>}
+      </header>
+
+      <main className="mx-auto max-w-screen-2xl p-4 md:p-8">
+        {(user.must_change_password || user.mfa_setup_required) && pathname !== '/profile' ? (
+          <div className="mx-auto max-w-2xl rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
+            Conclua os requisitos de seguranca em <Link to="/profile" className="font-semibold underline">Meu perfil</Link> para liberar o sistema.
+          </div>
+        ) : children}
+      </main>
     </div>
   );
 }
 
-function Brand() {
-  return (
-    <div className="flex h-16 items-center px-5">
-      <span className="mr-3 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600"><Bug className="h-5 w-5" /></span>
-      <div><p className="text-lg font-bold">DevFlow</p><p className="text-[10px] uppercase tracking-widest text-slate-400">Development lifecycle</p></div>
+function TopLink({ item, pathname, onClick, mobile = false }) {
+  const active = routeIsActive(pathname, item.to);
+  return <Link to={item.to} onClick={onClick} aria-current={active ? 'page' : undefined} className={`${mobile ? 'mb-1 block' : ''} rounded-md px-3 py-2 text-sm font-medium transition-colors ${active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>{item.label}</Link>;
+}
+
+function NavigationDropdown({ group, pathname }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const menuId = `navigation-${group.label.toLowerCase()}`;
+  const active = group.items.some((item) => routeIsActive(pathname, item.to));
+
+  useEffect(() => {
+    const close = (event) => { if (!ref.current?.contains(event.target)) setOpen(false); };
+    const escape = (event) => { if (event.key === 'Escape') { setOpen(false); ref.current?.querySelector('button')?.focus(); } };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape); };
+  }, []);
+
+  const moveFocus = (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const items = [...ref.current.querySelectorAll('[role="menuitem"]')];
+    const current = items.indexOf(document.activeElement);
+    if (event.key === 'Home') items[0]?.focus();
+    else if (event.key === 'End') items.at(-1)?.focus();
+    else if (event.key === 'ArrowDown') items[(current + 1 + items.length) % items.length]?.focus();
+    else items[(current - 1 + items.length) % items.length]?.focus();
+  };
+
+  return <div className="relative" ref={ref} onKeyDown={moveFocus}>
+    <button type="button" onClick={() => setOpen((value) => !value)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); requestAnimationFrame(() => ref.current?.querySelector('[role="menuitem"]')?.focus()); } }} className={`flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium ${active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId}>{group.label}<ChevronDown className="h-4 w-4" /></button>
+    {open && <div id={menuId} role="menu" className="absolute left-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">{group.items.map((item) => <Link key={item.to} role="menuitem" tabIndex="-1" to={item.to} onClick={() => setOpen(false)} className={`block rounded-md px-3 py-2 text-sm ${routeIsActive(pathname, item.to) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-50'}`}>{item.label}</Link>)}</div>}
+  </div>;
+}
+
+function NotificationMenu({ id, data, onNavigate }) {
+  return <div id={id} className="absolute right-0 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+    <div className="border-b border-slate-200 px-4 py-3"><p className="text-sm font-semibold">Notificacoes</p></div>
+    <div className="max-h-96 overflow-y-auto">
+      {data.length === 0 && <p className="p-5 text-center text-sm text-slate-500">Nenhuma notificacao.</p>}
+      {data.map((item) => <button key={item.id} type="button" onClick={() => onNavigate(item.task_id)} className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"><p className="text-sm font-medium text-slate-800">{item.title}</p><p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.body}</p><p className="mt-1 text-[11px] text-slate-400">{formatDate(item.created_at)}</p></button>)}
     </div>
-  );
+  </div>;
 }

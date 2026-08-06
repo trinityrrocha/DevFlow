@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.5.5-alpha`. Nao aprovada para producao.
+Versao `0.6.0-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 

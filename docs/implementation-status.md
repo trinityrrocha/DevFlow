@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-05. Versao: `0.5.5-alpha`.
+Data de corte: 2026-08-06. Versao: `0.6.0-alpha`.
+
+Fase 1 concluida localmente: navegacao superior responsiva sem menu lateral, dropdowns com ARIA/teclado/Escape, rotas canonicas com compatibilidade, paginas independentes de Clientes e Projetos, autorizacao backend separada para leitura/gestao e Nova Tarefa restrita a `/task`. CRUD, filtros, paginacao, associacao de equipe e bloqueio de exclusao com vinculos foram cobertos por validacoes locais e simuladas. Homologacao visual em navegador e VPS permanece pendente.
 
 Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, confirmacoes numericas, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, fila HMAC e atualizacao/rollback pelo motor unico `update.sh`.
 

@@ -3,9 +3,13 @@ const { AppError, assert } = require('../utils/errors');
 
 const ADMIN_PERMISSIONS = [
   'dashboard.view', 'tasks.view', 'tasks.create', 'tasks.operate', 'tasks.manage',
-  'projects.manage', 'catalogs.manage', 'users.manage', 'audit.view'
+  'clients.view', 'clients.manage', 'projects.view', 'projects.manage',
+  'catalogs.manage', 'users.manage', 'audit.view'
 ];
-const USER_PERMISSIONS = ['dashboard.view', 'tasks.view', 'tasks.create', 'tasks.operate'];
+const USER_PERMISSIONS = [
+  'dashboard.view', 'tasks.view', 'tasks.create', 'tasks.operate',
+  'clients.view', 'projects.view'
+];
 
 const ENVIRONMENTS = [
   ['DEVELOPMENT', 'Desenvolvimento', 'blue', 10],

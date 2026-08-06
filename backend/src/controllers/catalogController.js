@@ -66,7 +66,17 @@ async function bootstrap(req, res) {
 }
 
 async function listClients(req, res) {
-  res.json({ clients: await service.listClients(req.user.company_id) });
+  const filters = z.object({
+    search: z.string().trim().max(120).optional(),
+    status: z.enum(['all', 'active', 'inactive']).default('all'),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20)
+  }).parse(req.query);
+  res.json(await service.listClients(req.user.company_id, filters));
+}
+
+async function getClient(req, res) {
+  res.json({ client: await service.getClient(req.user.company_id, req.params.id) });
 }
 
 async function createClient(req, res) {
@@ -81,8 +91,25 @@ async function updateClient(req, res) {
   res.json({ client });
 }
 
+async function deleteClient(req, res) {
+  const client = await service.deleteClient(req.user.company_id, req.params.id);
+  await recordAudit({ req, operation: 'CLIENT_DELETED', entityType: 'CLIENT', entityId: client.id, previousValues: client });
+  res.status(204).end();
+}
+
 async function listProjects(req, res) {
-  res.json({ projects: await service.listProjects(req.user.company_id) });
+  const filters = z.object({
+    search: z.string().trim().max(120).optional(),
+    status: z.enum(['all', 'DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED']).default('all'),
+    client_id: z.string().uuid().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20)
+  }).parse(req.query);
+  res.json(await service.listProjects(req.user.company_id, filters));
+}
+
+async function getProject(req, res) {
+  res.json({ project: await service.getProject(req.user.company_id, req.params.id) });
 }
 
 async function createProject(req, res) {
@@ -95,6 +122,12 @@ async function updateProject(req, res) {
   const project = await service.updateProject(req.user.company_id, req.params.id, projectSchema.partial().parse(req.body));
   await recordAudit({ req, operation: 'PROJECT_UPDATED', entityType: 'PROJECT', entityId: project.id, newValues: project });
   res.json({ project });
+}
+
+async function deleteProject(req, res) {
+  const project = await service.deleteProject(req.user.company_id, req.params.id);
+  await recordAudit({ req, operation: 'PROJECT_DELETED', entityType: 'PROJECT', entityId: project.id, previousValues: project });
+  res.status(204).end();
 }
 
 async function listCatalog(req, res) {
@@ -140,6 +173,7 @@ async function createWorkflow(req, res) {
 }
 
 module.exports = {
-  bootstrap, listClients, createClient, updateClient, listProjects, createProject,
-  updateProject, listCatalog, createCatalogItem, updateCatalogItem, createWorkflow
+  bootstrap, listClients, getClient, createClient, updateClient, deleteClient,
+  listProjects, getProject, createProject, updateProject, deleteProject,
+  listCatalog, createCatalogItem, updateCatalogItem, createWorkflow
 };

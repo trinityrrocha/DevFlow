@@ -81,7 +81,7 @@ export default function TaskDetail() {
   return (
     <div className="animate-fadeIn space-y-6">
       <header>
-        <Link to="/tasks" className="mb-3 inline-flex items-center text-sm font-medium text-slate-500 hover:text-indigo-600"><ArrowLeft className="mr-1 h-4 w-4" />Voltar às tarefas</Link>
+        <Link to="/task" className="mb-3 inline-flex items-center text-sm font-medium text-slate-500 hover:text-indigo-600"><ArrowLeft className="mr-1 h-4 w-4" />Voltar às tarefas</Link>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
             <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-indigo-600">{task.code}</span><StatusBadge value={task.kind} /><StatusBadge value={task.state} /><StatusBadge value={task.priority} /></div>

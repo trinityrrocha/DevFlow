@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
-import { Link } from '../router';
+import { Plus, Search } from 'lucide-react';
+import { Link, useNavigate } from '../router';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
+import NewTaskModal from '../components/NewTaskModal';
+import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDuration, label } from '../utils/formatters';
 
 export default function Tasks() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState({ tasks: [], pagination: {} });
   const [filters, setFilters] = useState({ search: '', state: '', kind: '', priority: '' });
   const [priorities, setPriorities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const canCreate = user.is_super_admin || user.permissions?.includes('tasks.create');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,7 +40,7 @@ export default function Tasks() {
 
   return (
     <div className="animate-fadeIn space-y-6">
-      <header><h1 className="text-2xl font-bold">Tarefas</h1><p className="mt-1 text-sm text-slate-500">Solicitações e bugs de todo o ciclo.</p></header>
+      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h1 className="text-2xl font-bold">Tarefas</h1><p className="mt-1 text-sm text-slate-500">Solicitações e bugs de todo o ciclo.</p></div>{canCreate && <button type="button" onClick={() => setNewTaskOpen(true)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Nova Tarefa</button>}</header>
       <section className="card p-4">
         <div className="grid gap-3 md:grid-cols-4">
           <label className="relative md:col-span-1"><Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" /><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Buscar título ou código" className="field pl-10" /></label>
@@ -53,7 +59,7 @@ export default function Tasks() {
               {!loading && data.tasks.length === 0 && <tr><td colSpan="7" className="px-4 py-10 text-center text-slate-500">Nenhuma tarefa encontrada.</td></tr>}
               {!loading && data.tasks.map((task) => (
                 <tr key={task.id} className="hover:bg-slate-50">
-                  <td className="max-w-md px-4 py-3"><Link to={`/tasks/${task.id}`} className="font-medium text-indigo-700 hover:underline">DF-{String(task.task_number).padStart(6, '0')} · {task.title}</Link><div className="mt-1"><StatusBadge value={task.kind} /></div></td>
+                  <td className="max-w-md px-4 py-3"><Link to={`/task/${task.id}`} className="font-medium text-indigo-700 hover:underline">DF-{String(task.task_number).padStart(6, '0')} · {task.title}</Link><div className="mt-1"><StatusBadge value={task.kind} /></div></td>
                   <td className="px-4 py-3">{task.stage_name}</td>
                   <td className="px-4 py-3"><StatusBadge value={task.state} /></td>
                   <td className="px-4 py-3"><StatusBadge value={task.priority} /></td>
@@ -67,6 +73,7 @@ export default function Tasks() {
         </div>
         <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">{data.pagination.total || 0} tarefa(s)</div>
       </section>
+      <NewTaskModal open={newTaskOpen} onClose={() => setNewTaskOpen(false)} onCreated={(task) => { setNewTaskOpen(false); navigate(`/task/${task.id}`); }} />
     </div>
   );
 }
