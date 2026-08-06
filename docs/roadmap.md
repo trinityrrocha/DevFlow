@@ -1,11 +1,11 @@
 # Roadmap inicial
 
-## Marco `0.6.0-alpha`
+## Marco `0.6.1-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
 - [x] aplicar permissoes de Clientes e Projetos no backend;
-- [ ] concluir Fase 2: usuarios, perfis e sessoes;
+- [x] concluir Fase 2: usuarios, perfis e sessoes;
 - [ ] concluir Fase 3: Roadmap e tempos;
 - [ ] concluir Fase 4: e-mail e notificacoes;
 

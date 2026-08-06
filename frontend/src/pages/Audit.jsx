@@ -48,6 +48,8 @@ export default function Audit() {
 
       {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
+      <SessionsCard />
+
       <section className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -75,4 +77,21 @@ export default function Audit() {
       </section>
     </div>
   );
+}
+
+function SessionsCard() {
+  const [data, setData] = useState({ sessions: [], pagination: {} });
+  const [filters, setFilters] = useState({ search: '', status: 'active' });
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    try { setData((await api.get('/audit/sessions', { params: filters })).data); setError(''); }
+    catch (requestError) { setError(errorMessage(requestError)); }
+  }, [filters]);
+  useEffect(() => { load(); }, [load]);
+  const revoke = async (session) => {
+    if (!window.confirm(`Encerrar a sessao de ${session.name}?`)) return;
+    try { await api.post(`/audit/sessions/${session.id}/revoke`); await load(); }
+    catch (requestError) { setError(errorMessage(requestError)); }
+  };
+  return <section className="card overflow-hidden"><div className="border-b border-slate-200 p-4"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-center"><div><h2 className="font-semibold">Sessoes ativas e encerradas</h2><p className="text-xs text-slate-500">Login, ultimo acesso, origem e motivo real do encerramento.</p></div><div className="flex gap-2"><input aria-label="Pesquisar usuario nas sessoes" className="field" placeholder="Nome ou e-mail" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} /><select aria-label="Filtrar status das sessoes" className="field" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="active">Ativas</option><option value="expired">Expiradas</option><option value="revoked">Revogadas</option><option value="all">Todas</option></select></div></div>{error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}</div><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th className="px-4 py-3">Login / ultimo acesso</th><th className="px-4 py-3">Origem</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Encerramento</th><th className="px-4 py-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{data.sessions.map((session) => <tr key={session.id}><td className="px-4 py-3"><p className="font-medium">{session.name}{session.is_current && <span className="ml-2 rounded bg-indigo-50 px-2 py-1 text-[10px] text-indigo-700">ATUAL</span>}</p><p className="text-xs text-slate-500">{session.email} · {session.roles?.join(', ') || 'USER'}</p></td><td className="px-4 py-3"><p>{formatDate(session.login_at)}</p><p className="text-xs text-slate-500">{formatDate(session.last_seen_at)}</p></td><td className="max-w-xs px-4 py-3"><p>{session.ip_address || 'Nao informado'}</p><p className="truncate text-xs text-slate-500" title={session.user_agent}>{session.user_agent || 'User-agent nao informado'}</p></td><td className="px-4 py-3">{session.status}</td><td className="px-4 py-3"><p>{session.revoked_at ? formatDate(session.revoked_at) : '—'}</p><p className="text-xs text-slate-500">{session.revoke_reason || '—'}</p></td><td className="px-4 py-3 text-right">{session.status === 'active' && !session.is_current && <button type="button" onClick={() => revoke(session)} className="btn-danger h-8">Encerrar</button>}</td></tr>)}{data.sessions.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhuma sessao encontrada.</td></tr>}</tbody></table></div><div className="border-t px-4 py-3 text-xs text-slate-500">{data.pagination.total || 0} sessao(oes)</div></section>;
 }

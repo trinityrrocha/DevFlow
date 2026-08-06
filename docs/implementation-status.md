@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-06. Versao: `0.6.0-alpha`.
+Data de corte: 2026-08-06. Versao: `0.6.1-alpha`.
+
+Fase 2 concluida localmente: telefone E.164 opcional, e-mail proprio pendente ate confirmacao com token aleatorio armazenado por hash, administracao de nome/e-mail/telefone/papel/perfis/status, redefinicao de senha temporaria, remocao auditada de MFA, revogacao de sessoes e painel de auditoria de sessoes. SMTP real e entrega do e-mail de confirmacao dependem de homologacao manual.
 
 Fase 1 concluida localmente: navegacao superior responsiva sem menu lateral, dropdowns com ARIA/teclado/Escape, rotas canonicas com compatibilidade, paginas independentes de Clientes e Projetos, autorizacao backend separada para leitura/gestao e Nova Tarefa restrita a `/task`. CRUD, filtros, paginacao, associacao de equipe e bloqueio de exclusao com vinculos foram cobertos por validacoes locais e simuladas. Homologacao visual em navegador e VPS permanece pendente.
 

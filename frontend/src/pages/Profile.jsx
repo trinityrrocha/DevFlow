@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Copy, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { Copy, KeyRound, Loader2, Mail, Phone, ShieldCheck } from 'lucide-react';
 import { useNavigate } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
@@ -14,6 +14,7 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [profile, setProfile] = useState({ name: user.name || '', phone: user.phone || '' });
 
   useEffect(() => {
     if (!user.must_change_password) {
@@ -22,6 +23,29 @@ export default function Profile() {
         .catch((requestError) => setError(errorMessage(requestError)));
     }
   }, [user.must_change_password]);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('verify_email');
+    if (!token) return;
+    setSaving(true);
+    api.post('/users/profile/email-confirm', { token }).then(() => {
+      window.history.replaceState(null, '', '/profile');
+      window.dispatchEvent(new CustomEvent('devflow:session-expired'));
+      navigate('/login', { replace: true });
+    }).catch((requestError) => setError(errorMessage(requestError))).finally(() => setSaving(false));
+  }, [navigate]);
+
+  const saveProfile = async (event) => {
+    event.preventDefault(); setSaving(true); setError('');
+    try { await api.patch('/users/profile', { name: profile.name, phone: profile.phone || null }); await refresh(); setMessage('Perfil atualizado.'); }
+    catch (requestError) { setError(errorMessage(requestError)); } finally { setSaving(false); }
+  };
+
+  const requestEmailChange = async (event) => {
+    event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true); setError('');
+    try { const response = await api.post('/users/profile/email-change', { new_email: form.get('new_email'), current_password: form.get('current_password') }); setMessage(response.data.message); await refresh(); event.currentTarget.reset(); }
+    catch (requestError) { setError(errorMessage(requestError)); } finally { setSaving(false); }
+  };
 
   const changePassword = async (event) => {
     event.preventDefault();
@@ -99,6 +123,17 @@ export default function Profile() {
       )}
       {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {message && <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{message}</div>}
+
+      <section className="card p-6">
+        <div className="mb-5 flex items-center gap-3"><Phone className="h-5 w-5 text-indigo-600" /><div><h2 className="font-semibold">Dados de contato</h2><p className="text-sm text-slate-500">Telefone opcional em formato internacional E.164.</p></div></div>
+        <form onSubmit={saveProfile} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Nome<input required minLength="2" maxLength="160" className="field mt-1" value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label><label className="text-sm font-medium">Telefone<input type="tel" maxLength="32" pattern="\+[1-9][0-9]{7,14}" placeholder="+5511999999999" className="field mt-1" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value.replace(/[^+0-9]/g, '') })} /></label><div className="sm:col-span-2"><button disabled={saving} className="btn-primary">Salvar contato</button></div></form>
+      </section>
+
+      {!user.must_change_password && <section className="card p-6">
+        <div className="mb-5 flex items-center gap-3"><Mail className="h-5 w-5 text-indigo-600" /><div><h2 className="font-semibold">Alterar meu e-mail</h2><p className="text-sm text-slate-500">O endereco atual permanece ativo ate a confirmacao enviada ao novo e-mail.</p></div></div>
+        {user.pending_email && <p className="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-800">Confirmacao pendente para {user.pending_email}.</p>}
+        <form onSubmit={requestEmailChange} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Novo e-mail<input name="new_email" type="email" required maxLength="320" className="field mt-1" /></label><label className="text-sm font-medium">Senha atual<input name="current_password" type="password" required autoComplete="current-password" className="field mt-1" /></label><div className="sm:col-span-2"><button disabled={saving} className="btn-primary">Enviar confirmacao</button></div></form>
+      </section>}
 
       <section className="card p-6">
         <div className="mb-5 flex items-center gap-3">

@@ -11,8 +11,10 @@ async function requireAuth(req, _res, next) {
     if (!session) throw new AppError('SESSION_INVALID', 'Sessão encerrada ou expirada.', 401);
     req.user = {
       id: session.user_id,
+      session_id: session.session_id,
       name: session.name,
       email: session.email,
+      phone: session.phone || null,
       is_super_admin: session.is_super_admin,
       must_change_password: session.must_change_password,
       mfa_enabled: session.mfa_enabled === true,

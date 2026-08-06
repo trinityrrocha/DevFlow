@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.6.0-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.6.1-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   UPDATE_API_ENABLED: z.string().default('false').transform((value) => value === 'true'),
   UPDATE_REQUEST_DIR: z.string().default('/var/lib/devflow-updater/requests'),
@@ -32,7 +32,8 @@ const environmentSchema = z.object({
   SMTP_SECURE: z.string().default('false').transform((value) => value === 'true'),
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASSWORD: z.string().optional().default(''),
-  SMTP_FROM: z.string().optional().default('')
+  SMTP_FROM: z.string().optional().default(''),
+  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30)
 });
 
 const parsed = environmentSchema.safeParse(process.env);

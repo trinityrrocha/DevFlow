@@ -50,6 +50,11 @@ async function createSession(req, user) {
       new Date(now + idleMs)
     ]
   );
+  await db.query(
+    `INSERT INTO session_events (session_id,company_id,user_id,event_type,actor_id,ip_address)
+     VALUES ($1,$2,$3,'LOGIN',$3,$4)`,
+    [sessionId, user.company_id, user.id, req.ip || null]
+  );
   return token;
 }
 
@@ -59,7 +64,7 @@ async function validateSession(token) {
     `SELECT s.id AS session_id,s.user_id,s.company_id,s.membership_id,
             s.token_version AS session_version,
             s.expires_at, s.idle_expires_at, s.last_seen_at,
-            u.name,u.email,u.is_super_admin,u.is_active,
+            u.name,u.email,u.phone,u.pending_email,u.is_super_admin,u.is_active,
             u.must_change_password,u.token_version,
             COALESCE(mfa.enabled,FALSE) AS mfa_enabled,
             COALESCE(policy.enforcement_mode,'optional') AS mfa_enforcement_mode
@@ -76,14 +81,20 @@ async function validateSession(token) {
   );
   const session = result.rows[0];
   const now = new Date();
-  if (
-    !session
-    || !session.is_active
-    || session.token_version !== decoded.ver
-    || session.session_version !== decoded.ver
-    || new Date(session.expires_at) <= now
-    || new Date(session.idle_expires_at) <= now
-  ) return null;
+  if (!session || !session.is_active || session.token_version !== decoded.ver || session.session_version !== decoded.ver) return null;
+  if (new Date(session.expires_at) <= now || new Date(session.idle_expires_at) <= now) {
+    const expired = await db.query(
+      `UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason='expired'
+       WHERE id=$1 AND revoked_at IS NULL RETURNING id,user_id,company_id`,
+      [session.session_id]
+    );
+    if (expired.rowCount) await db.query(
+      `INSERT INTO session_events (session_id,company_id,user_id,event_type,reason)
+       VALUES ($1,$2,$3,'EXPIRED','expired')`,
+      [session.session_id, session.company_id, session.user_id]
+    );
+    return null;
+  }
 
   if (now.getTime() - new Date(session.last_seen_at).getTime() > 5 * 60 * 1000) {
     await db.query(
@@ -99,15 +110,62 @@ async function validateSession(token) {
   return { ...session, ...membership };
 }
 
-async function revokeSession(token, reason = 'logout') {
+async function revokeSession(token, reason = 'logout', actorId = null) {
   if (!token) return;
   const decoded = jwt.decode(token);
   if (!decoded?.sid) return;
-  await db.query(
+  const revoked = await db.query(
     `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP, revoke_reason = $1
-     WHERE id = $2 AND token_hash = $3 AND revoked_at IS NULL`,
+     WHERE id = $2 AND token_hash = $3 AND revoked_at IS NULL
+     RETURNING id,user_id,company_id`,
     [reason, decoded.sid, tokenHash(token)]
   );
+  if (revoked.rowCount) {
+    const row = revoked.rows[0];
+    const eventType = reason === 'logout' ? 'LOGOUT' : 'REVOKED';
+    await db.query(
+      `INSERT INTO session_events (session_id,company_id,user_id,event_type,actor_id,reason)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [row.id, row.company_id, row.user_id, eventType, actorId, reason]
+    );
+  }
+}
+
+async function revokeSessionById(companyId, sessionId, actorId, reason = 'admin_revoked') {
+  return db.transaction(async (client) => {
+    const revoked = await client.query(
+      `UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason=$3
+       WHERE id=$1 AND company_id=$2 AND revoked_at IS NULL
+       RETURNING id,user_id,company_id`,
+      [sessionId, companyId, reason]
+    );
+    if (!revoked.rowCount) return null;
+    const row = revoked.rows[0];
+    await client.query(
+      `INSERT INTO session_events (session_id,company_id,user_id,event_type,actor_id,reason)
+       VALUES ($1,$2,$3,'REVOKED',$4,$5)`,
+      [row.id, row.company_id, row.user_id, actorId, reason]
+    );
+    return row;
+  });
+}
+
+async function revokeUserSessions(companyId, userId, actorId, reason = 'admin_revoked', exceptSessionId = null) {
+  return db.transaction(async (client) => {
+    const result = await client.query(
+      `UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason=$4
+       WHERE company_id=$1 AND user_id=$2 AND revoked_at IS NULL
+         AND ($3::uuid IS NULL OR id<>$3)
+       RETURNING id,user_id,company_id`,
+      [companyId, userId, exceptSessionId, reason]
+    );
+    for (const row of result.rows) await client.query(
+      `INSERT INTO session_events (session_id,company_id,user_id,event_type,actor_id,reason)
+       VALUES ($1,$2,$3,'REVOKED',$4,$5)`,
+      [row.id, row.company_id, row.user_id, actorId, reason]
+    );
+    return result.rowCount;
+  });
 }
 
 module.exports = {
@@ -115,5 +173,7 @@ module.exports = {
   cookieOptions,
   createSession,
   validateSession,
-  revokeSession
+  revokeSession,
+  revokeSessionById,
+  revokeUserSessions
 };

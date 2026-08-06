@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.1-alpha] - 2026-08-06
+
+### Adicionado
+
+- telefone opcional validado no formato internacional E.164;
+- fluxo de alteracao do proprio e-mail com senha atual, e-mail pendente, token aleatorio com hash/expiracao e confirmacao;
+- edicao administrativa de usuario, senha temporaria, troca obrigatoria, reset de MFA e historico basico;
+- inventario de sessoes com login, ultimo acesso, IP, user-agent resumido, status e motivo de encerramento;
+- encerramento auditado de sessao individual ou de todas as sessoes de um usuario.
+
+### Seguranca
+
+- Admin nao administra Super Admin e nao eleva usuarios a Super Admin;
+- ultimo Super Admin e ultimo Admin ativos sao protegidos;
+- alteracoes de identidade, senha, papel, status, e-mail e MFA revogam sessoes aplicaveis;
+- senhas temporarias, tokens, hashes de sessao e cookies nao sao gravados em auditoria.
+
 ## [0.6.0-alpha] - 2026-08-06
 
 ### Adicionado

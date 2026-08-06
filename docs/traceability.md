@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.0-alpha`
+## Instalacao isolada `0.6.1-alpha`
+
+| Fase 2 | Evidencia |
+|---|---|
+| Telefone E.164 | migration `004_user_identity_sessions.sql`, `phoneSchema` e formularios de Perfil/Equipe |
+| Troca do proprio e-mail | `/api/users/profile/email-change` e `/email-confirm`, token SHA-256 com expiracao |
+| Administracao de usuarios | `/api/users/:id`, password-reset, mfa-reset e revogacao de sessoes |
+| Sessoes auditaveis | `session_events`, `/api/audit/sessions` e card Sessoes na Auditoria |
+| Hierarquia | `assertCanManage`, protecao do ultimo Super Admin/Admin e testes de negacao |
 
 | Fase 1 | Evidencia |
 |---|---|

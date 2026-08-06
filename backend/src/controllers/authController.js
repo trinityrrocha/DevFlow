@@ -46,6 +46,8 @@ const serializeUser = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  phone: user.phone || null,
+  pending_email: user.pending_email || null,
   is_super_admin: user.is_super_admin === true,
   must_change_password: user.must_change_password === true,
   mfa_enabled: user.mfa_enabled === true,
@@ -188,7 +190,7 @@ async function switchCompany(req, res) {
     [req.user.id]
   )).rows[0];
   assert(user, 'USER_NOT_FOUND', 'Usuário não encontrado.', 404);
-  await revokeSession(req.cookies?.[SESSION_COOKIE], 'company_switched');
+  await revokeSession(req.cookies?.[SESSION_COOKIE], 'company_switched', req.user.id);
   const context = await loadAuthSecurityContext({ ...user, ...membership });
   const token = await createSession(req, context);
   res.cookie(SESSION_COOKIE, token, cookieOptions());
@@ -212,7 +214,7 @@ async function csrf(req, res) {
 }
 
 async function logout(req, res) {
-  await revokeSession(req.cookies?.[SESSION_COOKIE]);
+  await revokeSession(req.cookies?.[SESSION_COOKIE], 'logout', req.user?.id || null);
   res.clearCookie(SESSION_COOKIE, cookieOptions());
   res.clearCookie(CSRF_COOKIE, csrfCookieOptions());
   await recordAudit({ req, operation: 'LOGOUT', entityType: 'USER', entityId: req.user?.id });
