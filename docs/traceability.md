@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.1-alpha`
+## Instalacao isolada `0.6.2-alpha`
+
+| Fase 3 | Evidencia |
+|---|---|
+| Roadmap sem vazamento | `canViewTask`, predicados de lista/dashboard/notificacoes e resposta 404 uniforme |
+| Estimativa | migration `005_task_visibility_timers.sql`, segundos no banco e parser `dd-hh-mm` |
+| Cronometro | `taskTimingService.js`, lock de linha, timestamps e acumulado persistido |
+| Atraso | calculo backend, filtro, listagem/detalhe, `OVERDUE` e auditoria `TASK_OVERDUE` |
+| Historico | `task_timer_events` exibido junto ao dossie tecnico |
 
 | Fase 2 | Evidencia |
 |---|---|

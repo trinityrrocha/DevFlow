@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-06. Versao: `0.6.1-alpha`.
+Data de corte: 2026-08-06. Versao: `0.6.2-alpha`.
+
+Fase 3 concluida localmente: tarefas em Roadmap sao visiveis somente ao criador, Admin e Super Admin; fora dele, somente participantes, responsaveis de projeto e administradores. O gate cobre lista/busca/detalhe/relacionados/anexos/comentarios/testes/notificacoes/dashboard. Estimativa em segundos, estados explicitos de timer, acumulado persistido, timestamps, atraso, filtro, UI e historico foram implementados. Concorrencia e reinicio foram validados por contrato e calculos unitarios; PostgreSQL/VPS real permanece pendente.
 
 Fase 2 concluida localmente: telefone E.164 opcional, e-mail proprio pendente ate confirmacao com token aleatorio armazenado por hash, administracao de nome/e-mail/telefone/papel/perfis/status, redefinicao de senha temporaria, remocao auditada de MFA, revogacao de sessoes e painel de auditoria de sessoes. SMTP real e entrega do e-mail de confirmacao dependem de homologacao manual.
 

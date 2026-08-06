@@ -34,7 +34,21 @@ async function recipientsForStage(task, queryable = db) {
 }
 
 async function notifyStageChange(task) {
-  const recipientIds = [...new Set(await recipientsForStage(task))].filter(Boolean);
+  let recipientIds = [...new Set(await recipientsForStage(task))].filter(Boolean);
+  const roadmap = String(task.stage || '').toUpperCase() === 'ROADMAP'
+    || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
+  if (roadmap) {
+    const authorized = await db.query(
+      `SELECT DISTINCT m.user_id FROM company_memberships m
+       JOIN users u ON u.id=m.user_id
+       LEFT JOIN membership_roles mr ON mr.membership_id=m.id
+       LEFT JOIN role_permissions rp ON rp.role_id=mr.role_id
+       LEFT JOIN permissions p ON p.id=rp.permission_id
+       WHERE m.company_id=$1 AND m.is_active=TRUE AND (u.is_super_admin=TRUE OR p.code='tasks.manage')`,
+      [task.company_id]
+    );
+    recipientIds = [...new Set([task.created_by, ...authorized.rows.map((row) => row.user_id)])].filter(Boolean);
+  }
   if (!recipientIds.length) return;
   const stageName = task.stage_name || task.stage;
   const title = `${taskCode(task)} em ${stageName}`;
@@ -59,7 +73,7 @@ async function notifyStageChange(task) {
         from: env.SMTP_FROM,
         to: user.email,
         subject: `[DevFlow] ${title}`,
-        text: `${user.name},\n\n${body}\n\nAcesse ${env.APP_ORIGIN}/tasks/${task.id}`
+        text: `${user.name},\n\n${body}\n\nAcesse ${env.APP_ORIGIN}/task/${task.id}`
       });
       await db.query("UPDATE notifications SET email_status='SENT' WHERE id=$1", [inserted.rows[0].id]);
     } catch (error) {

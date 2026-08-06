@@ -6,6 +6,7 @@ import api, { errorMessage } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
 import { formatDate, formatDuration, label } from '../utils/formatters';
+import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
 
 const tabs = [
   ['summary', 'Resumo', Clock3],
@@ -77,6 +78,7 @@ export default function TaskDetail() {
     if (!reason) return;
     mutate(() => api.post(`/tasks/${id}/state`, { action, reason }), 'Estado atualizado.');
   };
+  const timerAction = (action) => mutate(() => api.post(`/tasks/${id}/timer`, { action }), `Cronometro ${action === 'start' ? 'iniciado' : action === 'pause' ? 'pausado' : action === 'resume' ? 'retomado' : action === 'complete' ? 'concluido' : 'cancelado'}.`);
 
   return (
     <div className="animate-fadeIn space-y-6">
@@ -98,6 +100,17 @@ export default function TaskDetail() {
 
       <section className="card overflow-x-auto p-5"><WorkflowStepper stages={workflowStages} current={task.current_stage_id} state={task.state} /></section>
 
+      <section className={`card p-5 ${task.is_overdue ? 'border-red-300' : ''}`} aria-label="Controle de tempo da tarefa">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
+          ['Tempo estimado', formatSignedDuration(task.estimated_duration_seconds)],
+          ['Tempo restante', formatSignedDuration(task.remaining_seconds)],
+          ['Tempo ativo', formatSignedDuration(task.active_elapsed_seconds)],
+          ['Desde o inicio', formatSignedDuration(task.elapsed_since_start_seconds)],
+          ['Cronometro', task.timer_status]
+        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && task.timer_status === 'not_started' && <button type="button" onClick={() => timerAction('start')} className="btn-primary"><Play className="mr-2 h-4 w-4" />Iniciar</button>}{canOperate && task.timer_status === 'running' && <button type="button" onClick={() => timerAction('pause')} className="btn-secondary"><Pause className="mr-2 h-4 w-4" />Pausar tempo</button>}{canOperate && task.timer_status === 'paused' && <button type="button" onClick={() => timerAction('resume')} className="btn-primary"><Play className="mr-2 h-4 w-4" />Retomar</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
+        <p className={`mt-4 text-sm font-semibold ${task.is_overdue ? 'text-red-700' : 'text-emerald-700'}`}><span className="sr-only">Status do prazo: </span>{task.is_overdue ? 'Tarefa atrasada' : task.estimated_duration_seconds == null ? 'Estimativa nao definida' : 'Dentro do prazo'}</p>
+      </section>
+
       {(error || message) && <div role="alert" className={`rounded-md border p-3 text-sm ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{error || message}</div>}
 
       <section className="card">
@@ -114,7 +127,7 @@ export default function TaskDetail() {
           {tab === 'github' && <Github data={data} user={user} mutate={mutate} />}
           {tab === 'attachments' && <Attachments data={data} user={user} mutate={mutate} />}
           {tab === 'comments' && <Comments data={data} mutate={mutate} />}
-          {tab === 'history' && <History events={data.events} />}
+          {tab === 'history' && <History events={data.events} timerEvents={data.timer_events} />}
         </div>
       </section>
 
@@ -140,7 +153,7 @@ function Summary({ data, user, mutate }) {
   const { task, submissions } = data;
   const current = submissions.find((item) => item.stage === task.stage) || {};
   const [notes, setNotes] = useState({ technical_notes: current.technical_notes || '', observations: current.observations || '' });
-  const [admin, setAdmin] = useState({ priority_id: task.priority_id, backend_assignee_id: task.backend_assignee_id, frontend_assignee_id: task.frontend_assignee_id });
+  const [admin, setAdmin] = useState({ priority_id: task.priority_id, backend_assignee_id: task.backend_assignee_id, frontend_assignee_id: task.frontend_assignee_id, estimated_duration: durationInput(task.estimated_duration_seconds) });
   const [users, setUsers] = useState([]);
   const [priorities, setPriorities] = useState([]);
 
@@ -186,12 +199,13 @@ function Summary({ data, user, mutate }) {
       )}
 
       {user.permissions?.includes('tasks.manage') && (
-        <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.patch(`/tasks/${task.id}/administration`, admin), 'Administração atualizada.'); }} className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
+        <form onSubmit={(event) => { event.preventDefault(); const estimate = admin.estimated_duration ? parseDurationInput(admin.estimated_duration) : undefined; mutate(() => api.patch(`/tasks/${task.id}/administration`, { priority_id: admin.priority_id, backend_assignee_id: admin.backend_assignee_id, frontend_assignee_id: admin.frontend_assignee_id, estimated_duration_seconds: estimate }), 'Administração atualizada.'); }} className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
           <h3 className="font-semibold text-indigo-900">Administração da tarefa</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
             <Select value={admin.priority_id} onChange={(value) => setAdmin({ ...admin, priority_id: value })} options={priorities.map((item) => [item.id, item.name])} />
             <Select value={admin.backend_assignee_id} onChange={(value) => setAdmin({ ...admin, backend_assignee_id: value })} options={users.map((item) => [item.id, `Backend: ${item.name}`])} />
             <Select value={admin.frontend_assignee_id} onChange={(value) => setAdmin({ ...admin, frontend_assignee_id: value })} options={users.map((item) => [item.id, `Frontend: ${item.name}`])} />
+            <input aria-label="Tempo estimado dd-hh-mm" pattern="[0-9]{2,3}-[0-9]{2}-[0-9]{2}" placeholder="Estimativa dd-hh-mm" value={admin.estimated_duration} onChange={(event) => setAdmin({ ...admin, estimated_duration: event.target.value.replace(/[^0-9-]/g, '').slice(0, 9) })} className="field" />
           </div>
           <button className="btn-primary mt-3"><Save className="mr-2 h-4 w-4" />Salvar administração</button>
         </form>
@@ -320,10 +334,11 @@ function Comments({ data, mutate }) {
   );
 }
 
-function History({ events }) {
+function History({ events, timerEvents = [] }) {
+  const combined = [...events, ...timerEvents.map((event) => ({ ...event, event_type: `TIMER_${event.event_type}`, description: `${event.previous_status || '—'} → ${event.new_status || '—'} · ativo ${formatSignedDuration(event.active_elapsed_seconds)}` }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return (
     <ol className="relative mx-auto max-w-3xl border-l border-slate-200">
-      {events.map((event) => <li key={event.id} className="mb-6 ml-6"><span className="absolute -left-2 flex h-4 w-4 rounded-full border-2 border-white bg-indigo-500" /><div className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{event.event_type}</strong><span className="text-xs text-slate-400">{formatDate(event.created_at)}</span></div><p className="mt-1 text-sm text-slate-600">{event.description}</p><p className="mt-2 text-xs text-slate-400">por {event.actor_name}</p></div></li>)}
+      {combined.map((event) => <li key={`${event.event_type}-${event.id}`} className="mb-6 ml-6"><span className="absolute -left-2 flex h-4 w-4 rounded-full border-2 border-white bg-indigo-500" /><div className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{event.event_type}</strong><span className="text-xs text-slate-400">{formatDate(event.created_at)}</span></div><p className="mt-1 text-sm text-slate-600">{event.description}</p><p className="mt-2 text-xs text-slate-400">por {event.actor_name}</p></div></li>)}
     </ol>
   );
 }

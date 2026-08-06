@@ -3,6 +3,18 @@ const { AppError, assert } = require('../utils/errors');
 const workflow = require('./workflowService');
 const { notifyStageChange, taskCode } = require('./notificationService');
 const { hasPermission } = require('./tenantService');
+const timing = require('./taskTimingService');
+
+const isAdmin = (user) => user?.is_super_admin === true || user?.roles?.includes('ADMIN') || user?.permissions?.includes('tasks.manage');
+const isRoadmap = (task) => String(task.stage || '').toUpperCase() === 'ROADMAP' || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
+
+async function canViewTask(user, task, queryable = db) {
+  if (isAdmin(user)) return true;
+  if (isRoadmap(task)) return task.created_by === user.id;
+  if ([task.created_by, task.requester_id, task.backend_assignee_id, task.frontend_assignee_id].includes(user.id)) return true;
+  const linked = await queryable.query('SELECT 1 FROM project_responsibles WHERE company_id=$1 AND project_id=$2 AND user_id=$3 LIMIT 1', [user.company_id, task.project_id, user.id]);
+  return linked.rowCount > 0;
+}
 
 async function addEvent(client, req, taskId, eventType, description, previousValues = {}, newValues = {}) {
   await client.query(
@@ -90,10 +102,12 @@ async function createTask(req, payload) {
     );
     if (payload.related_task_id) {
       const related = await client.query(
-        'SELECT 1 FROM tasks WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL',
+        `SELECT t.*,s.code AS stage,s.name AS stage_name FROM tasks t
+         JOIN workflow_stages s ON s.id=t.current_stage_id
+         WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL`,
         [payload.related_task_id, companyId]
       );
-      assert(related.rowCount, 'RELATED_TASK_INVALID', 'Tarefa de origem inválida.');
+      assert(related.rowCount && await canViewTask(req.user, related.rows[0], client), 'RELATED_TASK_INVALID', 'Tarefa de origem inválida.');
     }
     const selectedWorkflow = workflowResult.rows[0];
     const stages = await loadStages(client, companyId, selectedWorkflow.id);
@@ -104,9 +118,10 @@ async function createTask(req, payload) {
          company_id,project_id,client_id,task_type_id,priority_id,environment_id,
          workflow_id,current_stage_id,kind,title,initial_description,requester_id,
          client_environment,product_affected,related_requirement,related_task_id,
-         bug_area,initial_evidence,backend_assignee_id,frontend_assignee_id,created_by
+         bug_area,initial_evidence,backend_assignee_id,frontend_assignee_id,created_by,
+         estimated_duration_seconds
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
        ) RETURNING *`,
       [
         companyId, project.id, project.client_id, payload.task_type_id, payload.priority_id,
@@ -115,7 +130,8 @@ async function createTask(req, payload) {
         payload.client_environment || null, payload.product_affected || null,
         payload.related_requirement || null, payload.related_task_id || null,
         payload.bug_area || null, payload.initial_evidence || null,
-        payload.backend_assignee_id, payload.frontend_assignee_id, req.user.id
+        payload.backend_assignee_id, payload.frontend_assignee_id, req.user.id,
+        payload.estimated_duration_seconds || null
       ]
     )).rows[0];
     await addEvent(
@@ -152,13 +168,24 @@ async function createTask(req, payload) {
   }
 }
 
-async function listTasks(companyId, filters) {
+async function listTasks(user, filters) {
+  const companyId = user.company_id;
   const conditions = ['t.company_id=$1', 't.deleted_at IS NULL'];
   const values = [companyId];
   const add = (sql, value) => {
     values.push(value);
     conditions.push(sql.replaceAll('?', `$${values.length}`));
   };
+  if (!isAdmin(user)) {
+    values.push(user.id);
+    conditions.push(`(
+      ((UPPER(s.code)='ROADMAP' OR LOWER(TRIM(s.name))='roadmap') AND t.created_by=$${values.length})
+      OR ((UPPER(s.code)<>'ROADMAP' AND LOWER(TRIM(s.name))<>'roadmap') AND (
+        $${values.length}::uuid IN (t.created_by,t.requester_id,t.backend_assignee_id,t.frontend_assignee_id)
+        OR EXISTS (SELECT 1 FROM project_responsibles pr WHERE pr.company_id=t.company_id AND pr.project_id=t.project_id AND pr.user_id=$${values.length})
+      ))
+    )`);
+  }
   if (filters.state) add('t.state=?', filters.state);
   if (filters.stage) add('(s.id::text=? OR s.code=?)', filters.stage);
   if (filters.kind) add('t.kind=?', filters.kind);
@@ -169,6 +196,12 @@ async function listTasks(companyId, filters) {
     "(t.title ILIKE ? OR ('DF-' || LPAD(t.task_number::text,6,'0')) ILIKE ?)",
     `%${filters.search}%`
   );
+  if (filters.overdue) conditions.push(`${filters.overdue === 'true' ? '' : 'NOT '}(
+    t.estimated_duration_seconds IS NOT NULL AND t.timer_status NOT IN ('completed','cancelled')
+    AND t.estimated_duration_seconds <= t.active_elapsed_seconds
+      + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL
+        THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END
+  )`);
   const page = Math.max(1, filters.page || 1);
   const limit = Math.min(100, Math.max(1, filters.limit || 25));
   const from = `
@@ -197,7 +230,10 @@ async function listTasks(companyId, filters) {
             COALESCE((
               SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at,CURRENT_TIMESTAMP)-i.started_at)))::bigint
               FROM task_stage_intervals i WHERE i.task_id=t.id
-            ),0) AS total_seconds
+            ),0) AS total_seconds,
+            (t.active_elapsed_seconds + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END) AS timer_active_seconds,
+            CASE WHEN t.estimated_duration_seconds IS NULL THEN NULL ELSE t.estimated_duration_seconds-(t.active_elapsed_seconds + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END) END AS remaining_seconds,
+            CASE WHEN t.estimated_duration_seconds IS NULL OR t.timer_status IN ('completed','cancelled') THEN FALSE ELSE t.estimated_duration_seconds<=(t.active_elapsed_seconds + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END) END AS overdue_now
      ${from}
      JOIN users requester ON requester.id=t.requester_id
      JOIN users backend ON backend.id=t.backend_assignee_id
@@ -218,7 +254,7 @@ async function listTasks(companyId, filters) {
   };
 }
 
-async function getTask(taskId, companyId, queryable = db) {
+async function getTask(taskId, companyId, queryable = db, user = null) {
   const task = (await queryable.query(
     `SELECT t.*,s.code AS stage,s.name AS stage_name,s.responsibility,s.requirements,
             s.tracks_time,s.completes_task,
@@ -244,12 +280,14 @@ async function getTask(taskId, companyId, queryable = db) {
     [taskId, companyId]
   )).rows[0];
   assert(task, 'TASK_NOT_FOUND', 'Tarefa não encontrada.', 404);
+  if (user) assert(await canViewTask(user, task, queryable), 'TASK_NOT_FOUND', 'Tarefa não encontrada.', 404);
   return task;
 }
 
-async function getTaskDetail(taskId, companyId) {
-  const task = await getTask(taskId, companyId);
-  const [tests, approvals, github, comments, attachments, events, submissions, intervals, stages, relatedBugs] = await Promise.all([
+async function getTaskDetail(taskId, user) {
+  const companyId = user.company_id;
+  const task = await getTask(taskId, companyId, db, user);
+  const [tests, approvals, github, comments, attachments, events, submissions, intervals, stages, relatedBugs, timerEvents] = await Promise.all([
     db.query(
       `SELECT test.*,stage.code AS stage,stage.name AS stage_name,u.name AS created_by_name
        FROM task_tests test JOIN workflow_stages stage ON stage.id=test.stage_id
@@ -306,8 +344,21 @@ async function getTaskDetail(taskId, companyId) {
       [task.workflow_id, companyId]
     ),
     db.query(
-      `SELECT id,task_number,title,state FROM tasks
-       WHERE related_task_id=$1 AND company_id=$2 AND deleted_at IS NULL ORDER BY created_at`,
+      `SELECT related.id,related.task_number,related.title,related.state FROM tasks related
+       JOIN workflow_stages rs ON rs.id=related.current_stage_id
+       WHERE related.related_task_id=$1 AND related.company_id=$2 AND related.deleted_at IS NULL
+        AND ($3::boolean
+          OR ((UPPER(rs.code)='ROADMAP' OR LOWER(TRIM(rs.name))='roadmap') AND related.created_by=$4)
+          OR ((UPPER(rs.code)<>'ROADMAP' AND LOWER(TRIM(rs.name))<>'roadmap') AND (
+            $4::uuid IN (related.created_by,related.requester_id,related.backend_assignee_id,related.frontend_assignee_id)
+            OR EXISTS (SELECT 1 FROM project_responsibles pr WHERE pr.company_id=related.company_id AND pr.project_id=related.project_id AND pr.user_id=$4)
+          ))) ORDER BY related.created_at`,
+      [taskId, companyId, isAdmin(user), user.id]
+    ),
+    db.query(
+      `SELECT event.*,u.name AS actor_name FROM task_timer_events event
+       JOIN users u ON u.id=event.actor_id
+       WHERE event.task_id=$1 AND event.company_id=$2 ORDER BY event.created_at DESC,event.id DESC`,
       [taskId, companyId]
     )
   ]);
@@ -328,7 +379,8 @@ async function getTaskDetail(taskId, companyId) {
       code: taskCode(task),
       total_seconds: totalSeconds,
       current_stage_seconds: currentStageSeconds,
-      missing_requirements: workflow.missingRequirements(task, context, currentStage)
+      missing_requirements: workflow.missingRequirements(task, context, currentStage),
+      ...timing.timingSnapshot(task)
     },
     tests: tests.rows,
     approvals: approvals.rows,
@@ -340,7 +392,8 @@ async function getTaskDetail(taskId, companyId) {
     intervals: intervals.rows,
     related_bugs: relatedBugs.rows,
     workflow: stages.rows.map((stageItem) => stageItem.code),
-    workflow_stages: stages.rows
+    workflow_stages: stages.rows,
+    timer_events: timerEvents.rows
   };
 }
 
@@ -378,7 +431,7 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
   let updated;
   try {
     await client.query('BEGIN');
-    const task = await getTask(taskId, companyId, client);
+    const task = await getTask(taskId, companyId, client, req.user);
     const locked = (await client.query(
       'SELECT * FROM tasks WHERE id=$1 AND company_id=$2 FOR UPDATE',
       [taskId, companyId]
@@ -419,16 +472,22 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
       [taskId, companyId]
     );
     const startsNow = !task.started_at && targetStage.tracks_time;
+    const timerBeforeTransition = timing.timingSnapshot(task);
     updated = (await client.query(
       `UPDATE tasks SET
          current_stage_id=$3,
          state=CASE WHEN $4 THEN 'COMPLETED' ELSE state END,
          started_at=CASE WHEN $5 THEN CURRENT_TIMESTAMP ELSE started_at END,
          completed_at=CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE completed_at END,
+         active_elapsed_seconds=CASE WHEN $4 THEN $7 ELSE active_elapsed_seconds END,
+         timer_status=CASE WHEN $4 AND timer_status NOT IN ('not_started','cancelled') THEN 'completed' ELSE timer_status END,
+         timer_last_started_at=CASE WHEN $4 THEN NULL ELSE timer_last_started_at END,
+         timer_ended_at=CASE WHEN $4 AND timer_status<>'not_started' THEN CURRENT_TIMESTAMP ELSE timer_ended_at END,
+         is_overdue=CASE WHEN $4 THEN FALSE ELSE is_overdue END,
          rework_count=rework_count+CASE WHEN $6 THEN 1 ELSE 0 END,
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
-      [taskId, companyId, targetStage.id, targetStage.completes_task, startsNow, direction === 'BACKWARD']
+      [taskId, companyId, targetStage.id, targetStage.completes_task, startsNow, direction === 'BACKWARD', timerBeforeTransition.active_elapsed_seconds]
     )).rows[0];
     if (targetStage.tracks_time && !targetStage.completes_task) {
       await client.query(
@@ -447,6 +506,9 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
       { stage_id: currentStage.id, stage: currentStage.code, state: task.state },
       { stage_id: targetStage.id, stage: targetStage.code, state: updated.state }
     );
+    if (targetStage.completes_task && !['not_started', 'completed', 'cancelled'].includes(task.timer_status)) {
+      await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'COMPLETED',$3,$4,'completed',$5,$6)`, [companyId, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, timerBeforeTransition.active_elapsed_seconds]);
+    }
     await client.query('COMMIT');
     updated = {
       ...updated,
@@ -517,11 +579,20 @@ async function setTaskState(req, taskId, action, reason) {
          paused_at=CASE WHEN $3='PAUSED' THEN CURRENT_TIMESTAMP ELSE NULL END,
          canceled_at=CASE WHEN $3='CANCELED' THEN CURRENT_TIMESTAMP WHEN $3='ACTIVE' THEN NULL ELSE canceled_at END,
          completed_at=CASE WHEN $3='ACTIVE' THEN NULL ELSE completed_at END,
+         active_elapsed_seconds=CASE WHEN $3='CANCELED' AND timer_status='running' THEN active_elapsed_seconds+EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-timer_last_started_at))::bigint ELSE active_elapsed_seconds END,
+         timer_status=CASE WHEN $3='CANCELED' AND timer_status NOT IN ('completed','cancelled') THEN 'cancelled' WHEN $3='ACTIVE' AND timer_status IN ('cancelled','completed') THEN 'paused' ELSE timer_status END,
+         timer_last_started_at=CASE WHEN $3='CANCELED' THEN NULL ELSE timer_last_started_at END,
+         timer_ended_at=CASE WHEN $3='CANCELED' AND timer_status<>'not_started' THEN CURRENT_TIMESTAMP WHEN $3='ACTIVE' THEN NULL ELSE timer_ended_at END,
+         is_overdue=CASE WHEN $3='CANCELED' THEN FALSE ELSE is_overdue END,
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
       [taskId, companyId, nextState]
     )).rows[0];
     await addEvent(client, req, taskId, `TASK_${action.toUpperCase()}`, reason, { state: task.state }, { state: nextState });
+    if (action === 'cancel' && !['not_started', 'completed', 'cancelled'].includes(task.timer_status)) {
+      const active = timing.timingSnapshot(task).active_elapsed_seconds;
+      await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'CANCELLED',$3,$4,'cancelled',$5,$6)`, [companyId, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, active]);
+    }
     await client.query('COMMIT');
     return updated;
   } catch (error) {
@@ -538,7 +609,7 @@ async function updateAdministration(req, taskId, payload) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const before = await getTask(taskId, companyId, client);
+    const before = await getTask(taskId, companyId, client, req.user);
     const assignees = [payload.backend_assignee_id, payload.frontend_assignee_id].filter(Boolean);
     if (assignees.length) {
       const validUsers = await client.query(
@@ -555,15 +626,22 @@ async function updateAdministration(req, taskId, payload) {
       );
       assert(priority.rowCount, 'PRIORITY_INVALID', 'Prioridade inválida.');
     }
+    const timerSnapshot = timing.timingSnapshot(before);
+    const overdueAfterEstimate = payload.estimated_duration_seconds !== undefined
+      ? timerSnapshot.active_elapsed_seconds >= payload.estimated_duration_seconds
+      : before.is_overdue;
     const updated = (await client.query(
       `UPDATE tasks SET priority_id=COALESCE($3,priority_id),
          backend_assignee_id=COALESCE($4,backend_assignee_id),
          frontend_assignee_id=COALESCE($5,frontend_assignee_id),
+         estimated_duration_seconds=COALESCE($6,estimated_duration_seconds),
+         is_overdue=$7,
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
       [
         taskId, companyId, payload.priority_id,
-        payload.backend_assignee_id, payload.frontend_assignee_id
+        payload.backend_assignee_id, payload.frontend_assignee_id,
+        payload.estimated_duration_seconds, overdueAfterEstimate
       ]
     )).rows[0];
     await addEvent(
@@ -575,12 +653,22 @@ async function updateAdministration(req, taskId, payload) {
       {
         priority_id: before.priority_id,
         backend_assignee_id: before.backend_assignee_id,
-        frontend_assignee_id: before.frontend_assignee_id
+        frontend_assignee_id: before.frontend_assignee_id,
+        estimated_duration_seconds: before.estimated_duration_seconds
       },
       payload
     );
+    if (payload.estimated_duration_seconds !== undefined) {
+      await client.query(
+        `INSERT INTO task_timer_events (
+           company_id,task_id,event_type,actor_id,previous_status,new_status,
+           previous_estimate_seconds,new_estimate_seconds,active_elapsed_seconds
+         ) VALUES ($1,$2,'ESTIMATE_CHANGED',$3,$4,$4,$5,$6,$7)`,
+        [companyId, taskId, req.user.id, before.timer_status, before.estimated_duration_seconds, payload.estimated_duration_seconds, timerSnapshot.active_elapsed_seconds]
+      );
+    }
     await client.query('COMMIT');
-    return updated;
+    return { ...updated, became_overdue: overdueAfterEstimate && !before.is_overdue };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -594,7 +682,7 @@ async function saveSubmission(req, taskId, payload) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const task = await getTask(taskId, companyId, client);
+    const task = await getTask(taskId, companyId, client, req.user);
     const stage = (await client.query(
       'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
       [task.current_stage_id, companyId]
@@ -631,7 +719,7 @@ async function addTest(req, taskId, payload) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const task = await getTask(taskId, companyId, client);
+    const task = await getTask(taskId, companyId, client, req.user);
     const stage = (await client.query(
       'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
       [task.current_stage_id, companyId]
@@ -672,7 +760,7 @@ async function addApproval(req, taskId, payload) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const task = await getTask(taskId, companyId, client);
+    const task = await getTask(taskId, companyId, client, req.user);
     const stage = (await client.query(
       'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
       [task.current_stage_id, companyId]
@@ -704,7 +792,7 @@ async function saveGithub(req, taskId, payload) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const task = await getTask(taskId, companyId, client);
+    const task = await getTask(taskId, companyId, client, req.user);
     const stage = (await client.query(
       'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
       [task.current_stage_id, companyId]
@@ -751,7 +839,7 @@ async function addComment(req, taskId, content) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    await getTask(taskId, companyId, client);
+    await getTask(taskId, companyId, client, req.user);
     const comment = (await client.query(
       `INSERT INTO task_comments (company_id,task_id,content,created_by)
        VALUES ($1,$2,$3,$4) RETURNING *`,
@@ -783,5 +871,8 @@ module.exports = {
   addTest,
   addApproval,
   saveGithub,
-  addComment
+  addComment,
+  timerAction: timing.timerAction,
+  canViewTask,
+  isRoadmap
 };

@@ -22,7 +22,8 @@ const taskSchema = z.object({
   bug_area: z.enum(['BACKEND', 'FRONTEND', 'BOTH']).nullable().optional(),
   initial_evidence: z.string().trim().max(50000).nullable().optional(),
   backend_assignee_id: z.string().uuid(),
-  frontend_assignee_id: z.string().uuid()
+  frontend_assignee_id: z.string().uuid(),
+  estimated_duration_seconds: z.number().int().min(60).max(31536000).nullable().optional()
 }).superRefine((value, context) => {
   if (value.kind === 'BUG') {
     for (const field of ['product_affected', 'related_requirement', 'bug_area', 'initial_evidence']) {
@@ -47,13 +48,16 @@ async function listTasks(req, res) {
     assignee: z.string().uuid().optional(),
     search: z.string().trim().max(100).optional(),
     page: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().positive().optional()
+    limit: z.coerce.number().int().positive().optional(),
+    overdue: z.enum(['true', 'false']).optional()
   }).parse(req.query);
-  res.json(await taskService.listTasks(req.user.company_id, filters));
+  res.json(await taskService.listTasks(req.user, filters));
 }
 
 async function detail(req, res) {
-  res.json(await taskService.getTaskDetail(req.params.id, req.user.company_id));
+  const result = await taskService.getTaskDetail(req.params.id, req.user);
+  if (taskService.isRoadmap(result.task)) await recordAudit({ req, operation: 'TASK_ROADMAP_VIEWED', entityType: 'TASK', entityId: result.task.id });
+  res.json(result);
 }
 
 async function transition(req, res) {
@@ -74,10 +78,20 @@ async function updateAdministration(req, res) {
   const payload = z.object({
     priority_id: z.string().uuid().optional(),
     backend_assignee_id: z.string().uuid().optional(),
-    frontend_assignee_id: z.string().uuid().optional()
+    frontend_assignee_id: z.string().uuid().optional(),
+    estimated_duration_seconds: z.number().int().min(60).max(31536000).optional()
   }).refine((value) => Object.keys(value).length > 0).parse(req.body);
   const task = await taskService.updateAdministration(req, req.params.id, payload);
   await recordAudit({ req, operation: 'TASK_ADMIN_UPDATED', entityType: 'TASK', entityId: task.id, newValues: payload });
+  if (task.became_overdue) await recordAudit({ req, operation: 'TASK_OVERDUE', entityType: 'TASK', entityId: task.id, newValues: { estimated_duration_seconds: task.estimated_duration_seconds } });
+  res.json({ task });
+}
+
+async function timerAction(req, res) {
+  const { action } = z.object({ action: z.enum(['start', 'pause', 'resume', 'complete', 'cancel']) }).parse(req.body);
+  const task = await taskService.timerAction(req, req.params.id, action);
+  await recordAudit({ req, operation: `TASK_TIMER_${action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { timer_status: task.timer_status, active_elapsed_seconds: task.active_elapsed_seconds, is_overdue: task.is_overdue } });
+  if (task.became_overdue) await recordAudit({ req, operation: 'TASK_OVERDUE', entityType: 'TASK', entityId: task.id, newValues: { active_elapsed_seconds: task.active_elapsed_seconds, estimated_duration_seconds: task.estimated_duration_seconds } });
   res.json({ task });
 }
 
@@ -144,7 +158,7 @@ async function uploadAttachment(req, res) {
 }
 
 async function downloadAttachment(req, res) {
-  const { attachment, filePath } = await attachmentService.getAttachment(req.user.company_id, req.params.id, req.params.attachmentId);
+  const { attachment, filePath } = await attachmentService.getAttachment(req.user, req.params.id, req.params.attachmentId);
   res.setHeader('Content-Type', attachment.mime_type);
   res.setHeader('Content-Disposition', `attachment; filename="${path.basename(attachment.original_name).replace(/"/g, '')}"`);
   res.setHeader('Cache-Control', 'private, no-store');
@@ -160,5 +174,5 @@ async function deleteAttachment(req, res) {
 module.exports = {
   createTask, listTasks, detail, transition, stateAction, updateAdministration,
   saveSubmission, addTest, addApproval, saveGithub, addComment,
-  uploadAttachment, downloadAttachment, deleteAttachment
+  uploadAttachment, downloadAttachment, deleteAttachment, timerAction
 };

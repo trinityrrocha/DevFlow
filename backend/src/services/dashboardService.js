@@ -235,7 +235,35 @@ async function refreshPending() {
   }
 }
 
-async function dashboard(companyId) {
+async function dashboard(user) {
+  const companyId = user.company_id;
+  const administrator = user.is_super_admin === true || user.roles?.includes('ADMIN') || user.permissions?.includes('tasks.manage');
+  if (!administrator) {
+    const visible = `t.company_id=$1 AND t.deleted_at IS NULL AND (
+      ((UPPER(s.code)='ROADMAP' OR LOWER(TRIM(s.name))='roadmap') AND t.created_by=$2)
+      OR ((UPPER(s.code)<>'ROADMAP' AND LOWER(TRIM(s.name))<>'roadmap') AND (
+        $2::uuid IN (t.created_by,t.requester_id,t.backend_assignee_id,t.frontend_assignee_id)
+        OR EXISTS (SELECT 1 FROM project_responsibles pr WHERE pr.company_id=t.company_id AND pr.project_id=t.project_id AND pr.user_id=$2)
+      ))
+    )`;
+    const counts = (await db.query(
+      `SELECT COUNT(*)::integer AS total_tasks,
+              COUNT(*) FILTER (WHERE t.state='COMPLETED')::integer AS completed_tasks,
+              COUNT(*) FILTER (WHERE t.state='ACTIVE')::integer AS active_tasks,
+              COUNT(*) FILTER (WHERE t.state='PAUSED')::integer AS paused_tasks,
+              COUNT(*) FILTER (WHERE t.kind='BUG')::integer AS total_bugs,
+              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.state='COMPLETED')::integer AS resolved_bugs,
+              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.state NOT IN ('COMPLETED','CANCELED'))::integer AS pending_bugs
+       FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE ${visible}`,
+      [companyId, user.id]
+    )).rows[0];
+    return {
+      generated_at: new Date().toISOString(),
+      general: { ...counts, average_completion_seconds: 0, average_by_stage: [], distributions: { priority: [], environment: [], kind: [] } },
+      priority_weights: {}, formula_version: 2, developers: [],
+      refresh: { status: 'FILTERED' }
+    };
+  }
   const [company, developers, state] = await Promise.all([
     db.query('SELECT payload,calculated_at FROM company_metric_snapshots WHERE company_id=$1', [companyId]),
     db.query(

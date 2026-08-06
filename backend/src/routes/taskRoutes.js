@@ -11,6 +11,7 @@ router.get('/:id', requirePermission('tasks.view'), controller.detail);
 router.post('/:id/transition', requirePermission('tasks.operate'), controller.transition);
 router.post('/:id/state', requirePermission('tasks.manage'), controller.stateAction);
 router.patch('/:id/administration', requirePermission('tasks.manage'), controller.updateAdministration);
+router.post('/:id/timer', requirePermission('tasks.operate'), controller.timerAction);
 router.put('/:id/submission', requirePermission('tasks.operate'), controller.saveSubmission);
 router.post('/:id/tests', requirePermission('tasks.operate'), controller.addTest);
 router.post('/:id/approvals', requirePermission('tasks.operate'), controller.addApproval);

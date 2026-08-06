@@ -59,7 +59,7 @@ async function createAttachment(req, taskId, file, description) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    await taskService.getTask(taskId, companyId, client);
+    await taskService.getTask(taskId, companyId, client, req.user);
     const attachment = (await client.query(
       `INSERT INTO task_attachments (
          company_id,task_id,original_name,storage_key,mime_type,size_bytes,sha256,description,created_by
@@ -87,7 +87,9 @@ async function createAttachment(req, taskId, file, description) {
   }
 }
 
-async function getAttachment(companyId, taskId, id) {
+async function getAttachment(user, taskId, id) {
+  const companyId = user.company_id;
+  await taskService.getTask(taskId, companyId, db, user);
   const attachment = (await db.query(
     `SELECT * FROM task_attachments
      WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL`,
@@ -101,6 +103,7 @@ async function softDeleteAttachment(req, taskId, id) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await taskService.getTask(taskId, req.user.company_id, client, req.user);
     const result = await client.query(
       `UPDATE task_attachments SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$3
        WHERE id=$1 AND task_id=$2 AND company_id=$4 AND deleted_at IS NULL

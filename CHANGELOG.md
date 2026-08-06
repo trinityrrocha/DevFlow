@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.2-alpha] - 2026-08-06
+
+### Adicionado
+
+- estimativa de desenvolvimento em segundos, apresentada como `dd-hh-mm`;
+- cronometro com estados `not_started`, `running`, `paused`, `completed` e `cancelled`;
+- tempo produtivo restante, tempo corrido desde o inicio, atraso e filtro de tarefas atrasadas;
+- historico imutavel de inicio, pausa, retomada, conclusao, cancelamento, estimativa e atraso.
+
+### Seguranca
+
+- Roadmap restrito no backend ao criador, Admin e Super Admin;
+- fora do Roadmap, acesso limitado a participantes, responsaveis do projeto e administradores;
+- predicados de visibilidade aplicados a busca, detalhe, relacionados, anexos, notificacoes e dashboard;
+- operacoes de cronometro autorizadas pela responsabilidade da etapa e serializadas por lock no PostgreSQL.
+
 ## [0.6.1-alpha] - 2026-08-06
 
 ### Adicionado

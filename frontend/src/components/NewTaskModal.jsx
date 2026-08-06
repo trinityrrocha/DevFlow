@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bug, FilePlus2, Loader2, X } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
+import { parseDurationInput } from '../utils/timing';
 
 const emptyForm = {
   kind: 'REQUEST',
@@ -19,7 +20,8 @@ const emptyForm = {
   bug_area: 'BACKEND',
   initial_evidence: '',
   backend_assignee_id: '',
-  frontend_assignee_id: ''
+  frontend_assignee_id: '',
+  estimated_duration: ''
 };
 
 export default function NewTaskModal({ open, onClose, onCreated }) {
@@ -84,9 +86,16 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
     event.preventDefault();
     setError('');
     setSaving(true);
+    const estimatedSeconds = form.estimated_duration ? parseDurationInput(form.estimated_duration) : null;
+    if (form.estimated_duration && estimatedSeconds == null) {
+      setError('Informe a estimativa no formato dd-hh-mm, com horas de 00 a 23 e minutos de 00 a 59.');
+      setSaving(false);
+      return;
+    }
     try {
       const payload = {
         ...form,
+        estimated_duration_seconds: estimatedSeconds,
         workflow_id: form.workflow_id || undefined,
         product_affected: form.kind === 'BUG' ? form.product_affected : null,
         related_requirement: form.kind === 'BUG' ? form.related_requirement : null,
@@ -95,6 +104,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
         initial_evidence: form.kind === 'BUG' ? form.initial_evidence : null,
         client_environment: form.client_environment || null
       };
+      delete payload.estimated_duration;
       const response = await api.post('/tasks', payload);
       for (const file of files) {
         const body = new FormData();
@@ -152,6 +162,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
             <Select label="Solicitante *" value={form.requester_id} onChange={(value) => change('requester_id', value)} options={users.map((user) => [user.id, user.name])} />
             <Select label="Responsável Backend *" value={form.backend_assignee_id} onChange={(value) => change('backend_assignee_id', value)} options={users.map((user) => [user.id, user.name])} />
             <Select label="Responsável Frontend *" value={form.frontend_assignee_id} onChange={(value) => change('frontend_assignee_id', value)} options={users.map((user) => [user.id, user.name])} />
+            <Input label="Tempo estimado (dd-hh-mm)" required={false} value={form.estimated_duration} onChange={(value) => change('estimated_duration', value.replace(/[^0-9-]/g, '').slice(0, 9))} placeholder="02-08-30" pattern="[0-9]{2,3}-[0-9]{2}-[0-9]{2}" />
           </div>
 
           {form.kind === 'BUG' && (
@@ -181,6 +192,6 @@ function Select({ label, value, onChange, options, required = true }) {
   return <label className="block text-sm font-medium text-slate-700">{label}<select required={required} value={value} onChange={(event) => onChange(event.target.value)} className="field mt-1"><option value="">Selecione</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>;
 }
 
-function Input({ label, value, onChange, required = false }) {
-  return <label className="block text-sm font-medium text-slate-700">{label}<input required={required} value={value} onChange={(event) => onChange(event.target.value)} className="field mt-1" /></label>;
+function Input({ label, value, onChange, required = false, placeholder, pattern }) {
+  return <label className="block text-sm font-medium text-slate-700">{label}<input required={required} value={value} placeholder={placeholder} pattern={pattern} onChange={(event) => onChange(event.target.value)} className="field mt-1" /></label>;
 }
