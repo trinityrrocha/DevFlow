@@ -50,6 +50,41 @@ tar -xzf "$TEMP_DIR/payload.tar.gz" -C "$TEMP_DIR"
 )
 [[ -s "$TEMP_DIR/database.dump" && -s "$TEMP_DIR/uploads.tar.gz" && -s "$TEMP_DIR/manifest.json" ]] \
   || die 'Backup autenticado, mas incompleto.'
+if [[ -n "${DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID:-}" ]]; then
+  [[ "$DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID" =~ ^[0-9a-f]{32}$ \
+    && "${DEVFLOW_BACKUP_EXPECTED_TRANSACTION_TIMESTAMP:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ \
+    && "${DEVFLOW_BACKUP_EXPECTED_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ \
+    && "${DEVFLOW_BACKUP_EXPECTED_COMMIT:-}" =~ ^[0-9a-f]{40}$ \
+    && "${DEVFLOW_BACKUP_EXPECTED_MIGRATION:-}" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ \
+    && "${DEVFLOW_BACKUP_EXPECTED_STATE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] \
+    || die 'Expectativa transacional do backup invalida.'
+  python3 - "$TEMP_DIR/manifest.json" <<'PY'
+import datetime
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    manifest = json.load(stream)
+expected = {
+    "format": "devflow-backup-v2",
+    "transaction_id": os.environ["DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID"],
+    "transaction_timestamp": os.environ["DEVFLOW_BACKUP_EXPECTED_TRANSACTION_TIMESTAMP"],
+    "application_version": os.environ["DEVFLOW_BACKUP_EXPECTED_VERSION"],
+    "application_sha": os.environ["DEVFLOW_BACKUP_EXPECTED_COMMIT"],
+    "database_migration": os.environ["DEVFLOW_BACKUP_EXPECTED_MIGRATION"],
+    "installation_state_sha256": os.environ["DEVFLOW_BACKUP_EXPECTED_STATE_SHA256"],
+}
+for key, value in expected.items():
+    if manifest.get(key) != value:
+        raise SystemExit(f"backup-transaction-identity-mismatch:{key}")
+created = datetime.datetime.fromisoformat(manifest["created_at"].replace("Z", "+00:00"))
+started = datetime.datetime.fromisoformat(manifest["transaction_timestamp"].replace("Z", "+00:00"))
+now = datetime.datetime.now(datetime.timezone.utc)
+if created < started - datetime.timedelta(minutes=5) or created > now + datetime.timedelta(minutes=5):
+    raise SystemExit("backup-transaction-timestamp-invalid")
+PY
+fi
 while IFS= read -r entry; do
   [[ "$entry" != /* && "$entry" != *"../"* && "$entry" != ".." ]] || die "Entrada insegura nos uploads: $entry"
 done < <(tar -tzf "$TEMP_DIR/uploads.tar.gz")

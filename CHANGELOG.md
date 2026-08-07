@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.5-alpha] - 2026-08-07
+
+### Corrigido
+
+- health candidato com versao, commit, migration e tags de imagem explicitos, sem promover antecipadamente o estado instalado;
+- promocao atomica da release seguida por `installation.json` schema v3, health interno estrito e health publico;
+- backup pre-update autenticado pelo ID da transacao, identidade anterior, migration, snapshot e hashes;
+- rollback apos migrations com restore obrigatorio do PostgreSQL e uploads antes de release, estado, containers e health antigos;
+- imagens anteriores preservadas por ID/tag imutavel, candidata identificada pelo commit e worker removido quando ausente na topologia anterior;
+- transacao schema v2 com estados finais nao ambiguos e gate de recuperacao manual quando o banco nao puder ser restaurado.
+
+### Validacao
+
+- fixture reproduz a tentativa `0.5.5-alpha` para `0.6.4-alpha`, incluindo estado instalado antigo durante o candidate health;
+- 40 cenarios locais cobrem candidate health, promocao, backup, rollback antes/depois de migrations, falha de restore e imagens.
+
 ## [0.6.4-alpha] - 2026-08-06
 
 ### Corrigido

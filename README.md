@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.4-alpha**. A Fase 4 acrescenta notificacoes internas, preferencias, recuperacao segura de senha e e-mail assincrono por outbox cifrada com worker limitado. As fases anteriores, a instalacao isolada e o updater permanecem preservados.
+Versao atual: **0.6.5-alpha**. Esta revisao corrige o health da release candidata, a promocao atomica e o rollback transacional de banco, release, estado e imagens. As funcionalidades da Fase 4, a instalacao isolada e o updater separado permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

@@ -627,6 +627,28 @@ devflow_container_running() {
     --filter "label=com.docker.compose.service=$service" --format '{{.ID}}' | grep -q .
 }
 
+valid_devflow_release_target() {
+  local target="${1:-}" resolved marker
+  resolved="$(readlink -f -- "$target" 2>/dev/null || true)"
+  [[ -n "$resolved" && "$resolved" == "$DEVFLOW_INSTALL_ROOT/releases/"* \
+    && -d "$resolved" && ! -L "$resolved" && -f "$resolved/.devflow-release" \
+    && ! -L "$resolved/.devflow-release" ]] || return 1
+  marker="$(tr -d '\r\n' < "$resolved/.devflow-release")"
+  [[ "$marker" =~ ^[0-9a-f]{40}$ && "$resolved" == "$DEVFLOW_INSTALL_ROOT/releases/$marker" ]]
+}
+
+replace_devflow_app_symlink_atomically() {
+  local target="$1" temporary
+  valid_devflow_release_target "$target" || return 1
+  temporary="$(mktemp -d "$DEVFLOW_INSTALL_ROOT/.app-link.XXXXXX")" || return 1
+  if ! ln -s -- "$target" "$temporary/app" \
+    || ! mv -Tf -- "$temporary/app" "$DEVFLOW_INSTALL_ROOT/app"; then
+    rm -rf -- "$temporary"
+    return 1
+  fi
+  rmdir -- "$temporary"
+}
+
 check_capacity() {
   local available_kb memory_kb
   available_kb="$(df -Pk "${1:-/opt}" 2>/dev/null | awk 'NR==2 {print $4}')"

@@ -10,11 +10,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEVFLOW_ENV_FILE="$ENV_FILE"
 load_devflow_env
 DEVFLOW_IDENTITY_RELEASE_ROOT="$PROJECT_DIR"
+if [[ -n "${DEVFLOW_BACKUP_TRANSACTION_ID:-}" ]]; then
+  [[ "$DEVFLOW_BACKUP_TRANSACTION_ID" =~ ^[0-9a-f]{32}$ \
+    && "${DEVFLOW_BACKUP_TRANSACTION_TIMESTAMP:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ \
+    && "${DEVFLOW_BACKUP_PREVIOUS_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ \
+    && "${DEVFLOW_BACKUP_PREVIOUS_COMMIT:-}" =~ ^[0-9a-f]{40}$ \
+    && "${DEVFLOW_BACKUP_PREVIOUS_MIGRATION:-}" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ \
+    && "${DEVFLOW_BACKUP_INSTALLATION_STATE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] \
+    || die 'Identidade transacional do backup invalida.'
+  DEVFLOW_VERSION="$DEVFLOW_BACKUP_PREVIOUS_VERSION"
+  DEVFLOW_RELEASE_COMMIT="$DEVFLOW_BACKUP_PREVIOUS_COMMIT"
+  DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+  INSTALLED_VERSION="$DEVFLOW_VERSION"
+  INSTALLED_COMMIT="$DEVFLOW_RELEASE_COMMIT"
+  export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT \
+    DEVFLOW_EXPLICIT_RELEASE_IDENTITY INSTALLED_VERSION INSTALLED_COMMIT
+  validate_explicit_release_identity \
+    || die 'Release anterior da transacao nao foi comprovada para backup.'
+else
 resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
   || { echo 'Identidade instalada não comprovada; backup operacional bloqueado.' >&2; exit 1; }
 DEVFLOW_VERSION="$INSTALLED_VERSION"
 DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
 export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
+fi
 command -v flock >/dev/null 2>&1 || { echo 'flock é obrigatório para serializar backups.' >&2; exit 1; }
 exec 8>/run/lock/devflow-backup.lock
 flock -n 8 || { echo 'Outro backup DevFlow está em andamento.' >&2; exit 1; }
@@ -55,9 +74,21 @@ docker run --rm \
 db_sha="$(sha256sum "$TEMP_DIR/database.dump" | awk '{print $1}')"
 uploads_sha="$(sha256sum "$TEMP_DIR/uploads.tar.gz" | awk '{print $1}')"
 app_sha="$INSTALLED_COMMIT"
-cat > "$TEMP_DIR/manifest.json" <<EOF
-{"format":"devflow-backup-v1","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","application_sha":"$app_sha","database_sha256":"$db_sha","uploads_sha256":"$uploads_sha"}
-EOF
+if [[ -n "${DEVFLOW_BACKUP_TRANSACTION_ID:-}" ]]; then
+  [[ "$DEVFLOW_BACKUP_TRANSACTION_ID" =~ ^[0-9a-f]{32}$ \
+    && "${DEVFLOW_BACKUP_PREVIOUS_VERSION:-}" == "$INSTALLED_VERSION" \
+    && "${DEVFLOW_BACKUP_PREVIOUS_COMMIT:-}" == "$INSTALLED_COMMIT" \
+    && "${DEVFLOW_BACKUP_PREVIOUS_MIGRATION:-}" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ \
+    && "${DEVFLOW_BACKUP_INSTALLATION_STATE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] \
+    || die 'Identidade transacional do backup invalida.'
+  printf '%s\n' \
+    "{\"format\":\"devflow-backup-v2\",\"created_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"transaction_id\":\"$DEVFLOW_BACKUP_TRANSACTION_ID\",\"transaction_timestamp\":\"$DEVFLOW_BACKUP_TRANSACTION_TIMESTAMP\",\"application_version\":\"$INSTALLED_VERSION\",\"application_sha\":\"$app_sha\",\"database_migration\":\"$DEVFLOW_BACKUP_PREVIOUS_MIGRATION\",\"installation_state_sha256\":\"$DEVFLOW_BACKUP_INSTALLATION_STATE_SHA256\",\"database_sha256\":\"$db_sha\",\"uploads_sha256\":\"$uploads_sha\"}" \
+    > "$TEMP_DIR/manifest.json"
+else
+  printf '%s\n' \
+    "{\"format\":\"devflow-backup-v1\",\"created_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"application_sha\":\"$app_sha\",\"database_sha256\":\"$db_sha\",\"uploads_sha256\":\"$uploads_sha\"}" \
+    > "$TEMP_DIR/manifest.json"
+fi
 (
   cd "$TEMP_DIR"
   sha256sum database.dump uploads.tar.gz manifest.json > checksums.sha256

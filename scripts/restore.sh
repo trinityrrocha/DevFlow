@@ -16,10 +16,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEVFLOW_ENV_FILE="$ENV_FILE"
 load_devflow_env
 DEVFLOW_IDENTITY_RELEASE_ROOT="$PROJECT_DIR"
-resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
-  || { echo 'Identidade instalada não comprovada; restauração bloqueada.' >&2; exit 1; }
-DEVFLOW_VERSION="$INSTALLED_VERSION"
-DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+TRANSACTION_MODE=false
+TRANSACTION_FILE="${DEVFLOW_RESTORE_TRANSACTION_FILE:-}"
+if [[ -z "$TRANSACTION_FILE" ]]; then
+  resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
+    || { echo 'Identidade instalada não comprovada; restauração bloqueada.' >&2; exit 1; }
+  DEVFLOW_VERSION="$INSTALLED_VERSION"
+  DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
+else
+  TRANSACTION_MODE=true
+fi
 export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 BACKUP_FILE="$(realpath "$1")"
@@ -47,6 +53,48 @@ fi
   echo "Backup excede o limite de restauração." >&2
   exit 1
 }
+
+if [[ "$TRANSACTION_MODE" == true ]]; then
+  [[ "$TRANSACTION_FILE" == "$DEVFLOW_STATE_ROOT/update-transaction.json" \
+    && -f "$TRANSACTION_FILE" && ! -L "$TRANSACTION_FILE" ]] \
+    || die 'Arquivo de transacao do rollback invalido.'
+  python3 "$SCRIPT_DIR/validate-update-transaction.py" validate "$TRANSACTION_FILE" >/dev/null \
+    || die 'Transacao do rollback nao foi comprovada.'
+  transaction_backup="$(installation_state_value backupPath "$TRANSACTION_FILE")"
+  transaction_backup_hash="$(installation_state_value backupHash "$TRANSACTION_FILE")"
+  transaction_previous_version="$(installation_state_value previousVersion "$TRANSACTION_FILE")"
+  transaction_previous_commit="$(installation_state_value previousCommit "$TRANSACTION_FILE")"
+  transaction_previous_release="$(installation_state_value previousRelease "$TRANSACTION_FILE")"
+  transaction_previous_migration="$(installation_state_value previousMigration "$TRANSACTION_FILE")"
+  transaction_id="$(installation_state_value transactionId "$TRANSACTION_FILE")"
+  transaction_timestamp="$(installation_state_value timestamp "$TRANSACTION_FILE")"
+  transaction_state_snapshot="$(installation_state_value previousInstallationStateBackup "$TRANSACTION_FILE")"
+  transaction_state_hash="$(installation_state_value previousInstallationStateHash "$TRANSACTION_FILE")"
+  [[ "$(installation_state_value rollbackStarted "$TRANSACTION_FILE")" == true \
+    && "$transaction_backup" == "$BACKUP_FILE" \
+    && "$(sha256sum "$BACKUP_FILE" | awk '{print $1}')" == "$transaction_backup_hash" \
+    && "$transaction_previous_release" == "$(readlink -f "$PROJECT_DIR")" \
+    && "$(tr -d '\r\n' < "$PROJECT_DIR/.devflow-release")" == "$transaction_previous_commit" \
+    && -f "$transaction_state_snapshot" && ! -L "$transaction_state_snapshot" \
+    && "$(sha256sum "$transaction_state_snapshot" | awk '{print $1}')" == "$transaction_state_hash" ]] \
+    || die 'Backup ou identidade anterior nao pertencem a transacao de rollback.'
+  DEVFLOW_VERSION="$transaction_previous_version"
+  DEVFLOW_RELEASE_COMMIT="$transaction_previous_commit"
+  DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+  export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_EXPLICIT_RELEASE_IDENTITY
+  validate_explicit_release_identity || die 'Release anterior da transacao nao foi comprovada.'
+  DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID="$transaction_id" \
+    DEVFLOW_BACKUP_EXPECTED_TRANSACTION_TIMESTAMP="$transaction_timestamp" \
+    DEVFLOW_BACKUP_EXPECTED_VERSION="$transaction_previous_version" \
+    DEVFLOW_BACKUP_EXPECTED_COMMIT="$transaction_previous_commit" \
+    DEVFLOW_BACKUP_EXPECTED_MIGRATION="$transaction_previous_migration" \
+    DEVFLOW_BACKUP_EXPECTED_STATE_SHA256="$transaction_state_hash" \
+    DEVFLOW_PROJECT_DIR="$PROJECT_DIR" DEVFLOW_ENV_FILE="$ENV_FILE" \
+    "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_FILE" >/dev/null \
+    || die 'Backup transacional recusado antes da restauracao.'
+  DEVFLOW_APP_ROOT="$PROJECT_DIR"
+  compose_files
+fi
 
 if [[ "$SKIP_PREBACKUP" == false ]]; then
   BACKUP_ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}" \
@@ -117,6 +165,9 @@ uploads_expanded_bytes="$(tar --numeric-owner -tvzf "$TEMP_DIR/uploads.tar.gz" |
   exit 1
 }
 
+if [[ "$TRANSACTION_MODE" == true ]]; then
+  docker stop devflow-worker >/dev/null 2>&1 || true
+fi
 "${DEVFLOW_COMPOSE[@]}" stop backend
 BACKEND_STOPPED=1
 
@@ -132,6 +183,13 @@ docker run --rm \
 
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason='\''backup_restored'\'' WHERE revoked_at IS NULL"'
+if [[ "$TRANSACTION_MODE" == true ]]; then
+  restored_migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
+    'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
+  [[ "$restored_migration" == "$transaction_previous_migration" ]] \
+    || die 'Banco restaurado nao retornou a migration anterior registrada.'
+  printf '%s\n' 'database_restore_completed=true' "restored_migration=$restored_migration"
+fi
 if [[ "$NO_START" == false ]]; then
   "${DEVFLOW_COMPOSE[@]}" start backend
   BACKEND_STOPPED=0

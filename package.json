@@ -1,6 +1,6 @@
 {
   "name": "devflow",
-  "version": "0.6.4-alpha",
+  "version": "0.6.5-alpha",
   "private": true,
   "workspaces": [
     "backend",
@@ -17,6 +17,7 @@
     "validate:bootstrap-interface": "node scripts/validate-bootstrap-interface.mjs",
     "validate:updater-installation-lifecycle": "node scripts/validate-updater-installation-lifecycle.mjs",
     "validate:update-workflow": "node scripts/validate-update-workflow.mjs",
+    "validate:update-transaction": "node scripts/validate-update-transaction.mjs",
     "validate:auth-state-recovery": "node scripts/validate-auth-state-recovery.mjs",
     "validate:isolated-architecture": "node scripts/validate-isolated-architecture.mjs",
     "validate:version-policy": "node scripts/validate-version-policy.mjs",
@@ -29,7 +30,7 @@
     "audit:history": "node scripts/history-audit.mjs",
     "audit:version-constants": "node scripts/audit-version-constants.mjs",
     "audit:compose-command": "node scripts/audit-compose-command.mjs",
-    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:shell-syntax && pnpm validate:bootstrap-interface && pnpm validate:updater-installation-lifecycle && pnpm validate:update-workflow && pnpm validate:auth-state-recovery && pnpm validate:compose && pnpm validate:operations && pnpm validate:isolated-architecture && pnpm validate:version-policy && pnpm validate:migrations && pnpm validate:migration-permissions && pnpm validate:image-validation && pnpm validate:installation-state && pnpm validate:interactive-menus && pnpm audit:compose-command && pnpm audit:repository && pnpm audit:version-constants && pnpm audit:history"
+    "check": "pnpm lint && pnpm test && pnpm build && pnpm validate:shell-syntax && pnpm validate:bootstrap-interface && pnpm validate:updater-installation-lifecycle && pnpm validate:update-workflow && pnpm validate:update-transaction && pnpm validate:auth-state-recovery && pnpm validate:compose && pnpm validate:operations && pnpm validate:isolated-architecture && pnpm validate:version-policy && pnpm validate:migrations && pnpm validate:migration-permissions && pnpm validate:image-validation && pnpm validate:installation-state && pnpm validate:interactive-menus && pnpm audit:compose-command && pnpm audit:repository && pnpm audit:version-constants && pnpm audit:history"
   },
   "packageManager": "pnpm@10.15.0",
   "engines": {

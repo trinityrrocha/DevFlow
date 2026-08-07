@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.4-alpha`
+## Marco `0.6.5-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
@@ -15,6 +15,7 @@
 - [x] montar certificado e Nginx runtime somente leitura;
 - [x] preservar containers na falha e recalcular `--resume` por estado real;
 - [x] incluir updater com fila privada HMAC e motor unico `update.sh`;
+- [x] separar health candidato da identidade instalada e tornar promocao/rollback transacionais;
 - [x] ativar o symlink operacional antes do updater, com rollback e gate da fila;
 - [x] renovar certificado por timer systemd e hook escopado;
 - [x] cobrir 30 cenarios de alinhamento e 24 cenarios do ciclo updater/instalacao;

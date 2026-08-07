@@ -1,6 +1,15 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.4-alpha`
+## Instalacao isolada `0.6.5-alpha`
+
+| Update transacional | Evidencia |
+|---|---|
+| Candidate health | `health.sh --candidate` com versao, commit, migration, API, worker e imagens explicitos |
+| Promocao atomica | symlink, state schema v3, health instalado interno e health publico em ordem |
+| Backup autenticado | manifesto `devflow-backup-v2`, ID da transacao e hashes de backup/snapshot |
+| Rollback de banco | restore pre-update obrigatorio antes do health antigo quando migrations mutaram o banco |
+| Imagens e worker | tags `candidate-*`/`rollback-*`, IDs anteriores e remocao do worker ausente na topologia antiga |
+| Testes | `validate-update-transaction.mjs`, 40 cenarios e fixture 0.5.5 -> 0.6.4 |
 
 | Fase 4 | Evidencia |
 |---|---|

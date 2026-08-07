@@ -28,7 +28,7 @@ check('2 motor nao solicita input', !engine.includes('require_numeric_confirmati
 check('3 remote HTTPS permitido', engine.includes("'https://github.com/trinityrrocha/DevFlow'"));
 check('4 remote SSH permitido e demais recusados', engine.includes("'git@github.com:trinityrrocha/DevFlow.git'") && engine.includes('Remote origin nao autorizado'));
 check('5 dirty Git bloqueia sem destruir', engine.includes('update_blocked=dirty-worktree') && engine.includes('--untracked-files=no') && !engine.includes('reset --hard') && !engine.includes('clean -fd'));
-check('6 backup obrigatorio', engine.includes('scripts/backup.sh') && engine.indexOf('scripts/backup.sh') < engine.indexOf('UPDATE_PHASE=release'));
+check('6 backup obrigatorio', engine.includes('$SCRIPT_DIR/backup.sh') && engine.indexOf('$SCRIPT_DIR/backup.sh') < engine.indexOf('UPDATE_PHASE=release'));
 check('7 falha de backup interrompe', engine.includes("[[ -n \"$BACKUP_FILE\" && -s \"$BACKUP_FILE\" ]]") && engine.includes('verify-backup.sh'));
 check('8 migrations aplicadas em ordem', migrate.includes('.sort(') && migrate.includes('schema_migrations'));
 check('9 falha de migration aciona trap', engine.includes('run_devflow_migrations') && engine.includes('trap update_failed EXIT'));

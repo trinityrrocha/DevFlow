@@ -10,14 +10,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INTERNAL_ONLY=false
 QUIET=false
-ALLOW_PENDING_STATE="${DEVFLOW_HEALTH_ALLOW_PENDING_VERSION:-false}"
-[[ "$ALLOW_PENDING_STATE" == true || "$ALLOW_PENDING_STATE" == false ]] \
-  || die 'DEVFLOW_HEALTH_ALLOW_PENDING_VERSION invalido.'
+CANDIDATE_MODE=false
+EXPECTED_VERSION_ARG=
+EXPECTED_COMMIT_ARG=
+EXPECTED_MIGRATION_ARG=
+REQUESTED_IMAGE_TAG="${DEVFLOW_IMAGE_TAG:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --internal) INTERNAL_ONLY=true; shift ;;
+    --candidate) CANDIDATE_MODE=true; INTERNAL_ONLY=true; shift ;;
+    --expected-version) [[ -n "${2:-}" ]] || die '--expected-version exige valor.'; EXPECTED_VERSION_ARG="$2"; shift 2 ;;
+    --expected-commit) [[ -n "${2:-}" ]] || die '--expected-commit exige valor.'; EXPECTED_COMMIT_ARG="$2"; shift 2 ;;
+    --expected-migration) [[ -n "${2:-}" ]] || die '--expected-migration exige valor.'; EXPECTED_MIGRATION_ARG="$2"; shift 2 ;;
     --quiet) QUIET=true; shift ;;
-    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal] [--quiet]'; exit 0 ;;
+    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal|--candidate --expected-version V --expected-commit SHA --expected-migration FILE] [--quiet]'; exit 0 ;;
     *) die "Opcao desconhecida: $1" ;;
   esac
 done
@@ -29,6 +35,20 @@ validate_runtime_paths
 load_installation_state "$DEVFLOW_STATE_ROOT/installation.json" \
   || die 'Estado instalado schema v3 ausente ou invalido.'
 [[ "$DEVFLOW_INSTALLATION_STATE_MODE" == isolated ]] || die 'Somente o modo isolado e suportado.'
+
+if [[ "$CANDIDATE_MODE" == true ]]; then
+  devflow_semver_is_valid "$EXPECTED_VERSION_ARG" || die 'Versao candidata esperada invalida.'
+  [[ "$EXPECTED_COMMIT_ARG" =~ ^[0-9a-f]{40}$ ]] || die 'Commit candidato esperado invalido.'
+  [[ "$EXPECTED_MIGRATION_ARG" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] || die 'Migration candidata esperada invalida.'
+  DEVFLOW_VERSION="$EXPECTED_VERSION_ARG"
+  DEVFLOW_RELEASE_COMMIT="$EXPECTED_COMMIT_ARG"
+  [[ "$REQUESTED_IMAGE_TAG" == "candidate-$EXPECTED_COMMIT_ARG" ]] \
+    || die 'Tag da imagem candidata esperada invalida.'
+  DEVFLOW_IMAGE_TAG="$REQUESTED_IMAGE_TAG"
+  export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IMAGE_TAG
+elif [[ -n "$EXPECTED_VERSION_ARG$EXPECTED_COMMIT_ARG$EXPECTED_MIGRATION_ARG" ]]; then
+  die 'Expectativas explicitas sao permitidas somente com --candidate.'
+fi
 
 DEVFLOW_APP_ROOT="${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}"
 DEVFLOW_INSTALLED_SOURCE_DIR="${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}"
@@ -44,19 +64,60 @@ report() {
 }
 
 CONFIGURED_VERSION="${DEVFLOW_VERSION:-unknown}"
-EXPECTED_VERSION="${DEVFLOW_EXPECTED_VERSION:-$DEVFLOW_INSTALLATION_STATE_VERSION}"
+CONFIGURED_COMMIT="${DEVFLOW_RELEASE_COMMIT:-unknown}"
+EXPECTED_VERSION="$DEVFLOW_INSTALLATION_STATE_VERSION"
+EXPECTED_COMMIT="$DEVFLOW_INSTALLATION_STATE_COMMIT"
+EXPECTED_MIGRATION="$DEVFLOW_INSTALLATION_STATE_MIGRATION"
+if [[ "$CANDIDATE_MODE" == true ]]; then
+  EXPECTED_VERSION="$EXPECTED_VERSION_ARG"
+  EXPECTED_COMMIT="$EXPECTED_COMMIT_ARG"
+  EXPECTED_MIGRATION="$EXPECTED_MIGRATION_ARG"
+fi
 if [[ "$CONFIGURED_VERSION" == "$EXPECTED_VERSION" ]]; then
   report PASS configured_version "$CONFIGURED_VERSION"
 else
   report FAIL configured_version "$CONFIGURED_VERSION"
 fi
-report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
+if [[ "$CONFIGURED_COMMIT" == "$EXPECTED_COMMIT" ]]; then
+  report PASS configured_commit "$CONFIGURED_COMMIT"
+else
+  report FAIL configured_commit "$CONFIGURED_COMMIT"
+fi
+if [[ "$CANDIDATE_MODE" == true ]]; then
+  report PASS candidate_version_match "$EXPECTED_VERSION"
+  report PASS candidate_commit_match "$EXPECTED_COMMIT"
+else
+  report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
+fi
 
 for tuple in backend:backend_image worker:worker_image frontend:frontend_image db:db_image edge:nginx_image updater:updater_image; do
   service="${tuple%%:*}"; key="${tuple##*:}"
+  if [[ "$service" == updater && "$CANDIDATE_MODE" == true ]]; then
+    report PASS "$key" preserved-current-request
+    continue
+  fi
+  if [[ "$service" == updater ]]; then
+    updater_container_id="$(docker ps --filter 'name=^/devflow-updater$' --format '{{.ID}}' | head -n1)"
+    updater_image_id="$(docker inspect --format '{{.Image}}' "$updater_container_id" 2>/dev/null || true)"
+    if [[ -n "$updater_image_id" ]] && docker image inspect "$updater_image_id" >/dev/null 2>&1; then
+      report PASS "$key" preserved-running-image
+    else
+      report FAIL "$key" missing
+    fi
+    continue
+  fi
   image="$(compose_service_image_expected "$service" 2>/dev/null || true)"
   if [[ -n "$image" ]] && docker image inspect "$image" >/dev/null 2>&1; then
-    report PASS "$key" "$image"
+    image_id="$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)"
+    printf -v "EXPECTED_IMAGE_ID_${service^^}" '%s' "$image_id"
+    if [[ "$service" == backend || "$service" == frontend || "$service" == worker ]]; then
+      image_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image" 2>/dev/null || true)"
+      image_commit="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)"
+      [[ "$image_version" == "$EXPECTED_VERSION" && "$image_commit" == "$EXPECTED_COMMIT" ]] \
+        && report PASS "$key" "$image" || report FAIL "$key" identity-mismatch
+    else
+      report PASS "$key" "$image"
+    fi
   else
     report FAIL "$key" "${image:-unresolved}"
   fi
@@ -69,11 +130,26 @@ for tuple in db:db backend:backend worker:worker frontend:frontend updater:updat
     report PASS "$key" skipped-maintenance
     continue
   fi
+  if [[ "$service" == updater && "$CANDIDATE_MODE" == true ]]; then
+    report PASS "$key" preserved-current-request
+    continue
+  fi
   container_id="$("${DEVFLOW_COMPOSE[@]}" ps -q "$service" 2>/dev/null || true)"
   health_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
     "$container_id" 2>/dev/null || true)"
   [[ "$health_state" == healthy ]] \
     && report PASS "$key" healthy || report FAIL "$key" "${health_state:-missing}"
+  if [[ "$service" == backend || "$service" == frontend || "$service" == worker ]]; then
+    runtime_image_id="$(docker inspect --format '{{.Image}}' "$container_id" 2>/dev/null || true)"
+    case "$service" in
+      backend) expected_image_id="${EXPECTED_IMAGE_ID_BACKEND:-}" ;;
+      frontend) expected_image_id="${EXPECTED_IMAGE_ID_FRONTEND:-}" ;;
+      worker) expected_image_id="${EXPECTED_IMAGE_ID_WORKER:-}" ;;
+    esac
+    [[ -n "$expected_image_id" && "$runtime_image_id" == "$expected_image_id" ]] \
+      && report PASS "${service}_runtime_image" "$runtime_image_id" \
+      || report FAIL "${service}_runtime_image" "${runtime_image_id:-missing}"
+  fi
 done
 
 db_id="$("${DEVFLOW_COMPOSE[@]}" ps -q db 2>/dev/null || true)"
@@ -96,15 +172,25 @@ fi
 migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
   2>/dev/null || true)"
-[[ -n "$migration" && ( "$ALLOW_PENDING_STATE" == true \
-  || "$migration" == "$DEVFLOW_INSTALLATION_STATE_MIGRATION" ) ]] \
+[[ -n "$migration" && "$migration" == "$EXPECTED_MIGRATION" ]] \
   && report PASS migration "$migration" || report FAIL migration "${migration:-missing}"
+if [[ "$CANDIDATE_MODE" == true && "$migration" == "$EXPECTED_MIGRATION" ]]; then
+  report PASS candidate_migration_match "$migration"
+fi
 
-if "${DEVFLOW_COMPOSE[@]}" exec -T backend node -e \
-  "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+api_payload="$("${DEVFLOW_COMPOSE[@]}" exec -T backend node -e \
+  "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)process.exit(1);process.stdout.write(await r.text())}).catch(()=>process.exit(1))" \
+  2>/dev/null || true)"
+api_version="$(printf '%s' "$api_payload" | python3 -c 'import json,sys; v=json.load(sys.stdin).get("version",""); print(v if isinstance(v,str) else "")' 2>/dev/null || true)"
+api_commit="$(printf '%s' "$api_payload" | python3 -c 'import json,sys; v=json.load(sys.stdin).get("commit",""); print(v if isinstance(v,str) else "")' 2>/dev/null || true)"
+if [[ "$api_version" == "$EXPECTED_VERSION" && "$api_commit" == "$EXPECTED_COMMIT" ]]; then
   report PASS backend_api healthy
+  report PASS api_version "$api_version"
+  report PASS api_commit "$api_commit"
 else
   report FAIL backend_api unhealthy
+  [[ "$api_version" == "$EXPECTED_VERSION" ]] && report PASS api_version "$api_version" || report FAIL api_version "${api_version:-missing}"
+  [[ "$api_commit" == "$EXPECTED_COMMIT" ]] && report PASS api_commit "$api_commit" || report FAIL api_commit "${api_commit:-missing}"
 fi
 if "${DEVFLOW_COMPOSE[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/healthz; then
   report PASS frontend_http healthy
@@ -157,6 +243,13 @@ fi
 
 overall=healthy
 [[ "$failures" -eq 0 ]] || overall=unhealthy
+if [[ "$CANDIDATE_MODE" == true ]]; then
+  printf '%s\n' \
+    "candidate_backend_healthy=$([[ "$RESULT_BACKEND" == healthy ]] && echo true || echo false)" \
+    "candidate_frontend_healthy=$([[ "$RESULT_FRONTEND" == healthy ]] && echo true || echo false)" \
+    "candidate_worker_healthy=$([[ "$RESULT_WORKER" == healthy ]] && echo true || echo false)" \
+    "candidate_internal_health=$overall"
+fi
 printf '%s\n' \
   'installation_mode=isolated' \
   'external_publication_enabled=true' \

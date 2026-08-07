@@ -35,8 +35,10 @@ check('updater verifies backup', update.includes('backup.sh') && update.includes
 check('updater enters maintenance', update.includes('enter_maintenance'));
 check('updater applies migrations', update.includes('run_devflow_migrations'));
 check('updater validates internal and external health', update.includes('health.sh" --internal')
-  && (update.match(/DEVFLOW_HEALTH_ALLOW_PENDING_VERSION=true/g) || []).length === 2
-  && health.includes('skipped-maintenance') && health.includes('ALLOW_PENDING_STATE'));
+  && update.includes('health.sh" --candidate')
+  && health.includes('EXPECTED_VERSION_ARG')
+  && health.includes('skipped-maintenance')
+  && !health.includes('DEVFLOW_HEALTH_ALLOW_PENDING_VERSION'));
 check('updater rolls back automatically', update.includes('rollback_update') && update.includes('restore.sh'));
 check('restore supports coordinated rollback', restore.includes('DEVFLOW_RESTORE_NO_START'));
 check('all update entrypoints delegate to single motor', operation.includes('exec "$SCRIPT_DIR/update.sh"')

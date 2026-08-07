@@ -47,4 +47,32 @@ MFA e opcional por padrao; a troca da senha temporaria continua obrigatoria. Um 
 
 ## Update falhou
 
-Consulte o ultimo `update-report.txt` e log sanitizado. O motor tenta restaurar backup, release, containers e Nginx isolado. Nao remova a release ou backup anterior antes da analise.
+Consulte o ultimo `update-report.txt` e log sanitizado. O motor tenta restaurar banco/uploads quando migrados, release, estado, imagens, containers e Nginx isolado. Nao remova a release, snapshot, transacao ou backup anterior antes da analise.
+
+Se a tentativa terminou com `rollback_status=failed`, nao inicie outro update. Primeiro colete o estado sem imprimir o arquivo de ambiente:
+
+```bash
+sudo /opt/devflow/app/scripts/version.sh
+sudo /opt/devflow/app/scripts/health.sh || true
+sudo python3 /opt/devflow/app/scripts/validate-installation-state.py validate /opt/devflow/state/installation.json || true
+sudo python3 /opt/devflow/app/scripts/validate-update-transaction.py validate /opt/devflow/state/update-transaction.json || true
+sudo python3 - <<'PY'
+import json
+from pathlib import Path
+for name in ('installation.json', 'update-transaction.json'):
+    path = Path('/opt/devflow/state') / name
+    if path.is_file():
+        data = json.loads(path.read_text())
+        allowed = ('installedVersion', 'installedCommit', 'migration', 'phase', 'result',
+                   'previousVersion', 'previousCommit', 'previousMigration',
+                   'candidateVersion', 'candidateCommit', 'candidateMigration',
+                   'backupPath', 'backupHash', 'databaseMutated', 'databaseRestored',
+                   'rollbackStatus', 'rootCause', 'manualRecoveryRequired')
+        print(name, {key: data[key] for key in allowed if key in data})
+PY
+sudo docker ps --filter name=devflow --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+sudo docker exec devflow-postgres sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"'
+sudo /opt/devflow/app/scripts/diagnose.sh --output /opt/devflow/logs/post-update-failure-diagnostic.txt
+```
+
+Compare migration, release, `installation.json`, containers, transacao e hash do `backupPath`. Nao presuma que o banco retornou a migration anterior. Com essas evidencias, escolha conscientemente entre reparar o ambiente atual ou realizar instalacao limpa; a escolha depende do estado material observado na VPS.

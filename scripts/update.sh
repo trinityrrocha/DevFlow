@@ -161,9 +161,11 @@ up_runtime_services() {
 }
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
+"$OLD_RELEASE_DIR/scripts/health.sh" \
+  || die 'Pre-update health da release instalada falhou; atualizacao bloqueada.'
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
   || die 'Banco instalado nao esta saudavel.'
-[[ -x "$OLD_RELEASE_DIR/scripts/backup.sh" && -x "$OLD_RELEASE_DIR/scripts/verify-backup.sh" ]] \
+[[ -x "$SCRIPT_DIR/backup.sh" && -x "$SCRIPT_DIR/verify-backup.sh" ]] \
   || die 'Motor de backup validado nao esta disponivel.'
 
 TEMP_REMOTE_REPO=
@@ -242,7 +244,9 @@ fi
 
 UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
 if [[ "$ROLLBACK_REQUESTED" == true ]]; then
-  [[ "$(installation_state_value state "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" == completed ]] \
+  python3 "$SCRIPT_DIR/validate-update-transaction.py" validate "$UPDATE_TRANSACTION_FILE" >/dev/null \
+    || die 'A ultima atualizacao nao possui transacao schema v2 valida.'
+  [[ "$(installation_state_value result "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" == success ]] \
     || die 'A ultima atualizacao nao possui transacao concluida apta a rollback.'
   CURRENT_VERSION="$OLD_VERSION"
   CURRENT_SHA="$OLD_SHA"
@@ -251,10 +255,10 @@ if [[ "$ROLLBACK_REQUESTED" == true ]]; then
   NEW_SHA="$(installation_state_value candidateCommit "$UPDATE_TRANSACTION_FILE")"
   [[ "$NEW_VERSION" == "$CURRENT_VERSION" && "$NEW_SHA" == "$CURRENT_SHA" ]] \
     || die 'A transacao nao corresponde a release atualmente instalada.'
-  OLD_VERSION="$(installation_state_value previousInstalledVersion "$UPDATE_TRANSACTION_FILE")"
-  OLD_SHA="$(installation_state_value previousInstalledCommit "$UPDATE_TRANSACTION_FILE")"
-  OLD_RELEASE_DIR="$(installation_state_value previousReleaseDirectory "$UPDATE_TRANSACTION_FILE")"
-  BACKUP_FILE="$(installation_state_value backupFile "$UPDATE_TRANSACTION_FILE")"
+  OLD_VERSION="$(installation_state_value previousVersion "$UPDATE_TRANSACTION_FILE")"
+  OLD_SHA="$(installation_state_value previousCommit "$UPDATE_TRANSACTION_FILE")"
+  OLD_RELEASE_DIR="$(installation_state_value previousRelease "$UPDATE_TRANSACTION_FILE")"
+  BACKUP_FILE="$(installation_state_value backupPath "$UPDATE_TRANSACTION_FILE")"
   validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release anterior'
   validate_safe_absolute_path "$BACKUP_FILE" 'Backup da atualizacao'
   [[ "$OLD_RELEASE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* && -d "$OLD_RELEASE_DIR" ]] \
@@ -275,6 +279,59 @@ BACKUP_TIMER_PAUSED=false
 UPDATE_PHASE=backup
 [[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
+if [[ "$ROLLBACK_REQUESTED" == false ]]; then
+  TRANSACTION_ID="$(openssl rand -hex 16)"
+  TRANSACTION_TIMESTAMP="$(timestamp)"
+  TRANSACTION_RESULT=in-progress
+  ROOT_CAUSE=none
+  MANUAL_RECOVERY_REQUIRED=false
+  PREVIOUS_MIGRATION="$DEVFLOW_INSTALLATION_STATE_MIGRATION"
+  PREVIOUS_APP_TARGET="$OLD_RELEASE_DIR"
+  PREVIOUS_STATE_SNAPSHOT="$DEVFLOW_STATE_ROOT/update-previous-installation-$TRANSACTION_ID.json"
+  PREVIOUS_STATE_HASH=pending
+  OLD_IMAGE_TAG="${DEVFLOW_IMAGE_TAG:-latest}"
+  PREVIOUS_BACKEND_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$(resolve_compose_service_image backend)" 2>/dev/null || true)"
+  PREVIOUS_FRONTEND_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$(resolve_compose_service_image frontend)" 2>/dev/null || true)"
+  [[ "$PREVIOUS_BACKEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ \
+    && "$PREVIOUS_FRONTEND_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || die 'As imagens instaladas anteriores nao puderam ser identificadas.'
+  CANDIDATE_MIGRATION=pending
+  CANDIDATE_IMAGE_TAG="candidate-$NEW_SHA"
+  FINAL_IMAGE_TAG="release-$NEW_SHA"
+  BACKUP_HASH=pending
+  CHANGES_APPLIED=false
+  DATABASE_MUTATED=false
+  CANDIDATE_HEALTH_PASSED=false
+  RELEASE_PROMOTED=false
+  STATE_PROMOTED=false
+else
+  TRANSACTION_ID="$(installation_state_value transactionId "$UPDATE_TRANSACTION_FILE")"
+  TRANSACTION_TIMESTAMP="$(installation_state_value timestamp "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_MIGRATION="$(installation_state_value previousMigration "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_APP_TARGET="$(installation_state_value previousAppTarget "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_STATE_SNAPSHOT="$(installation_state_value previousInstallationStateBackup "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_STATE_HASH="$(installation_state_value previousInstallationStateHash "$UPDATE_TRANSACTION_FILE")"
+  OLD_IMAGE_TAG="$(installation_state_value previousImageTag "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_BACKEND_IMAGE_ID="$(installation_state_value previousBackendImageId "$UPDATE_TRANSACTION_FILE")"
+  PREVIOUS_FRONTEND_IMAGE_ID="$(installation_state_value previousFrontendImageId "$UPDATE_TRANSACTION_FILE")"
+  CANDIDATE_MIGRATION="$(installation_state_value candidateMigration "$UPDATE_TRANSACTION_FILE")"
+  CANDIDATE_IMAGE_TAG="$(installation_state_value candidateImageTag "$UPDATE_TRANSACTION_FILE")"
+  FINAL_IMAGE_TAG="$(installation_state_value finalImageTag "$UPDATE_TRANSACTION_FILE")"
+  BACKUP_HASH="$(installation_state_value backupHash "$UPDATE_TRANSACTION_FILE")"
+  CHANGES_APPLIED="$(installation_state_value changesApplied "$UPDATE_TRANSACTION_FILE")"
+  DATABASE_MUTATED="$(installation_state_value databaseMutated "$UPDATE_TRANSACTION_FILE")"
+  CANDIDATE_HEALTH_PASSED=true
+  RELEASE_PROMOTED=true
+  STATE_PROMOTED=true
+  TRANSACTION_RESULT=in-progress
+  ROOT_CAUSE=manual-rollback
+  MANUAL_RECOVERY_REQUIRED=false
+fi
+ROLLBACK_STARTED=false
+DATABASE_RESTORED=false
+RELEASE_RESTORED=false
+STATE_RESTORED=false
+ROLLBACK_HEALTH_PASSED=false
 
 UPDATE_STATUS_FILE="${DEVFLOW_UPDATE_STATUS_FILE:-}"
 if [[ -n "$UPDATE_STATUS_FILE" ]]; then
@@ -313,25 +370,51 @@ refresh_host_units() {
 }
 
 write_update_transaction() {
-  local state="$1" temporary
-  temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.update-transaction.XXXXXX")"
+  local phase="$1" validator
+  UPDATE_PHASE="$phase"
+  validator="$SCRIPT_DIR/validate-update-transaction.py"
+  [[ -r "$validator" ]] || return 1
   {
     printf '{\n'
-    printf '  "schemaVersion": 1,\n'
-    printf '  "timestamp": "%s",\n' "$(timestamp)"
-    printf '  "state": "%s",\n' "$state"
-    printf '  "previousInstalledVersion": "%s",\n' "$OLD_VERSION"
-    printf '  "previousInstalledCommit": "%s",\n' "$OLD_SHA"
+    printf '  "schemaVersion": 2,\n'
+    printf '  "transactionId": "%s",\n' "$TRANSACTION_ID"
+    printf '  "timestamp": "%s",\n' "$TRANSACTION_TIMESTAMP"
+    printf '  "phase": "%s",\n' "$UPDATE_PHASE"
+    printf '  "result": "%s",\n' "$TRANSACTION_RESULT"
+    printf '  "previousVersion": "%s",\n' "$OLD_VERSION"
+    printf '  "previousCommit": "%s",\n' "$OLD_SHA"
+    printf '  "previousRelease": "%s",\n' "$OLD_RELEASE_DIR"
+    printf '  "previousAppTarget": "%s",\n' "$PREVIOUS_APP_TARGET"
+    printf '  "previousMigration": "%s",\n' "$PREVIOUS_MIGRATION"
+    printf '  "previousInstallationStateBackup": "%s",\n' "$PREVIOUS_STATE_SNAPSHOT"
+    printf '  "previousInstallationStateHash": "%s",\n' "$PREVIOUS_STATE_HASH"
+    printf '  "previousImageTag": "%s",\n' "$OLD_IMAGE_TAG"
+    printf '  "previousBackendImageId": "%s",\n' "$PREVIOUS_BACKEND_IMAGE_ID"
+    printf '  "previousFrontendImageId": "%s",\n' "$PREVIOUS_FRONTEND_IMAGE_ID"
     printf '  "candidateVersion": "%s",\n' "$NEW_VERSION"
     printf '  "candidateCommit": "%s",\n' "$NEW_SHA"
-    printf '  "previousReleaseDirectory": "%s",\n' "$OLD_RELEASE_DIR"
-    printf '  "backupFile": "%s"\n' "${BACKUP_FILE:-pending}"
+    printf '  "candidateRelease": "%s",\n' "$CANDIDATE_DIR"
+    printf '  "candidateMigration": "%s",\n' "$CANDIDATE_MIGRATION"
+    printf '  "candidateImageTag": "%s",\n' "$CANDIDATE_IMAGE_TAG"
+    printf '  "finalImageTag": "%s",\n' "$FINAL_IMAGE_TAG"
+    printf '  "backupPath": "%s",\n' "${BACKUP_FILE:-pending}"
+    printf '  "backupHash": "%s",\n' "$BACKUP_HASH"
+    printf '  "changesApplied": %s,\n' "$CHANGES_APPLIED"
+    printf '  "databaseMutated": %s,\n' "$DATABASE_MUTATED"
+    printf '  "candidateHealthPassed": %s,\n' "$CANDIDATE_HEALTH_PASSED"
+    printf '  "releasePromoted": %s,\n' "$RELEASE_PROMOTED"
+    printf '  "statePromoted": %s,\n' "$STATE_PROMOTED"
+    printf '  "rollbackStarted": %s,\n' "$ROLLBACK_STARTED"
+    printf '  "databaseRestored": %s,\n' "$DATABASE_RESTORED"
+    printf '  "releaseRestored": %s,\n' "$RELEASE_RESTORED"
+    printf '  "stateRestored": %s,\n' "$STATE_RESTORED"
+    printf '  "rollbackHealthPassed": %s,\n' "$ROLLBACK_HEALTH_PASSED"
+    printf '  "rollbackStatus": "%s",\n' "$ROLLBACK_RESULT"
+    printf '  "rootCause": "%s",\n' "$ROOT_CAUSE"
+    printf '  "manualRecoveryRequired": %s\n' "$MANUAL_RECOVERY_REQUIRED"
     printf '}\n'
-  } > "$temporary"
-  chmod 0600 "$temporary"
-  python3 -m json.tool "$temporary" >/dev/null || { rm -f -- "$temporary"; return 1; }
-  sync -f "$temporary" 2>/dev/null || true
-  mv -f -- "$temporary" "$UPDATE_TRANSACTION_FILE"
+  } | python3 "$validator" write "$UPDATE_TRANSACTION_FILE"
+  python3 "$validator" validate "$UPDATE_TRANSACTION_FILE" >/dev/null
 }
 
 persist_operational_installation_state() {
@@ -412,63 +495,174 @@ restore_proxy_for() {
 }
 
 rollback_update() {
-  local rollback_failures=0 recorded_previous_commit
+  local rollback_failures=0 restored_migration state_temporary
   set +e
   set_update_status rollback || true
+  ROLLBACK_STARTED=true
+  ROLLBACK_RESULT=in-progress
+  TRANSACTION_RESULT=in-progress
+  MANUAL_RECOVERY_REQUIRED=false
+  [[ "$ROOT_CAUSE" != none ]] || ROOT_CAUSE="${UPDATE_PHASE}-failed"
+  write_update_transaction rollback-started || rollback_failures=$((rollback_failures + 1))
   log ERROR "Falha na fase $UPDATE_PHASE. Iniciando rollback automático."
-  recorded_previous_commit="$(installation_state_value previousInstalledCommit "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)"
-  if [[ "$recorded_previous_commit" != "$OLD_SHA" ]] \
-    || ! git -C "$SOURCE_DIR" cat-file -e "$recorded_previous_commit^{commit}" 2>/dev/null; then
-    log ERROR 'previousInstalledCommit transacional não corresponde à release anterior comprovada.'
+  if ! python3 "$SCRIPT_DIR/validate-update-transaction.py" validate "$UPDATE_TRANSACTION_FILE" >/dev/null \
+    || [[ "$(installation_state_value previousCommit "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" != "$OLD_SHA" ]] \
+    || [[ "$(installation_state_value backupPath "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" != "$BACKUP_FILE" ]] \
+    || [[ "$(sha256sum "$BACKUP_FILE" 2>/dev/null | awk '{print $1}')" != "$BACKUP_HASH" ]] \
+    || ! git -C "$SOURCE_DIR" cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
+    ROLLBACK_RESULT=failed
+    TRANSACTION_RESULT=failed
+    ROOT_CAUSE=transaction-identity-invalid
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    log ERROR 'A identidade transacional do rollback nao foi comprovada.'
     return 1
   fi
 
   enter_maintenance "$CANDIDATE_DIR"
-  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível confirmar a página de manutenção durante o rollback.'; rollback_failures=$((rollback_failures + 1)); }
+  if [[ $? -ne 0 ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=maintenance-unavailable
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    return 1
+  fi
 
-  UPDATE_PHASE=rollback-code
-  (set_managed_env_value DEVFLOW_VERSION "$OLD_VERSION")
-  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar a versão no ambiente.'; rollback_failures=$((rollback_failures + 1)); }
-  (set_managed_env_value DEVFLOW_RELEASE_COMMIT "$recorded_previous_commit")
-  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o commit no ambiente.'; rollback_failures=$((rollback_failures + 1)); }
-  export DEVFLOW_VERSION="$OLD_VERSION"
-  export DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
-  ln -sfn "$OLD_RELEASE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
-  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o link da release anterior.'; rollback_failures=$((rollback_failures + 1)); }
-  rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
-  [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  # O checkout pode permanecer adiantado em main; a release ativa e o estado
-  # instalado continuam apontando atomicamente para o commit anterior.
+  UPDATE_PHASE=rollback-stop-writers
+  set_compose_for "$CANDIDATE_DIR"
+  "${DEVFLOW_COMPOSE[@]}" stop backend worker frontend >/dev/null 2>&1
+  if [[ $? -ne 0 ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=writers-not-stopped
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    return 1
+  fi
 
-  set_compose_for "$OLD_RELEASE_DIR"
-  stop_runtime_services
-  [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  "${DEVFLOW_COMPOSE[@]}" build backend frontend
-  [[ $? -eq 0 ]] || { log ERROR 'Não foi possível reconstruir as imagens anteriores.'; rollback_failures=$((rollback_failures + 1)); }
+  set_managed_env_value DEVFLOW_VERSION "$OLD_VERSION" || rollback_failures=$((rollback_failures + 1))
+  set_managed_env_value DEVFLOW_RELEASE_COMMIT "$OLD_SHA" || rollback_failures=$((rollback_failures + 1))
+  set_managed_env_value DEVFLOW_IMAGE_TAG "rollback-$OLD_SHA" || rollback_failures=$((rollback_failures + 1))
+  DEVFLOW_VERSION="$OLD_VERSION"
+  DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
+  DEVFLOW_IMAGE_TAG="rollback-$OLD_SHA"
+  DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
+  DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+  export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IMAGE_TAG \
+    DEVFLOW_IDENTITY_RELEASE_ROOT DEVFLOW_EXPLICIT_RELEASE_IDENTITY
+  docker tag "$PREVIOUS_BACKEND_IMAGE_ID" "devflow-backend:rollback-$OLD_SHA" \
+    || rollback_failures=$((rollback_failures + 1))
+  docker tag "$PREVIOUS_FRONTEND_IMAGE_ID" "devflow-frontend:rollback-$OLD_SHA" \
+    || rollback_failures=$((rollback_failures + 1))
+  if [[ "$rollback_failures" -ne 0 ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=previous-images-unavailable
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    return 1
+  fi
 
-  UPDATE_PHASE=rollback-restore
-  CONFIRM_RESTORE='RESTAURAR BACKUP' \
+  UPDATE_PHASE=rollback-database
+  write_update_transaction rollback-database || true
+  if [[ "$DATABASE_MUTATED" == true ]]; then
+    restore_output="$(CONFIRM_RESTORE='RESTAURAR BACKUP' \
     DEVFLOW_RESTORE_SKIP_PREBACKUP=true \
     DEVFLOW_RESTORE_NO_START=true \
+    DEVFLOW_RESTORE_TRANSACTION_FILE="$UPDATE_TRANSACTION_FILE" \
     DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
     DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-    "$SCRIPT_DIR/restore.sh" "$BACKUP_FILE"
-  [[ $? -eq 0 ]] || { log ERROR 'Restauração automática do backup falhou.'; rollback_failures=$((rollback_failures + 1)); }
+      "$SCRIPT_DIR/restore.sh" "$BACKUP_FILE" 2>&1)"
+    restore_status=$?
+    printf '%s\n' "$restore_output"
+    if [[ "$restore_status" -ne 0 || "$restore_output" != *'database_restore_completed=true'* ]]; then
+      DATABASE_RESTORED=false
+      ROLLBACK_RESULT=failed
+      TRANSACTION_RESULT=failed
+      ROOT_CAUSE=database-not-restored
+      MANUAL_RECOVERY_REQUIRED=true
+      write_update_transaction rollback-failed || true
+      printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored' 'manualRecoveryRequired=true'
+      log ERROR 'Restauração do banco falhou; health antigo bloqueado e manutencao preservada.'
+      return 1
+    fi
+    DATABASE_RESTORED=true
+
+    set_compose_for "$OLD_RELEASE_DIR"
+    restored_migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
+      'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
+      2>/dev/null || true)"
+    if [[ "$restored_migration" != "$PREVIOUS_MIGRATION" ]]; then
+      DATABASE_RESTORED=false
+      ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=database-migration-mismatch
+      MANUAL_RECOVERY_REQUIRED=true
+      write_update_transaction rollback-failed || true
+      printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored' 'manualRecoveryRequired=true'
+      return 1
+    fi
+    write_update_transaction database-restored \
+      || rollback_failures=$((rollback_failures + 1))
+  else
+    printf '%s\n' 'database_restore_skipped=true' 'database_mutated=false'
+  fi
+
+  UPDATE_PHASE=rollback-release-state
+  if replace_devflow_app_symlink_atomically "$OLD_RELEASE_DIR"; then
+    RELEASE_RESTORED=true
+  else
+    rollback_failures=$((rollback_failures + 1))
+  fi
+  if ! installation_state_schema_valid "$PREVIOUS_STATE_SNAPSHOT" \
+    || [[ "$(sha256sum "$PREVIOUS_STATE_SNAPSHOT" | awk '{print $1}')" != "$PREVIOUS_STATE_HASH" ]]; then
+    rollback_failures=$((rollback_failures + 1))
+  else
+    state_temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.installation-rollback.XXXXXX")"
+    if install -m 0600 "$PREVIOUS_STATE_SNAPSHOT" "$state_temporary" \
+      && mv -f -- "$state_temporary" "$DEVFLOW_STATE_ROOT/installation.json"; then
+      STATE_RESTORED=true
+    else
+      rm -f -- "$state_temporary"
+      rollback_failures=$((rollback_failures + 1))
+    fi
+  fi
+  rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
+  write_version_state "$OLD_SHA" || rollback_failures=$((rollback_failures + 1))
+  write_update_transaction release-state-restored \
+    || rollback_failures=$((rollback_failures + 1))
+  if [[ "$rollback_failures" -ne 0 ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=release-state-not-restored
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    return 1
+  fi
 
   UPDATE_PHASE=rollback-containers
   set_compose_for "$OLD_RELEASE_DIR"
+  if ! compose_has_worker; then
+    docker rm -f devflow-worker >/dev/null 2>&1 || true
+  fi
   up_runtime_services --remove-orphans
   [[ $? -eq 0 ]] || { log ERROR 'Containers anteriores não ficaram saudáveis.'; rollback_failures=$((rollback_failures + 1)); }
-  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
+  if [[ "$DATABASE_MUTATED" == true && "$DATABASE_RESTORED" != true ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=database-not-restored
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored'
+    return 1
+  fi
+  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" \
     "$OLD_RELEASE_DIR/scripts/health.sh" --internal
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
+  if [[ "$rollback_failures" -ne 0 ]]; then
+    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=rollback-internal-health-failed
+    MANUAL_RECOVERY_REQUIRED=true
+    write_update_transaction rollback-failed || true
+    enter_maintenance "$OLD_RELEASE_DIR" || true
+    MAINTENANCE_ACTIVE=true
+    return 1
+  fi
 
   UPDATE_PHASE=rollback-proxy
   render_runtime_nginx_config "$OLD_RELEASE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
   restore_proxy_for "$OLD_RELEASE_DIR"
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
-  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
+  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" \
     "$OLD_RELEASE_DIR/scripts/health.sh"
   [[ $? -eq 0 ]] || { log ERROR 'Health check público após rollback falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
@@ -483,27 +677,22 @@ rollback_update() {
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
-    DEVFLOW_VERSION="$OLD_VERSION"
-    DEVFLOW_RELEASE_COMMIT="$recorded_previous_commit"
-    DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
-    export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
-    set_compose_for "$OLD_RELEASE_DIR"
-    DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
-      'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
-      2>/dev/null || true)"
-    DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
-    export DEVFLOW_EXPLICIT_RELEASE_IDENTITY
-    persist_operational_installation_state \
-      || rollback_failures=$((rollback_failures + 1))
-  fi
-
-  if [[ "$rollback_failures" -eq 0 ]]; then
-    write_update_transaction rolled-back || rollback_failures=$((rollback_failures + 1))
-    ROLLBACK_RESULT=success
+    ROLLBACK_HEALTH_PASSED=true
+    ROLLBACK_RESULT=successful
+    TRANSACTION_RESULT=rolled-back
+    ROOT_CAUSE=none
+    MANUAL_RECOVERY_REQUIRED=false
+    write_update_transaction rollback-completed || rollback_failures=$((rollback_failures + 1))
     log WARN 'rollback_status=successful'
     log WARN "Rollback concluído. DevFlow retornou a $OLD_VERSION ($OLD_SHA)."
   else
     ROLLBACK_RESULT=failed
+    TRANSACTION_RESULT=failed
+    MANUAL_RECOVERY_REQUIRED=true
+    [[ "$ROOT_CAUSE" != none ]] || ROOT_CAUSE=rollback-health-failed
+    write_update_transaction rollback-failed || true
+    enter_maintenance "$OLD_RELEASE_DIR" || true
+    MAINTENANCE_ACTIVE=true
     log ERROR 'rollback_status=failed'
     log ERROR "Rollback terminou com $rollback_failures falha(s); mantenha o ambiente isolado e use $UPDATE_LOG."
   fi
@@ -514,6 +703,7 @@ rollback_update() {
 update_failed() {
   local exit_code=$?
   local failed_phase="$UPDATE_PHASE"
+  local report_result=failed
   [[ "$exit_code" -ne 0 ]] || return 0
   trap - EXIT ERR INT TERM
   rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
@@ -528,12 +718,19 @@ update_failed() {
   fi
   if [[ "$ROLLBACK_ARMED" == true ]]; then
     rollback_update || true
+    [[ "$ROLLBACK_RESULT" != successful ]] || report_result=rolled-back
   else
+    TRANSACTION_RESULT=failed
+    ROOT_CAUSE="${failed_phase}-failed"
+    MANUAL_RECOVERY_REQUIRED=false
+    if [[ -n "${PREVIOUS_STATE_SNAPSHOT:-}" && -f "${PREVIOUS_STATE_SNAPSHOT:-}" ]]; then
+      write_update_transaction failed-before-mutation || true
+    fi
     printf '%s\n' 'changes_applied=false'
   fi
   set_update_status failed || true
   UPDATE_PHASE="$failed_phase"
-  write_update_report failure || true
+  write_update_report "$report_result" || true
   log ERROR "Atualização interrompida (código $exit_code). rollback=$ROLLBACK_RESULT"
   exit "$exit_code"
 }
@@ -550,21 +747,48 @@ if [[ "$ROLLBACK_REQUESTED" == true ]]; then
   exit 0
 fi
 
+installation_state_schema_valid "$DEVFLOW_STATE_ROOT/installation.json" \
+  || die 'Estado instalado nao pode ser usado como snapshot transacional.'
+install -m 0600 "$DEVFLOW_STATE_ROOT/installation.json" "$PREVIOUS_STATE_SNAPSHOT"
+PREVIOUS_STATE_HASH="$(sha256sum "$PREVIOUS_STATE_SNAPSHOT" | awk '{print $1}')"
+[[ "$PREVIOUS_STATE_HASH" =~ ^[0-9a-f]{64}$ ]] \
+  || die 'Hash do snapshot do estado instalado invalido.'
 write_update_transaction prepared \
   || die 'Não foi possível registrar a identidade transacional da atualização.'
 set_update_status backup
 log INFO 'Criando backup pré-update.'
-BACKUP_OUTPUT="$(DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
+BACKUP_OUTPUT="$(DEVFLOW_BACKUP_TRANSACTION_ID="$TRANSACTION_ID" \
+  DEVFLOW_BACKUP_TRANSACTION_TIMESTAMP="$TRANSACTION_TIMESTAMP" \
+  DEVFLOW_BACKUP_PREVIOUS_VERSION="$OLD_VERSION" \
+  DEVFLOW_BACKUP_PREVIOUS_COMMIT="$OLD_SHA" \
+  DEVFLOW_BACKUP_PREVIOUS_MIGRATION="$PREVIOUS_MIGRATION" \
+  DEVFLOW_BACKUP_INSTALLATION_STATE_SHA256="$PREVIOUS_STATE_HASH" \
+  DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
   DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
   BACKUP_ARCHIVE_DIR="$DEVFLOW_INSTALL_ROOT/backups" \
   BACKUP_PASSPHRASE_FILE="$DEVFLOW_CONFIG_ROOT/backup.passphrase" \
-  "$OLD_RELEASE_DIR/scripts/backup.sh")"
+  "$SCRIPT_DIR/backup.sh")"
 printf '%s\n' "$BACKUP_OUTPUT"
 BACKUP_FILE="$(printf '%s\n' "$BACKUP_OUTPUT" | sed -n 's/^Backup criado: //p' | tail -n1)"
 [[ -n "$BACKUP_FILE" && -s "$BACKUP_FILE" ]] || die 'Backup pré-update não foi criado.'
-DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-  "$OLD_RELEASE_DIR/scripts/verify-backup.sh" "$BACKUP_FILE"
+BACKUP_HASH="$(sha256sum "$BACKUP_FILE" | awk '{print $1}')"
+[[ "$BACKUP_HASH" =~ ^[0-9a-f]{64}$ ]] || die 'Hash do backup pre-update invalido.'
+DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID="$TRANSACTION_ID" \
+  DEVFLOW_BACKUP_EXPECTED_TRANSACTION_TIMESTAMP="$TRANSACTION_TIMESTAMP" \
+  DEVFLOW_BACKUP_EXPECTED_VERSION="$OLD_VERSION" \
+  DEVFLOW_BACKUP_EXPECTED_COMMIT="$OLD_SHA" \
+  DEVFLOW_BACKUP_EXPECTED_MIGRATION="$PREVIOUS_MIGRATION" \
+  DEVFLOW_BACKUP_EXPECTED_STATE_SHA256="$PREVIOUS_STATE_HASH" \
+  DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
+  "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_FILE"
+write_update_transaction backup-validated \
+  || die 'Identidade do backup nao pode ser vinculada a transacao.'
 log INFO "Backup autenticado e validado: $BACKUP_FILE"
+
+docker tag "$PREVIOUS_BACKEND_IMAGE_ID" "devflow-backend:rollback-$OLD_SHA"
+docker tag "$PREVIOUS_FRONTEND_IMAGE_ID" "devflow-frontend:rollback-$OLD_SHA"
+write_update_transaction images-preserved \
+  || die 'Referencias imutaveis das imagens anteriores nao foram registradas.'
 
 UPDATE_PHASE=release
 [[ ! -e "$CANDIDATE_DIR" ]] \
@@ -587,6 +811,9 @@ if ! pause_backup_schedule; then
 fi
 ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app.candidate"
 ROLLBACK_ARMED=true
+CHANGES_APPLIED=true
+write_update_transaction release-prepared \
+  || die 'A preparacao mutavel da release candidata nao foi registrada.'
 
 UPDATE_PHASE=source
 SOURCE_ADVANCED=true
@@ -596,6 +823,8 @@ GIT_TERMINAL_PROMPT=0 git -C "$SOURCE_DIR" pull --ff-only origin main
 
 export DEVFLOW_VERSION="$NEW_VERSION"
 export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
+DEVFLOW_IMAGE_TAG="$CANDIDATE_IMAGE_TAG"
+export DEVFLOW_IMAGE_TAG
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
@@ -605,6 +834,9 @@ candidate_backend_image="$(resolve_compose_service_image backend)" \
 candidate_backend_image_id="$(docker image inspect --format '{{.Id}}' "$candidate_backend_image")"
 candidate_expected_migration="$(find "$CANDIDATE_DIR/database/migrations" -maxdepth 1 -type f -name '*.sql' -print \
   | sed 's#.*/##' | LC_ALL=C sort | tail -n1)"
+CANDIDATE_MIGRATION="$candidate_expected_migration"
+write_update_transaction candidate-prepared \
+  || die 'Identidade da release candidata nao foi registrada.'
 candidate_expected_migration_sha256="$(sha256sum "$CANDIDATE_DIR/database/migrations/$candidate_expected_migration" | awk '{print $1}')"
 candidate_image_validation_status=0
 validate_backend_migration_image "$candidate_backend_image" "$candidate_expected_migration" \
@@ -626,10 +858,19 @@ set_compose_for "$CANDIDATE_DIR"
 stop_runtime_services
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+if [[ "$CANDIDATE_MIGRATION" != "$PREVIOUS_MIGRATION" ]]; then
+  DATABASE_MUTATED=true
+fi
+write_update_transaction migrations-starting \
+  || die 'Inicio transacional das migrations nao foi registrado.'
 run_devflow_migrations
 DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration após atualização.'
+[[ "$DEVFLOW_MIGRATION_VERSION" == "$CANDIDATE_MIGRATION" ]] \
+  || die 'PostgreSQL nao atingiu a migration candidata esperada.'
+write_update_transaction migrations-applied \
+  || die 'Estado transacional das migrations nao foi registrado.'
 
 UPDATE_PHASE=containers
 set_update_status containers
@@ -637,14 +878,44 @@ up_runtime_services --force-recreate --remove-orphans
 
 UPDATE_PHASE=health-internal
 set_update_status health
-DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
-  DEVFLOW_HEALTH_ALLOW_PENDING_VERSION=true \
-  "$CANDIDATE_DIR/scripts/health.sh" --internal
+DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$CANDIDATE_IMAGE_TAG" \
+  "$CANDIDATE_DIR/scripts/health.sh" --candidate \
+    --expected-version "$NEW_VERSION" \
+    --expected-commit "$NEW_SHA" \
+    --expected-migration "$CANDIDATE_MIGRATION"
+CANDIDATE_HEALTH_PASSED=true
+write_update_transaction candidate-healthy \
+  || die 'Aprovacao do health candidato nao foi registrada.'
 
 UPDATE_PHASE=promotion
+docker tag "devflow-backend:$CANDIDATE_IMAGE_TAG" "devflow-backend:$FINAL_IMAGE_TAG"
+docker tag "devflow-frontend:$CANDIDATE_IMAGE_TAG" "devflow-frontend:$FINAL_IMAGE_TAG"
 set_managed_env_value DEVFLOW_VERSION "$NEW_VERSION"
 set_managed_env_value DEVFLOW_RELEASE_COMMIT "$NEW_SHA"
-ln -sfn "$CANDIDATE_DIR" "$DEVFLOW_INSTALL_ROOT/app"
+set_managed_env_value DEVFLOW_IMAGE_TAG "$FINAL_IMAGE_TAG"
+DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG"
+export DEVFLOW_IMAGE_TAG
+replace_devflow_app_symlink_atomically "$CANDIDATE_DIR" \
+  || die 'Promocao atomica do symlink da release candidata falhou.'
+RELEASE_PROMOTED=true
+
+DEVFLOW_VERSION="$NEW_VERSION"
+DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
+DEVFLOW_IDENTITY_RELEASE_ROOT="$CANDIDATE_DIR"
+DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT \
+  DEVFLOW_EXPLICIT_RELEASE_IDENTITY
+persist_operational_installation_state \
+  || die 'Estado instalado nao pode ser promovido para a candidata.'
+installation_state_schema_valid "$DEVFLOW_STATE_ROOT/installation.json" \
+  || die 'Estado instalado promovido falhou na validacao schema v3.'
+STATE_PROMOTED=true
+write_update_transaction state-promoted \
+  || die 'Promocao da release e do estado nao foi registrada.'
+
+UPDATE_PHASE=health-installed-internal
+DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" \
+  "$CANDIDATE_DIR/scripts/health.sh" --internal
 
 UPDATE_PHASE=proxy
 render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
@@ -652,26 +923,19 @@ restore_proxy_for "$CANDIDATE_DIR"
 MAINTENANCE_ACTIVE=false
 
 UPDATE_PHASE=health-public
-DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
-  DEVFLOW_HEALTH_ALLOW_PENDING_VERSION=true \
+DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" \
   "$CANDIDATE_DIR/scripts/health.sh"
 
 UPDATE_PHASE=finalize
 rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
 refresh_host_units "$CANDIDATE_DIR"
-DEVFLOW_VERSION="$NEW_VERSION"
-DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
-DEVFLOW_IDENTITY_RELEASE_ROOT="$CANDIDATE_DIR"
-DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
-export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT \
-  DEVFLOW_EXPLICIT_RELEASE_IDENTITY
 validate_explicit_release_identity \
   || die 'Release candidata promovida nao confirmou sua identidade.'
 validate_installed_release_runtime \
   || die 'Imagens ou API divergem da identidade candidata após o health.'
-persist_operational_installation_state \
-  || die 'Estado instalado não pôde ser gravado com a identidade candidata.'
 ROLLBACK_RESULT=not-required
+TRANSACTION_RESULT=success
+ROOT_CAUSE=none
 write_update_transaction completed
 write_update_report success
 set_update_status completed
