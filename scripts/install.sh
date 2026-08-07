@@ -558,7 +558,7 @@ recalculate_resume_stage() {
   RESUME_START_STAGE=05-images
   RESUME_UPDATER_IMAGE_REBUILD=false
   expected_version="$DEVFLOW_RELEASE_VERSION"
-  for service in backend frontend updater; do
+  for service in backend worker frontend updater; do
     image="$(compose_service_image_expected "$service" 2>/dev/null || true)"
     [[ -n "$image" ]] && docker image inspect "$image" >/dev/null 2>&1 \
       || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
@@ -582,6 +582,7 @@ recalculate_resume_stage() {
   [[ "$migration" == "${latest##*/}" ]] || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
   RESUME_START_STAGE=12-backend
   service_healthy backend || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
+  service_healthy worker || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
   RESUME_START_STAGE=13-frontend
   service_healthy frontend || { printf 'resume_recalculated_stage=%s\n' "$RESUME_START_STAGE"; return; }
   RESUME_START_STAGE=14-nginx-https
@@ -804,7 +805,7 @@ if should_run "$CURRENT_INSTALL_STAGE"; then render_runtime_nginx_config "$RELEA
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 
 CURRENT_INSTALL_STAGE=09-containers
-if should_run "$CURRENT_INSTALL_STAGE"; then "${DEVFLOW_COMPOSE[@]}" create db backend frontend edge updater >/dev/null; fi
+if should_run "$CURRENT_INSTALL_STAGE"; then "${DEVFLOW_COMPOSE[@]}" create db backend worker frontend edge updater >/dev/null; fi
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 
 CURRENT_INSTALL_STAGE=10-database
@@ -819,8 +820,9 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'psql -At 
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 
 CURRENT_INSTALL_STAGE=12-backend
-if should_run "$CURRENT_INSTALL_STAGE"; then "${DEVFLOW_COMPOSE[@]}" up -d backend --wait; fi
+if should_run "$CURRENT_INSTALL_STAGE"; then "${DEVFLOW_COMPOSE[@]}" up -d backend worker --wait; fi
 service_healthy backend || die 'Backend nao ficou saudavel.'
+service_healthy worker || die 'Worker de e-mail nao ficou saudavel.'
 install_transaction_complete_stage "$CURRENT_INSTALL_STAGE"
 
 CURRENT_INSTALL_STAGE=13-frontend

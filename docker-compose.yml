@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 20
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
       devflow.component: database
     networks: [devflow_internal]
 
@@ -29,13 +29,13 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.2-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
@@ -56,7 +56,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
       devflow.component: backend
     networks: [devflow_internal, devflow_edge]
 
@@ -68,9 +68,12 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.2-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
+    depends_on:
+      worker:
+        condition: service_healthy
     expose: ["80"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
@@ -79,9 +82,35 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
       devflow.component: frontend
     networks: [devflow_edge]
+
+  worker:
+    image: devflow-backend:${DEVFLOW_IMAGE_TAG:-latest}
+    container_name: devflow-worker
+    restart: unless-stopped
+    command: ["node", "src/workers/emailWorker.js"]
+    env_file:
+      - ${DEVFLOW_ENV_FILE:-.env}
+    environment:
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
+      DB_HOST: db
+      DB_PORT: 5432
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const age=Date.now()-fs.statSync('/tmp/devflow-email-worker.ready').mtimeMs;process.exit(age<30000?0:1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      devflow.component: email-worker
+    networks: [devflow_internal]
 
   edge:
     image: nginx:1.27-alpine
@@ -103,7 +132,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
       devflow.component: proxy
     networks: [devflow_edge]
 
@@ -114,7 +143,7 @@ services:
       context: .
       dockerfile: docker/updater/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.2-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     command: ["bash", "/opt/devflow/app/scripts/updater-daemon.sh"]
@@ -136,7 +165,7 @@ services:
       start_period: 15s
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.2-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
       devflow.component: updater
     networks: [devflow_internal, devflow_edge]
 

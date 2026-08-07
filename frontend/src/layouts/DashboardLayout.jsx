@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [notifications, setNotifications] = useState({ notifications: [], unread_count: 0 });
+  const [notifications, setNotifications] = useState({ notifications: [], unread_count: 0, total: 0, page: 1, limit: 20 });
   const notificationRef = useRef(null);
   const profileRef = useRef(null);
   const navigation = visibleNavigation(user);
@@ -58,15 +58,28 @@ export default function DashboardLayout({ children }) {
     const opening = !notificationsOpen;
     setNotificationsOpen(opening);
     setProfileOpen(false);
-    if (!opening) return;
-    const ids = notifications.notifications.filter((item) => !item.read_at).map((item) => item.id);
-    if (ids.length) {
-      await api.post('/notifications/read', { ids }).catch(() => {});
-      setNotifications((current) => ({
-        unread_count: 0,
-        notifications: current.notifications.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() }))
-      }));
+    if (opening) await refreshNotifications();
+  };
+
+  const markNotification = async (item) => {
+    if (!item.read_at) {
+      await api.post('/notifications/read', { ids: [item.id] }).catch(() => {});
+      setNotifications((current) => ({ ...current, unread_count: Math.max(0, current.unread_count - 1), notifications: current.notifications.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry) }));
     }
+    setNotificationsOpen(false);
+    if (item.link_path) navigate(item.link_path);
+    else if (item.task_id) navigate(`/task/${item.task_id}`);
+  };
+
+  const markAllNotifications = async () => {
+    await api.post('/notifications/read-all');
+    setNotifications((current) => ({ ...current, unread_count: 0, notifications: current.notifications.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() })) }));
+  };
+
+  const loadMoreNotifications = async () => {
+    const nextPage = notifications.page + 1;
+    const response = await api.get('/notifications', { params: { page: nextPage, limit: notifications.limit } });
+    setNotifications((current) => ({ ...response.data, notifications: [...current.notifications, ...response.data.notifications] }));
   };
 
   const doLogout = async () => {
@@ -98,7 +111,7 @@ export default function DashboardLayout({ children }) {
                 <Bell className="h-5 w-5" />
                 {notifications.unread_count > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-bold leading-5 text-white">{Math.min(notifications.unread_count, 99)}</span>}
               </button>
-              {notificationsOpen && <NotificationMenu id="notifications-menu" data={notifications.notifications} onNavigate={(id) => { setNotificationsOpen(false); if (id) navigate(`/task/${id}`); }} />}
+              {notificationsOpen && <NotificationMenu id="notifications-menu" data={notifications} onNavigate={markNotification} onMarkAll={markAllNotifications} onLoadMore={loadMoreNotifications} />}
             </div>}
 
             <div className="relative" ref={profileRef}>
@@ -169,12 +182,13 @@ function NavigationDropdown({ group, pathname }) {
   </div>;
 }
 
-function NotificationMenu({ id, data, onNavigate }) {
+function NotificationMenu({ id, data, onNavigate, onMarkAll, onLoadMore }) {
   return <div id={id} className="absolute right-0 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-    <div className="border-b border-slate-200 px-4 py-3"><p className="text-sm font-semibold">Notificacoes</p></div>
+    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><p className="text-sm font-semibold">Notificacoes</p>{data.unread_count > 0 && <button type="button" onClick={onMarkAll} className="text-xs font-medium text-indigo-600">Marcar todas como lidas</button>}</div>
     <div className="max-h-96 overflow-y-auto">
-      {data.length === 0 && <p className="p-5 text-center text-sm text-slate-500">Nenhuma notificacao.</p>}
-      {data.map((item) => <button key={item.id} type="button" onClick={() => onNavigate(item.task_id)} className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"><p className="text-sm font-medium text-slate-800">{item.title}</p><p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.body}</p><p className="mt-1 text-[11px] text-slate-400">{formatDate(item.created_at)}</p></button>)}
+      {data.notifications.length === 0 && <p className="p-5 text-center text-sm text-slate-500">Nenhuma notificacao.</p>}
+      {data.notifications.map((item) => <button key={item.id} type="button" onClick={() => onNavigate(item)} className={`block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 ${item.read_at ? '' : 'bg-indigo-50/60'}`}><div className="flex items-start gap-2"><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.read_at ? 'bg-slate-200' : 'bg-indigo-600'}`} /><div><p className="text-sm font-medium text-slate-800">{item.title}</p><p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.body}</p><p className="mt-1 text-[11px] text-slate-400">{item.notification_type} · {formatDate(item.created_at)}</p></div></div></button>)}
+      {data.notifications.length < data.total && <button type="button" onClick={onLoadMore} className="w-full px-4 py-3 text-sm font-medium text-indigo-600 hover:bg-slate-50">Carregar mais</button>}
     </div>
   </div>;
 }

@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.2-alpha`
+## Instalacao isolada `0.6.3-alpha`
+
+| Fase 4 | Evidencia |
+|---|---|
+| Outbox confiavel | migration `006_reliable_notifications.sql`, `emailOutboxService.js` e `FOR UPDATE SKIP LOCKED` |
+| Recuperacao | `/api/auth/password/forgot`, `/password/reset`, hash SHA-256, expiracao, uso unico e rate limit |
+| Notificacoes | contador/lista/leitura/paginacao em `/api/notifications` e menu superior |
+| Preferencias | `notification_preferences`, perfil do usuario e seguranca critica obrigatoria |
+| Worker | servico `devflow-worker`, retry/backoff, payload AES-256-GCM e auditoria sanitizada |
 
 | Fase 3 | Evidencia |
 |---|---|
@@ -36,6 +44,7 @@
 | Certificado | Certbot standalone e `validate_devflow_certificate` |
 | Nginx | `docker/nginx.runtime.conf.template` e renderizacao atomica |
 | Persistencia | `/opt/devflow`, volume PostgreSQL e fila updater |
+| E-mail | outbox no PostgreSQL e worker interno sem porta publicada |
 | Retomada | `recalculate_resume_stage` e transacao schema 3 |
 | Symlink ativo | `activate_candidate_app_symlink`, rollback e commit atomicos antes do updater |
 | Gate da fila | `state/installation-in-progress` e `updater_processing_blocked` |

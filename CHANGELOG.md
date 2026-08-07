@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.3-alpha] - 2026-08-06
+
+### Adicionado
+
+- notificacoes internas paginadas, contador, leitura individual/coletiva e links contextuais;
+- preferencias por usuario para canais, movimentacoes, atribuicoes e atrasos, mantendo seguranca critica obrigatoria;
+- recuperacao de senha com resposta neutra, token aleatorio armazenado por hash, expiracao, uso unico e revogacao de sessoes;
+- outbox transacional cifrada, idempotencia, worker dedicado, retry exponencial, timeout e auditoria sanitizada;
+- teste SMTP enfileirado exclusivo do Super Admin e configuracao por ambiente sem exposicao de credenciais.
+
+### Seguranca
+
+- notificacoes e jobs de etapa sao gravados antes do commit e enviados somente depois pelo worker;
+- tarefas em Roadmap nao vazam por atribuicoes, contadores ou notificacoes;
+- payloads temporarios de e-mail sao protegidos por AES-256-GCM e apagados depois da entrega;
+- recuperacao invalida tokens anteriores e encerra todas as sessoes abertas.
+
 ## [0.6.2-alpha] - 2026-08-06
 
 ### Adicionado

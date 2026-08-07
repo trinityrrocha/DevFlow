@@ -1,7 +1,7 @@
 const db = require('../config/database');
 const { AppError, assert } = require('../utils/errors');
 const workflow = require('./workflowService');
-const { notifyStageChange, taskCode } = require('./notificationService');
+const { notifyStageChange, notifyAssignments, notifyOverdue, notifyCompleted, taskCode } = require('./notificationService');
 const { hasPermission } = require('./tenantService');
 const timing = require('./taskTimingService');
 
@@ -149,17 +149,21 @@ async function createTask(req, payload) {
         priority_id: task.priority_id
       }
     );
-    await client.query('COMMIT');
-    return {
+    const created = {
       ...task,
       stage: firstStage.code,
       stage_name: firstStage.name,
+      stage_responsibility: firstStage.responsibility,
       priority: priorityResult.rows[0].code,
       environment: environmentResult.rows[0].code,
       request_type: typeResult.rows[0].code,
       project_name: project.name,
       client_name: project.client_name
     };
+    await notifyStageChange(created, client);
+    await notifyAssignments(created, {}, client);
+    await client.query('COMMIT');
+    return created;
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -509,7 +513,6 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
     if (targetStage.completes_task && !['not_started', 'completed', 'cancelled'].includes(task.timer_status)) {
       await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'COMPLETED',$3,$4,'completed',$5,$6)`, [companyId, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, timerBeforeTransition.active_elapsed_seconds]);
     }
-    await client.query('COMMIT');
     updated = {
       ...updated,
       stage: targetStage.code,
@@ -517,13 +520,16 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
       stage_responsibility: targetStage.responsibility,
       current_stage_id: targetStage.id
     };
+    await notifyStageChange(updated, client);
+    if (isRoadmap(task) && !isRoadmap(updated)) await notifyAssignments(updated, {}, client);
+    if (targetStage.completes_task) await notifyCompleted(updated, client);
+    await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     client.release();
   }
-  await notifyStageChange(updated).catch(() => {});
   return updated;
 }
 
@@ -667,6 +673,14 @@ async function updateAdministration(req, taskId, payload) {
         [companyId, taskId, req.user.id, before.timer_status, before.estimated_duration_seconds, payload.estimated_duration_seconds, timerSnapshot.active_elapsed_seconds]
       );
     }
+    const notificationTask = {
+      ...updated,
+      stage: before.stage,
+      stage_name: before.stage_name,
+      stage_responsibility: before.stage_responsibility
+    };
+    await notifyAssignments(notificationTask, before, client);
+    if (overdueAfterEstimate && !before.is_overdue) await notifyOverdue(notificationTask, client);
     await client.query('COMMIT');
     return { ...updated, became_overdue: overdueAfterEstimate && !before.is_overdue };
   } catch (error) {

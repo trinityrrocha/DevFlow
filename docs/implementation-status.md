@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-06. Versao: `0.6.2-alpha`.
+Data de corte: 2026-08-06. Versao: `0.6.3-alpha`.
+
+Fase 4 concluida localmente: notificacoes internas paginadas, preferencias, eventos de etapa/atribuicao/atraso/conclusao, recuperacao de senha e outbox transacional cifrada. O worker usa claim concorrente, idempotencia, retry/backoff e auditoria sem conteudo sensivel. SMTP, entrega real, PostgreSQL em container e operacao do worker na VPS permanecem pendentes de homologacao manual.
 
 Fase 3 concluida localmente: tarefas em Roadmap sao visiveis somente ao criador, Admin e Super Admin; fora dele, somente participantes, responsaveis de projeto e administradores. O gate cobre lista/busca/detalhe/relacionados/anexos/comentarios/testes/notificacoes/dashboard. Estimativa em segundos, estados explicitos de timer, acumulado persistido, timestamps, atraso, filtro, UI e historico foram implementados. Concorrencia e reinicio foram validados por contrato e calculos unitarios; PostgreSQL/VPS real permanece pendente.
 

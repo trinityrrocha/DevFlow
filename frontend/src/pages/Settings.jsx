@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Layers3, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from 'lucide-react';
+import { Layers3, Loader2, Mail, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,6 +17,7 @@ export default function Settings({ section = 'catalogs' }) {
   const [saving, setSaving] = useState(false);
   const [capabilities, setCapabilities] = useState(null);
   const [queued, setQueued] = useState(null);
+  const [emailStatus, setEmailStatus] = useState(null);
   const [mfaPolicy, setMfaPolicy] = useState(null);
   const [selectedMfaPolicy, setSelectedMfaPolicy] = useState('optional');
 
@@ -28,7 +29,10 @@ export default function Settings({ section = 'catalogs' }) {
   useEffect(() => { loadCatalogs(); }, [loadCatalogs]);
   useEffect(() => {
     if (!user?.is_super_admin) return;
-    if (section === 'updates') api.get('/operations/update/capabilities').then(({ data: value }) => setCapabilities(value)).catch(() => setCapabilities(null));
+    if (section === 'updates') {
+      api.get('/operations/update/capabilities').then(({ data: value }) => setCapabilities(value)).catch(() => setCapabilities(null));
+      api.get('/notifications/email/status').then(({ data: value }) => setEmailStatus(value)).catch(() => setEmailStatus(null));
+    }
     if (section === 'mfa') api.get('/auth/mfa/policy').then(({ data: value }) => { setMfaPolicy(value); setSelectedMfaPolicy(value.enforcement_mode); }).catch(() => setMfaPolicy(null));
   }, [section, user?.is_super_admin]);
 
@@ -39,16 +43,17 @@ export default function Settings({ section = 'catalogs' }) {
 
   const titles = { mfa: ['Politica de autenticacao multifator', 'Defina a obrigatoriedade do segundo fator sem alterar configuracoes existentes.'], catalogs: ['Catalogos configuraveis', 'Ambientes, prioridades e tipos de tarefa da empresa ativa.'], workflows: ['Fluxos configuraveis', 'Etapas, responsabilidades e requisitos do ciclo de desenvolvimento.'], updates: ['Atualizacoes', 'Solicitacoes assinadas para o mecanismo transacional de atualizacao.'] };
   return <div className="space-y-7"><header><h1 className="text-2xl font-bold">{titles[section][0]}</h1><p className="mt-1 text-sm text-slate-500">{titles[section][1]}</p></header>{error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}{notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div>}
-    {section === 'updates' && <UpdateSettings capabilities={capabilities} queued={queued} saving={saving} mutate={mutate} setQueued={setQueued} />}
+    {section === 'updates' && <UpdateSettings capabilities={capabilities} emailStatus={emailStatus} queued={queued} saving={saving} mutate={mutate} setQueued={setQueued} />}
     {section === 'mfa' && <MfaSettings policy={mfaPolicy} selected={selectedMfaPolicy} setSelected={setSelectedMfaPolicy} saving={saving} mutate={mutate} setPolicy={setMfaPolicy} />}
     {section === 'catalogs' && (data ? <CatalogSettings data={data} forms={catalogForms} setForms={setCatalogForms} saving={saving} mutate={mutate} /> : <Loading />)}
     {section === 'workflows' && (data ? <WorkflowSettings data={data} workflow={workflow} setWorkflow={setWorkflow} saving={saving} mutate={mutate} /> : <Loading />)}
   </div>;
 }
 
-function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
+function UpdateSettings({ capabilities, emailStatus, queued, saving, mutate, setQueued }) {
   if (!capabilities) return <Loading />;
-  return <Section icon={RefreshCw} title="Atualizacao do sistema"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">Versao instalada: <strong>{capabilities.version}</strong></p><p className="mt-1 text-xs text-slate-500">O pedido e assinado e enfileirado; somente update.sh pode executa-lo.</p>{queued && <p className="mt-2 text-xs font-medium text-emerald-700">Pedido {queued.id} enfileirado.</p>}</div><button type="button" disabled={!capabilities.enabled || saving} className="btn-primary" onClick={() => { if (!window.confirm('Confirmar solicitacao de atualizacao?')) return; mutate(async () => { const { data } = await api.post('/operations/update/requests'); setQueued(data); }, 'Pedido de atualizacao enfileirado.'); }}><RefreshCw className="mr-2 h-4 w-4" />Solicitar atualizacao</button></div></Section>;
+  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">Versao instalada: <strong>{capabilities.version}</strong></p><p className="mt-1 text-xs text-slate-500">O pedido e assinado e enfileirado; somente update.sh pode executa-lo.</p>{queued && <p className="mt-2 text-xs font-medium text-emerald-700">Pedido {queued.id} enfileirado.</p>}</div><button type="button" disabled={!capabilities.enabled || saving} className="btn-primary" onClick={() => { if (!window.confirm('Confirmar solicitacao de atualizacao?')) return; mutate(async () => { const { data } = await api.post('/operations/update/requests'); setQueued(data); }, 'Pedido de atualizacao enfileirado.'); }}><RefreshCw className="mr-2 h-4 w-4" />Solicitar atualizacao</button></div></Section>
+    <Section icon={Mail} title="E-mail transacional"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">SMTP: <strong>{emailStatus?.configured ? 'configurado' : 'nao configurado'}</strong></p><p className="mt-1 text-xs text-slate-500">O teste entra na outbox e sera processado pelo worker. Nenhum segredo e exibido.</p></div><button type="button" disabled={!emailStatus?.configured || saving} className="btn-secondary" onClick={() => mutate(() => api.post('/notifications/email/test'), 'E-mail de teste colocado na fila.')}>Enviar e-mail de teste</button></div></Section></div>;
 }
 
 function MfaSettings({ policy, selected, setSelected, saving, mutate, setPolicy }) {

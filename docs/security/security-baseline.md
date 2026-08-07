@@ -23,7 +23,11 @@ A autoridade de obrigatoriedade e o backend, por meio de uma politica persistida
 
 ## CSRF
 
-O contrato usa o cookie `devflow_csrf` e o header `X-CSRF-Token`. O token possui aleatoriedade criptografica, assinatura HMAC vinculada ao hash da sessao, `Secure` em producao, `SameSite=Lax` e path `/`. O cliente HTTP central envia cookies e o token atual em `POST`, `PUT`, `PATCH` e `DELETE`. Login, bootstrap e verificacao do desafio MFA usam isencoes exatas; as rotas de setup, confirmacao, desativacao e politica permanecem protegidas. Somente `CSRF_INVALID` pode renovar o token e repetir uma requisicao, uma unica vez.
+O contrato usa o cookie `devflow_csrf` e o header `X-CSRF-Token`. O token possui aleatoriedade criptografica, assinatura HMAC vinculada ao hash da sessao, `Secure` em producao, `SameSite=Lax` e path `/`. O cliente HTTP central envia cookies e o token atual em `POST`, `PUT`, `PATCH` e `DELETE`. Login, bootstrap, desafio MFA e os dois endpoints publicos de recuperacao usam isencoes exatas; rotas autenticadas permanecem protegidas. Somente `CSRF_INVALID` pode renovar o token e repetir uma requisicao, uma unica vez.
+
+## E-mail e recuperacao
+
+O SMTP e opt-in por `SMTP_ENABLED=true`, exige remetente e host, usa TLS, timeouts e credenciais somente no ambiente privado. Jobs idempotentes sao gravados no PostgreSQL dentro da transacao de negocio. Tokens sao persistidos apenas como SHA-256; o payload temporario da outbox e cifrado com AES-256-GCM e apagado apos a entrega. Logs do worker registram apenas ID, estado e codigo sanitizado. Eventos criticos de seguranca nao podem ser desativados pelas preferencias.
 
 ## TLS e proxy
 

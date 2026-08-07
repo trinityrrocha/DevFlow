@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.2-alpha**. Esta fase acrescenta visibilidade protegida para Roadmap, estimativa `dd-hh-mm`, cronometro produtivo persistente, tempo corrido desde o inicio e indicador de atraso. Navegacao, usuarios, instalacao isolada e updater permanecem preservados.
+Versao atual: **0.6.3-alpha**. A Fase 4 acrescenta notificacoes internas, preferencias, recuperacao segura de senha e e-mail assincrono por outbox cifrada com worker limitado. As fases anteriores, a instalacao isolada e o updater permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
@@ -40,6 +40,7 @@ sudo ./install.sh --resume --firewall-confirmed
 - `devflow-nginx`: unico servico publicado nas portas 80/443;
 - `devflow-frontend`: rede de borda, sem porta do host;
 - `devflow-backend`: redes de borda e interna, sem porta do host;
+- `devflow-worker`: consumidor interno da outbox de e-mail, sem porta e sem execucao arbitraria;
 - `devflow-db`: somente rede interna e volume persistente proprio;
 - `devflow-updater`: fila privada assinada, delegacao exclusiva ao `update.sh` e bloqueio de processamento enquanto `state/installation-in-progress` existir;
 - `/etc/letsencrypt`: certificado do host montado como somente leitura no Nginx;
@@ -70,6 +71,7 @@ Para uma instalacao `0.5.3-alpha` cujo unico erro seja o estado schema v3, obten
 - [Infraestrutura](docs/infrastructure/infrastructure.md)
 - [Update, backup e rollback](docs/infrastructure/update-backup-rollback.md)
 - [Seguranca](docs/security/security-baseline.md)
+- [Notificacoes e e-mail](docs/architecture/notifications-email.md)
 - [Troubleshooting](docs/operations/troubleshooting.md)
 - [Estado de implementacao](docs/implementation-status.md)
 

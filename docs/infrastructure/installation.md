@@ -1,6 +1,6 @@
 # Instalacao isolada
 
-O DevFlow `0.6.2-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
+O DevFlow `0.6.3-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
 
 O fluxo publico comum e `sudo ./install.sh`. Quando nenhuma opcao de modo e fornecida, o bootstrap repassa `--install` explicitamente ao instalador interno. `--check`, `--dry-run` e `--resume` nunca sao convertidos em instalacao.
 
@@ -15,7 +15,7 @@ Fluxo material:
 5. validar validade, dominio/SAN, links sob `/etc/letsencrypt` e par chave/certificado;
 6. gerar `config/nginx/nginx.runtime.conf`;
 7. ativar atomicamente `/opt/devflow/app` para a release candidata e criar `state/installation-in-progress` como `root:root 0600`;
-8. iniciar banco, migrations, backend, frontend, Nginx e updater nessa ordem;
+8. iniciar banco, migrations, backend, worker de e-mail, frontend, Nginx e updater nessa ordem;
 9. manter o updater healthy, mas sem consumir a fila enquanto o marcador existir;
 10. criar o Super Admin e validar HTTPS local com `curl --resolve`, sem `-k`;
 11. gravar e promover atomicamente o estado schema v3, valida-lo e recarrega-lo com o codigo instalado;

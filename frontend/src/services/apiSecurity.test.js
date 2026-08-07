@@ -6,10 +6,12 @@ describe('cliente HTTP centralizado', () => {
     expect(api.defaults.withCredentials).toBe(true);
   });
 
-  it('isenta somente login, bootstrap e segundo fator exatos', () => {
+  it('isenta somente autenticacao publica e recuperacao de senha exatas', () => {
     expect(isCsrfExempt('/auth/login')).toBe(true);
     expect(isCsrfExempt('/auth/bootstrap')).toBe(true);
     expect(isCsrfExempt('/auth/mfa')).toBe(true);
+    expect(isCsrfExempt('/auth/password/forgot')).toBe(true);
+    expect(isCsrfExempt('/auth/password/reset')).toBe(true);
     expect(isCsrfExempt('/auth/mfa/setup/start')).toBe(false);
   });
 

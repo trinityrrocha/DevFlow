@@ -125,6 +125,22 @@ DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
 export DEVFLOW_APP_ROOT DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_INSTALLED_SOURCE_DIR \
   DEVFLOW_IDENTITY_RELEASE_ROOT
 compose_files
+
+compose_has_worker() {
+  "${DEVFLOW_COMPOSE[@]}" config --services 2>/dev/null | grep -Fxq worker
+}
+
+stop_runtime_services() {
+  local services=(backend frontend)
+  compose_has_worker && services=(backend worker frontend)
+  "${DEVFLOW_COMPOSE[@]}" stop "${services[@]}"
+}
+
+up_runtime_services() {
+  local services=(db backend frontend)
+  compose_has_worker && services=(db backend worker frontend)
+  "${DEVFLOW_COMPOSE[@]}" up -d --wait "$@" "${services[@]}"
+}
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
 
@@ -404,7 +420,7 @@ rollback_update() {
   fi
 
   set_compose_for "$OLD_RELEASE_DIR"
-  "${DEVFLOW_COMPOSE[@]}" stop backend frontend
+  stop_runtime_services
   [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
   "${DEVFLOW_COMPOSE[@]}" build backend frontend updater
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível reconstruir as imagens anteriores.'; rollback_failures=$((rollback_failures + 1)); }
@@ -420,10 +436,10 @@ rollback_update() {
 
   UPDATE_PHASE=rollback-containers
   set_compose_for "$OLD_RELEASE_DIR"
-  "${DEVFLOW_COMPOSE[@]}" up -d db backend frontend --wait --remove-orphans
+  up_runtime_services --remove-orphans
   [[ $? -eq 0 ]] || { log ERROR 'Containers anteriores não ficaram saudáveis.'; rollback_failures=$((rollback_failures + 1)); }
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
-    "$CANDIDATE_DIR/scripts/health.sh" --internal
+    "$OLD_RELEASE_DIR/scripts/health.sh" --internal
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-proxy
@@ -432,7 +448,7 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_EXPECTED_VERSION="$OLD_VERSION" \
-    "$CANDIDATE_DIR/scripts/health.sh"
+    "$OLD_RELEASE_DIR/scripts/health.sh"
   [[ $? -eq 0 ]] || { log ERROR 'Health check público após rollback falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   if ! refresh_host_units "$OLD_RELEASE_DIR"; then
@@ -581,7 +597,7 @@ enter_maintenance "$CANDIDATE_DIR"
 
 UPDATE_PHASE=migrations
 set_compose_for "$CANDIDATE_DIR"
-"${DEVFLOW_COMPOSE[@]}" stop backend frontend
+stop_runtime_services
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 run_devflow_migrations
@@ -590,7 +606,7 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration após atualização.'
 
 UPDATE_PHASE=containers
-"${DEVFLOW_COMPOSE[@]}" up -d backend frontend --wait --force-recreate --remove-orphans
+up_runtime_services --force-recreate --remove-orphans
 
 UPDATE_PHASE=health-internal
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \

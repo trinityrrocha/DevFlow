@@ -14,6 +14,7 @@ const {
   requiresMfaSetup
 } = require('../services/mfaPolicyService');
 const { recordAudit } = require('../services/auditService');
+const { enqueueEmail } = require('../services/emailOutboxService');
 const {
   bootstrapCompany,
   listUserCompanies,
@@ -41,6 +42,91 @@ const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(1).max(1024)
 });
+
+const passwordRecoveryResponse = 'Se o e-mail estiver cadastrado, enviaremos instrucoes de recuperacao.';
+
+async function requestPasswordReset(req, res) {
+  const { email } = z.object({ email: z.string().trim().toLowerCase().email().max(320) }).parse(req.body);
+  const user = await loadLoginUser(email);
+  if (user?.is_active) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const ipHash = req.ip ? crypto.createHash('sha256').update(`${env.JWT_SECRET}:${req.ip}`).digest('hex') : null;
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND used_at IS NULL', [user.id]);
+      const reset = (await client.query(
+        `INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,requested_ip_hash)
+         VALUES ($1,$2,CURRENT_TIMESTAMP+($3*INTERVAL '1 minute'),$4) RETURNING id`,
+        [user.id, tokenHash, env.PASSWORD_RESET_TTL_MINUTES, ipHash]
+      )).rows[0];
+      const membership = (await client.query(
+        `SELECT company_id FROM company_memberships WHERE user_id=$1 AND is_active=TRUE
+         ORDER BY is_default DESC,joined_at LIMIT 1`, [user.id]
+      )).rows[0];
+      await enqueueEmail(client, {
+        companyId: membership?.company_id || null, userId: user.id, email: user.email,
+        template: 'PASSWORD_RESET', data: { name: user.name, token }, idempotencyKey: `password-reset:${reset.id}`
+      });
+      await recordAudit({ req, operation: 'PASSWORD_RESET_REQUESTED', entityType: 'USER', entityId: user.id, queryable: client, strict: true });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally { client.release(); }
+  }
+  res.status(202).json({ message: passwordRecoveryResponse });
+}
+
+async function resetPassword(req, res) {
+  const payload = z.object({ token: z.string().min(32).max(256), new_password: passwordSchema }).parse(req.body);
+  const tokenHash = crypto.createHash('sha256').update(payload.token).digest('hex');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const reset = (await client.query(
+      `SELECT prt.*,u.name,u.email FROM password_reset_tokens prt
+       JOIN users u ON u.id=prt.user_id AND u.is_active=TRUE AND u.deleted_at IS NULL
+       WHERE prt.token_hash=$1 FOR UPDATE OF prt`, [tokenHash]
+    )).rows[0];
+    assert(reset && !reset.used_at && new Date(reset.expires_at) > new Date(), 'PASSWORD_RESET_INVALID', 'Link de recuperacao invalido ou expirado.', 400);
+    await client.query(
+      `UPDATE users SET password_hash=$2,must_change_password=FALSE,token_version=token_version+1,updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`, [reset.user_id, await argon2.hash(payload.new_password, { type: argon2.argon2id })]
+    );
+    await client.query('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND used_at IS NULL', [reset.user_id]);
+    const revoked = await client.query(
+      `UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP,revoke_reason='password_recovered'
+       WHERE user_id=$1 AND revoked_at IS NULL RETURNING id,company_id,user_id`, [reset.user_id]
+    );
+    for (const session of revoked.rows) await client.query(
+      `INSERT INTO session_events (session_id,company_id,user_id,event_type,reason)
+       VALUES ($1,$2,$3,'REVOKED','password_recovered')`, [session.id, session.company_id, session.user_id]
+    );
+    const memberships = (await client.query(
+      `SELECT company_id FROM company_memberships WHERE user_id=$1 AND is_active=TRUE ORDER BY is_default DESC,joined_at`, [reset.user_id]
+    )).rows;
+    for (const membership of memberships) await client.query(
+      `INSERT INTO notifications (company_id,user_id,notification_type,title,body,email_status,link_path,idempotency_key)
+       VALUES ($1,$2,'SECURITY_ALERT','Senha redefinida','Sua senha foi redefinida e as sessoes anteriores foram encerradas.','SKIPPED','/profile',$3)
+       ON CONFLICT (company_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
+      [membership.company_id, reset.user_id, `password-reset-completed:${reset.id}:internal:${membership.company_id}`]
+    );
+    await enqueueEmail(client, {
+      companyId: memberships[0]?.company_id || null, userId: reset.user_id, email: reset.email,
+      template: 'SECURITY_ALERT',
+      data: { name: reset.name, title: 'Senha redefinida', body: 'Sua senha foi redefinida e todas as sessoes anteriores foram encerradas.' },
+      idempotencyKey: `password-reset-completed:${reset.id}`
+    });
+    await recordAudit({ req, operation: 'PASSWORD_RESET_COMPLETED', entityType: 'USER', entityId: reset.user_id, queryable: client, strict: true });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { client.release(); }
+  res.json({ message: 'Senha redefinida. Entre com a nova senha.' });
+}
 
 const serializeUser = (user) => ({
   id: user.id,
@@ -298,6 +384,8 @@ module.exports = {
   bootstrapStatus,
   bootstrap,
   login,
+  requestPasswordReset,
+  resetPassword,
   verifyMfa,
   me,
   switchCompany,

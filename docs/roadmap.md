@@ -1,13 +1,14 @@
 # Roadmap inicial
 
-## Marco `0.6.2-alpha`
+## Marco `0.6.3-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
 - [x] aplicar permissoes de Clientes e Projetos no backend;
 - [x] concluir Fase 2: usuarios, perfis e sessoes;
 - [x] concluir Fase 3: Roadmap e tempos;
-- [ ] concluir Fase 4: e-mail e notificacoes;
+- [x] concluir Fase 4: e-mail, recuperacao, notificacoes e outbox;
+- [ ] homologar SMTP, entrega, retry e worker na VPS;
 
 - [x] substituir ACME temporario por Certbot standalone do host;
 - [x] validar DNS A por fontes independentes e portas fail-closed;

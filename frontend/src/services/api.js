@@ -6,7 +6,9 @@ const api = axios.create({
 });
 
 const mutating = new Set(['post', 'put', 'patch', 'delete']);
-export const csrfExemptPaths = new Set(['/auth/login', '/auth/bootstrap', '/auth/mfa']);
+export const csrfExemptPaths = new Set([
+  '/auth/login', '/auth/bootstrap', '/auth/mfa', '/auth/password/forgot', '/auth/password/reset'
+]);
 export const normalizeApiPath = (url) => String(url || '').split('?')[0].replace(/^\/api/, '');
 export const isCsrfExempt = (url) => csrfExemptPaths.has(normalizeApiPath(url));
 export const readCookie = (name) => document.cookie

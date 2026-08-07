@@ -15,6 +15,7 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState({ name: user.name || '', phone: user.phone || '' });
+  const [preferences, setPreferences] = useState({ internal_enabled: true, email_enabled: true, task_movement: true, assignments: true, overdue: true, security: true });
 
   useEffect(() => {
     if (!user.must_change_password) {
@@ -23,6 +24,11 @@ export default function Profile() {
         .catch((requestError) => setError(errorMessage(requestError)));
     }
   }, [user.must_change_password]);
+
+  useEffect(() => {
+    if (user.must_change_password || user.mfa_setup_required) return;
+    api.get('/notifications/preferences').then(({ data }) => setPreferences(data.preferences)).catch((requestError) => setError(errorMessage(requestError)));
+  }, [user.must_change_password, user.mfa_setup_required]);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get('verify_email');
@@ -104,6 +110,15 @@ export default function Profile() {
     setMessage('Códigos copiados.');
   };
 
+  const savePreferences = async (event) => {
+    event.preventDefault(); setSaving(true); setError('');
+    try {
+      const response = await api.patch('/notifications/preferences', preferences);
+      setPreferences(response.data.preferences); setMessage('Preferencias de notificacao atualizadas.');
+    } catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setSaving(false); }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
@@ -133,6 +148,18 @@ export default function Profile() {
         <div className="mb-5 flex items-center gap-3"><Mail className="h-5 w-5 text-indigo-600" /><div><h2 className="font-semibold">Alterar meu e-mail</h2><p className="text-sm text-slate-500">O endereco atual permanece ativo ate a confirmacao enviada ao novo e-mail.</p></div></div>
         {user.pending_email && <p className="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-800">Confirmacao pendente para {user.pending_email}.</p>}
         <form onSubmit={requestEmailChange} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Novo e-mail<input name="new_email" type="email" required maxLength="320" className="field mt-1" /></label><label className="text-sm font-medium">Senha atual<input name="current_password" type="password" required autoComplete="current-password" className="field mt-1" /></label><div className="sm:col-span-2"><button disabled={saving} className="btn-primary">Enviar confirmacao</button></div></form>
+      </section>}
+
+      {!user.must_change_password && !user.mfa_setup_required && <section className="card p-6">
+        <div className="mb-5 flex items-center gap-3"><Mail className="h-5 w-5 text-indigo-600" /><div><h2 className="font-semibold">Preferencias de notificacao</h2><p className="text-sm text-slate-500">Alertas criticos de seguranca permanecem obrigatorios.</p></div></div>
+        <form onSubmit={savePreferences} className="space-y-3">
+          {[
+            ['internal_enabled', 'Notificacoes internas'], ['email_enabled', 'Notificacoes por e-mail'],
+            ['task_movement', 'Movimentacao e conclusao de tarefas'], ['assignments', 'Atribuicoes'], ['overdue', 'Tarefas em atraso']
+          ].map(([key, label]) => <label key={key} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={preferences[key]} onChange={(event) => setPreferences({ ...preferences, [key]: event.target.checked })} />{label}</label>)}
+          <label className="flex items-center gap-3 text-sm text-slate-500"><input type="checkbox" checked disabled />Alertas criticos de seguranca</label>
+          <button disabled={saving} className="btn-primary">Salvar preferencias</button>
+        </form>
       </section>}
 
       <section className="card p-6">

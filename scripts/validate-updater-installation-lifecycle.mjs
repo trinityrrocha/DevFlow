@@ -37,7 +37,7 @@ try {
   check('01 initial installation accepts absent active app', activation.includes('APP_SYMLINK_PREVIOUSLY_PRESENT=false')
     && activation.includes('elif [[ -e "$active_path" ]]'));
   check('02 candidate app is activated before updater create', install.indexOf('activate_candidate_app_symlink')
-    < install.indexOf('create db backend frontend edge updater'));
+    < install.indexOf('create db backend worker frontend edge updater'));
   check('03 updater daemon is present through active symlink', install.includes('-f "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh"'));
   check('04 updater daemon is executable through active symlink', install.includes('-x "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh"'));
   check('05 daemon creates ready marker', daemon.includes('touch "$REQUEST_ROOT/daemon.ready"'));

@@ -3,7 +3,10 @@ const { CSRF_COOKIE, CSRF_HEADER, verifyToken } = require('../services/csrfServi
 const { AppError } = require('../utils/errors');
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS']);
-const exemptPaths = new Set(['/api/auth/login', '/api/auth/bootstrap', '/api/auth/mfa']);
+const exemptPaths = new Set([
+  '/api/auth/login', '/api/auth/bootstrap', '/api/auth/mfa',
+  '/api/auth/password/forgot', '/api/auth/password/reset'
+]);
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''));

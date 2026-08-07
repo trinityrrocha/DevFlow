@@ -15,6 +15,10 @@ export default function Login() {
   const [recovery, setRecovery] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token') || '';
+  const [recoveryMode, setRecoveryMode] = useState(resetToken ? 'reset' : 'login');
+  const [recoveryForm, setRecoveryForm] = useState({ email: '', password: '', confirm: '' });
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     api.get('/auth/bootstrap/status')
@@ -74,6 +78,29 @@ export default function Login() {
     }
   };
 
+  const submitForgot = async (event) => {
+    event.preventDefault(); setLoading(true); setError(''); setMessage('');
+    try {
+      const response = await api.post('/auth/password/forgot', { email: recoveryForm.email });
+      setMessage(response.data.message);
+    } catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setLoading(false); }
+  };
+
+  const submitReset = async (event) => {
+    event.preventDefault(); setError(''); setMessage('');
+    if (recoveryForm.password !== recoveryForm.confirm) return setError('As senhas nao coincidem.');
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/password/reset', { token: resetToken, new_password: recoveryForm.password });
+      setMessage(response.data.message);
+      window.history.replaceState(null, '', '/login');
+      setRecoveryMode('login');
+      setRecoveryForm({ email: '', password: '', confirm: '' });
+    } catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setLoading(false); }
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
       <section className="w-full max-w-md">
@@ -97,6 +124,23 @@ export default function Login() {
                 {error && <Alert>{error}</Alert>}
                 <Submit loading={loading}>Criar Super Admin</Submit>
               </form>
+            ) : recoveryMode === 'forgot' ? (
+              <form onSubmit={submitForgot} className="space-y-4">
+                <div><h2 className="text-lg font-semibold">Recuperar senha</h2><p className="text-sm text-slate-500">Informe seu e-mail. A resposta nao confirma se a conta existe.</p></div>
+                <Field label="E-mail" type="email" value={recoveryForm.email} onChange={(value) => setRecoveryForm({ ...recoveryForm, email: value })} />
+                {error && <Alert>{error}</Alert>}{message && <Success>{message}</Success>}
+                <Submit loading={loading}>Enviar instrucoes</Submit>
+                <button type="button" onClick={() => { setRecoveryMode('login'); setError(''); setMessage(''); }} className="text-sm font-medium text-indigo-600">Voltar ao login</button>
+              </form>
+            ) : recoveryMode === 'reset' ? (
+              <form onSubmit={submitReset} className="space-y-4">
+                <div><h2 className="text-lg font-semibold">Definir nova senha</h2><p className="text-sm text-slate-500">O link e de uso unico e possui validade limitada.</p></div>
+                <Field label="Nova senha" type="password" value={recoveryForm.password} onChange={(value) => setRecoveryForm({ ...recoveryForm, password: value })} />
+                <Field label="Confirmar nova senha" type="password" value={recoveryForm.confirm} onChange={(value) => setRecoveryForm({ ...recoveryForm, confirm: value })} />
+                <p className="text-xs text-slate-500">Use 12 ou mais caracteres com maiuscula, minuscula, numero e simbolo.</p>
+                {error && <Alert>{error}</Alert>}{message && <Success>{message}</Success>}
+                <Submit loading={loading}>Redefinir senha</Submit>
+              </form>
             ) : mfa ? (
               <form onSubmit={submitMfa} className="space-y-4">
                 <div className="text-center"><KeyRound className="mx-auto h-8 w-8 text-indigo-600" /><h2 className="mt-2 text-lg font-semibold">Verificação em duas etapas</h2></div>
@@ -112,6 +156,8 @@ export default function Login() {
                 <div><h2 className="text-lg font-semibold">Entrar</h2><p className="text-sm text-slate-500">Use sua conta para acessar o fluxo.</p></div>
                 <Field label="E-mail" type="email" value={loginForm.email} onChange={(value) => setLoginForm({ ...loginForm, email: value })} />
                 <Field label="Senha" type="password" value={loginForm.password} onChange={(value) => setLoginForm({ ...loginForm, password: value })} />
+                <button type="button" onClick={() => { setRecoveryMode('forgot'); setError(''); setMessage(''); }} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">Esqueci minha senha</button>
+                {message && <Success>{message}</Success>}
                 {error && <Alert>{error}</Alert>}
                 <Submit loading={loading}>Entrar</Submit>
               </form>
@@ -127,6 +173,9 @@ function Field({ label, value, onChange, type = 'text', readOnly = false }) {
 }
 function Alert({ children }) {
   return <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{children}</div>;
+}
+function Success({ children }) {
+  return <div role="status" className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{children}</div>;
 }
 function Submit({ loading, children }) {
   return <button disabled={loading} className="btn-primary w-full">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{children}</button>;

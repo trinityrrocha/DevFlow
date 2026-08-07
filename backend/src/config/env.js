@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.6.2-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.6.3-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   UPDATE_API_ENABLED: z.string().default('false').transform((value) => value === 'true'),
   UPDATE_REQUEST_DIR: z.string().default('/var/lib/devflow-updater/requests'),
@@ -30,10 +30,21 @@ const environmentSchema = z.object({
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_SECURE: z.string().default('false').transform((value) => value === 'true'),
+  SMTP_ENABLED: z.string().default('false').transform((value) => value === 'true'),
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASSWORD: z.string().optional().default(''),
   SMTP_FROM: z.string().optional().default(''),
-  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30)
+  SMTP_REPLY_TO: z.string().optional().default(''),
+  SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(10000),
+  SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  EMAIL_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  EMAIL_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(120).default(30)
+}).superRefine((value, context) => {
+  if (value.SMTP_ENABLED && !value.SMTP_HOST) context.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'obrigatorio quando SMTP_ENABLED=true' });
+  if (value.SMTP_ENABLED && !value.SMTP_FROM) context.addIssue({ code: 'custom', path: ['SMTP_FROM'], message: 'obrigatorio quando SMTP_ENABLED=true' });
+  if (Boolean(value.SMTP_USER) !== Boolean(value.SMTP_PASSWORD)) context.addIssue({ code: 'custom', path: ['SMTP_USER'], message: 'usuario e senha SMTP devem ser configurados juntos' });
 });
 
 const parsed = environmentSchema.safeParse(process.env);

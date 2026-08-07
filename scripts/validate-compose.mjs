@@ -17,7 +17,7 @@ const edgePorts = compose.services.edge.ports || [];
 if (!edgePorts.includes('80:80') || !edgePorts.includes('443:443')) {
   throw new Error('Somente o Nginx isolado deve publicar 80/443.');
 }
-for (const [service, expected] of Object.entries({ db: 'devflow-db', backend: 'devflow-backend', frontend: 'devflow-frontend', edge: 'devflow-nginx', updater: 'devflow-updater' })) {
+for (const [service, expected] of Object.entries({ db: 'devflow-db', backend: 'devflow-backend', worker: 'devflow-worker', frontend: 'devflow-frontend', edge: 'devflow-nginx', updater: 'devflow-updater' })) {
   if (compose.services[service].container_name !== expected) throw new Error(`Nome estavel ausente: ${expected}`);
 }
 if (!compose.networks?.devflow_internal?.internal || compose.networks.devflow_internal.name !== 'devflow_internal') {

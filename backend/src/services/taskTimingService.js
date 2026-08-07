@@ -2,6 +2,7 @@ const db = require('../config/database');
 const { assert } = require('../utils/errors');
 const workflow = require('./workflowService');
 const { hasPermission } = require('./tenantService');
+const { notifyOverdue } = require('./notificationService');
 
 const MAX_ESTIMATE_SECONDS = 365 * 24 * 60 * 60;
 
@@ -25,7 +26,7 @@ function canOperateTimer(user, task, stage) {
 async function updateEstimate(req, taskId, seconds) {
   assert(Number.isInteger(seconds) && seconds >= 60 && seconds <= MAX_ESTIMATE_SECONDS, 'ESTIMATE_INVALID', 'A estimativa deve estar entre 1 minuto e 365 dias.');
   return db.transaction(async (client) => {
-    const task = (await client.query(`SELECT t.*,s.responsibility FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
+    const task = (await client.query(`SELECT t.*,s.responsibility,s.code AS stage,s.name AS stage_name FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
     assert(task, 'TASK_NOT_FOUND', 'Tarefa nao encontrada.', 404);
     assert(hasPermission(req.user, 'tasks.manage'), 'PERMISSION_DENIED', 'Somente administradores podem alterar a estimativa.', 403);
     const snapshot = timingSnapshot(task);
@@ -33,13 +34,14 @@ async function updateEstimate(req, taskId, seconds) {
     const updated = (await client.query('UPDATE tasks SET estimated_duration_seconds=$3,is_overdue=$4,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND company_id=$2 RETURNING *', [taskId, req.user.company_id, seconds, overdue])).rows[0];
     await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,previous_estimate_seconds,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'ESTIMATE_CHANGED',$3,$4,$4,$5,$6,$7)`, [req.user.company_id, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, seconds, snapshot.active_elapsed_seconds]);
     if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, task.timer_status, seconds, snapshot.active_elapsed_seconds]);
+    if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);
     return { ...updated, ...timingSnapshot(updated), became_overdue: overdue && !task.is_overdue };
   });
 }
 
 async function timerAction(req, taskId, action) {
   return db.transaction(async (client) => {
-    const task = (await client.query(`SELECT t.*,s.responsibility,s.tracks_time,s.completes_task FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
+    const task = (await client.query(`SELECT t.*,s.responsibility,s.tracks_time,s.completes_task,s.code AS stage,s.name AS stage_name FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
     assert(task, 'TASK_NOT_FOUND', 'Tarefa nao encontrada.', 404);
     assert(canOperateTimer(req.user, task, task), 'TIMER_FORBIDDEN', 'Voce nao pode operar o cronometro desta etapa.', 403);
     const allowed = { start: ['not_started'], pause: ['running'], resume: ['paused'], complete: ['running', 'paused'], cancel: ['not_started', 'running', 'paused'] };
@@ -64,6 +66,7 @@ async function timerAction(req, taskId, action) {
     )).rows[0];
     await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.user.company_id, taskId, action.toUpperCase() === 'START' ? 'STARTED' : action.toUpperCase() === 'RESUME' ? 'RESUMED' : `${action.toUpperCase()}D`, req.user.id, task.timer_status, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, next, task.estimated_duration_seconds, active]);
+    if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);
     return { ...updated, ...timingSnapshot(updated), became_overdue: overdue && !task.is_overdue };
   });
 }

@@ -11,10 +11,19 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { code: 'RATE_LIMIT', error: 'Muitas tentativas. Aguarde e tente novamente.' }
 });
+const recoveryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { code: 'RATE_LIMIT', error: 'Muitas tentativas. Aguarde e tente novamente.' }
+});
 
 router.get('/bootstrap/status', controller.bootstrapStatus);
 router.post('/bootstrap', authLimiter, controller.bootstrap);
 router.post('/login', authLimiter, controller.login);
+router.post('/password/forgot', recoveryLimiter, controller.requestPasswordReset);
+router.post('/password/reset', recoveryLimiter, controller.resetPassword);
 router.post('/mfa', authLimiter, controller.verifyMfa);
 router.get('/me', requireAuth, controller.me);
 router.post('/company/switch', requireAuth, controller.switchCompany);

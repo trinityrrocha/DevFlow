@@ -83,7 +83,9 @@ check('25 updater queue rejects shell input and validates HMAC', requestValidato
 check('26 updater delegates only to update.sh', daemon.includes('scripts/update.sh')
   && !daemon.includes('install.sh'));
 check('27 update remains transactional with backup health and rollback', ['backup.sh', 'verify-backup.sh', 'rollback_update', 'health.sh'].every((token) => update.includes(token)));
-check('28 updater is not recreated during its own request', update.includes('up -d backend frontend')
+check('28 updater is not recreated during its own request', update.includes('up_runtime_services --force-recreate --remove-orphans')
+  && update.includes('local services=(db backend frontend)')
+  && update.includes('services=(db backend worker frontend)')
   && !update.match(/up[^\n]*updater[^\n]*force-recreate/u));
 check('29 uninstall is scoped and never prunes globally', !uninstall.includes('system prune')
   && uninstall.includes('certbot delete --non-interactive --cert-name "$DEVFLOW_DOMAIN"'));

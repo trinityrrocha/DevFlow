@@ -8,7 +8,7 @@ const { AppError, assert } = require('../utils/errors');
 const { recordAudit } = require('../services/auditService');
 const { SESSION_COOKIE, cookieOptions, revokeUserSessions } = require('../services/sessionService');
 const { CSRF_COOKIE, csrfCookieOptions } = require('../services/csrfService');
-const { sendEmailVerification } = require('../services/emailService');
+const { enqueueEmail, smtpConfigured } = require('../services/emailOutboxService');
 const mfaService = require('../services/mfaService');
 
 const phoneSchema = z.string().trim().max(32).regex(/^\+[1-9]\d{7,14}$/, 'Use o formato internacional E.164, por exemplo +5511999999999.').nullable().optional();
@@ -175,13 +175,26 @@ async function requestOwnEmailChange(req, res) {
   const user = (await db.query('SELECT * FROM users WHERE id=$1 AND is_active=TRUE AND deleted_at IS NULL', [req.user.id])).rows[0];
   assert(user && await argon2.verify(user.password_hash, payload.current_password).catch(() => false), 'CURRENT_PASSWORD_INVALID', 'A senha atual esta incorreta.', 400);
   assert(payload.new_email !== user.email.toLowerCase(), 'EMAIL_UNCHANGED', 'Informe um e-mail diferente do atual.', 400);
+  assert(smtpConfigured(), 'SMTP_NOT_CONFIGURED', 'O envio de e-mail nao esta configurado. O endereco atual foi preservado.', 503);
   const duplicate = await db.query('SELECT 1 FROM users WHERE (LOWER(email)=$1 OR LOWER(pending_email)=$1) AND id<>$2 AND deleted_at IS NULL', [payload.new_email, user.id]);
   assert(!duplicate.rowCount, 'EMAIL_IN_USE', 'Este e-mail ja esta em uso.', 409);
   const token = crypto.randomBytes(32).toString('base64url');
   const hash = crypto.createHash('sha256').update(token).digest('hex');
-  await db.query(`UPDATE users SET pending_email=$2,email_verification_token_hash=$3,email_verification_expires_at=CURRENT_TIMESTAMP+($4*INTERVAL '1 minute'),email_verification_requested_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1`, [user.id, payload.new_email, hash, env.EMAIL_VERIFICATION_TTL_MINUTES]);
-  await recordAudit({ req, operation: 'EMAIL_CHANGE_REQUESTED', entityType: 'USER', entityId: user.id, newValues: { pending_email: payload.new_email } });
-  await sendEmailVerification({ name: user.name, email: payload.new_email, token });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE users SET pending_email=$2,email_verification_token_hash=$3,email_verification_expires_at=CURRENT_TIMESTAMP+($4*INTERVAL '1 minute'),email_verification_requested_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1`, [user.id, payload.new_email, hash, env.EMAIL_VERIFICATION_TTL_MINUTES]);
+    await enqueueEmail(client, {
+      companyId: req.user.company_id, userId: user.id, email: payload.new_email,
+      template: 'EMAIL_VERIFICATION', data: { name: user.name, token },
+      idempotencyKey: `email-verification:${user.id}:${hash}`
+    });
+    await recordAudit({ req, operation: 'EMAIL_CHANGE_REQUESTED', entityType: 'USER', entityId: user.id, newValues: { pending_email: payload.new_email }, queryable: client, strict: true });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { client.release(); }
   res.status(202).json({ message: 'Enviamos uma confirmacao para o novo e-mail. O endereco atual permanece ativo ate a confirmacao.' });
 }
 

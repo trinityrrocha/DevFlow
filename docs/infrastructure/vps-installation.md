@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.6.2-alpha`. Nao aprovada para producao.
+Versao `0.6.3-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 
@@ -47,10 +47,23 @@ sudo /opt/devflow/app/scripts/version.sh
 sudo /opt/devflow/app/scripts/health.sh
 docker ps --filter name=devflow --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 docker logs --tail 100 devflow-updater
+docker logs --tail 100 devflow-worker
 sudo stat /opt/devflow/app /opt/devflow/config/super-admin-temporary-password
 ```
 
-Docker real, Certbot real, ACME real, AMD64/ARM64 reais e a recuperacao operacional para `0.5.5-alpha` dependem da execucao manual na VPS.
+## Homologacao de e-mail
+
+Edite somente `/opt/devflow/config/devflow.env`, mantenha `root:root 0600` e configure as variaveis descritas em `docs/architecture/notifications-email.md`. Depois de uma atualizacao transacional para esta versao:
+
+```bash
+sudo /opt/devflow/app/scripts/health.sh
+docker inspect --format '{{.State.Health.Status}}' devflow-worker
+docker logs --tail 100 devflow-worker
+```
+
+No DevFlow, entre como Super Admin, abra Sistema > Atualizacoes e enfileire o teste SMTP. Valide entrega, TLS, retry com provedor temporariamente indisponivel e ausencia de credenciais/conteudo nos logs. Depois teste link expirado, link ja usado, resposta neutra para e-mail inexistente, revogacao das sessoes e preferencias. Nao exponha `devflow.env` ou tokens ao coletar evidencias.
+
+Docker real, Certbot real, ACME real, SMTP real, worker em container, AMD64/ARM64 reais e a recuperacao operacional para `0.5.5-alpha` dependem da execucao manual na VPS.
 
 ## Recuperacao manual do estado da instalacao 0.5.3-alpha
 

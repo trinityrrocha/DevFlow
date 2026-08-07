@@ -52,7 +52,7 @@ else
 fi
 report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
 
-for tuple in backend:backend_image frontend:frontend_image db:db_image edge:nginx_image updater:updater_image; do
+for tuple in backend:backend_image worker:worker_image frontend:frontend_image db:db_image edge:nginx_image updater:updater_image; do
   service="${tuple%%:*}"; key="${tuple##*:}"
   image="$(compose_service_image_expected "$service" 2>/dev/null || true)"
   if [[ -n "$image" ]] && docker image inspect "$image" >/dev/null 2>&1; then
@@ -62,7 +62,7 @@ for tuple in backend:backend_image frontend:frontend_image db:db_image edge:ngin
   fi
 done
 
-for tuple in db:db backend:backend frontend:frontend updater:updater edge:nginx; do
+for tuple in db:db backend:backend worker:worker frontend:frontend updater:updater edge:nginx; do
   service="${tuple%%:*}"
   key="${tuple##*:}"
   if [[ "$service" == edge && "$INTERNAL_ONLY" == true ]]; then
