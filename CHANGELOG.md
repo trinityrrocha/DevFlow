@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.4-alpha] - 2026-08-06
+
+### Corrigido
+
+- motor `update.sh` totalmente nao interativo, sem dependencia de TTY ou validacao de requests web;
+- CLI manual separada em `update-cli.sh`, com check, changelog, confirmacao numerica e cancelamento normal;
+- daemon com fila autenticada, replay protection, lock, recuperacao de requests interrompidos e status sanitizado;
+- bootstrap de update para instalacoes antigas, releases imutaveis e rollback sem comandos Git destrutivos;
+- painel do Super Admin com versoes, changelog, salvaguardas e polling do estado da atualizacao.
+
+### Seguranca
+
+- allowlist exata de remotes e servicos, sem controle de Compose pela API e sem recriar o updater em execucao;
+- backup verificado, manutencao HTTP 503, migrations sob lock, health e rollback automatico preservados.
+
 ## [0.6.3-alpha] - 2026-08-06
 
 ### Adicionado

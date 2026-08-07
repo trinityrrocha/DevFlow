@@ -256,7 +256,7 @@ preflight() {
   validate_dns_alignment
   inspect_ports
   if [[ -f "$DEVFLOW_STATE_ROOT/installation.json" && "$MODE" != check ]]; then
-    die 'Uma instalacao concluida existe. Use scripts/update.sh.'
+    die 'Uma instalacao concluida existe. Use scripts/update-cli.sh.'
   fi
   if [[ "$MODE" == install && -e "$DEVFLOW_INSTALL_TRANSACTION_FILE" ]]; then
     die 'Instalacao parcial detectada. Use sudo ./install.sh --resume.'

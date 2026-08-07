@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.3-alpha**. A Fase 4 acrescenta notificacoes internas, preferencias, recuperacao segura de senha e e-mail assincrono por outbox cifrada com worker limitado. As fases anteriores, a instalacao isolada e o updater permanecem preservados.
+Versao atual: **0.6.4-alpha**. A Fase 4 acrescenta notificacoes internas, preferencias, recuperacao segura de senha e e-mail assincrono por outbox cifrada com worker limitado. As fases anteriores, a instalacao isolada e o updater permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
@@ -54,13 +54,21 @@ sudo /opt/devflow/app/scripts/health.sh
 sudo /opt/devflow/app/scripts/repair-installation-state.sh --check
 sudo /opt/devflow/app/scripts/diagnose.sh --output /opt/devflow/logs/diagnostic.txt
 sudo /opt/devflow/app/scripts/backup.sh
-sudo /opt/devflow/app/scripts/update.sh --check
-sudo /opt/devflow/app/scripts/update.sh
+sudo /opt/devflow/app/scripts/update-cli.sh --check
+sudo /opt/devflow/app/scripts/update-cli.sh
 sudo /opt/devflow/app/scripts/renew-certificate.sh --dry-run
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 ```
 
-`update.sh` continua sendo o unico motor de atualizacao: valida `origin/main`, exibe versoes e changelog, confirma a operacao no terminal ou valida um pedido HMAC da fila privada, cria e verifica backup, ativa manutencao, aplica migrations, valida health e executa rollback automatico em falha. O instalador nao possui modo de update.
+`update.sh` e o motor nao interativo: valida a allowlist de `origin`, usa apenas `fetch`, `checkout main` e `pull --ff-only`, cria e verifica backup, ativa manutencao, aplica todas as migrations pendentes, valida health e executa rollback automatico em falha. A confirmacao manual pertence a `update-cli.sh`; no painel, pertence ao frontend antes da criacao do pedido HMAC. O instalador permanece exclusivo da instalacao inicial.
+
+Para atualizar uma VPS antiga que ainda possui o CLI defeituoso, baixe o bootstrap sem usar pipe:
+
+```bash
+wget -O update-devflow.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/update-bootstrap.sh
+chmod +x update-devflow.sh
+sudo ./update-devflow.sh
+```
 
 Para uma instalacao `0.5.3-alpha` cujo unico erro seja o estado schema v3, obtenha uma copia limpa da `main` e execute primeiro `sudo scripts/repair-installation-state.sh --check`. Use `--repair` somente depois de revisar o diagnostico. O reparador nao instala, nao constroi imagens, nao executa migrations e nao altera banco, Super Admin, senha ou certificado.
 

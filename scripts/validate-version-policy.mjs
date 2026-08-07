@@ -65,12 +65,18 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-installation-state.mjs'), '// state tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-migration-image-permissions.mjs'), '// migration permission tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-updater-request.mjs'), '// updater request fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-update-workflow.mjs'), '// updater workflow fixture\n');
+  writeFileSync(resolve(directory, 'scripts/write-update-status.mjs'), '// updater status fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-shell-syntax.mjs'), '// shell syntax fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-bootstrap-interface.mjs'), '// bootstrap interface fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-updater-installation-lifecycle.mjs'), '// updater lifecycle fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-auth-state-recovery.mjs'), '// auth state recovery fixture\n');
   for (const script of ['install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'repair-installation-state.sh', 'renew-certificate.sh', 'updater-daemon.sh']) {
     writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\nsource scripts/lib/common.sh\n');
+    chmodSync(resolve(directory, `scripts/${script}`), 0o755);
+  }
+  for (const script of ['update-cli.sh', 'update-bootstrap.sh']) {
+    writeFileSync(resolve(directory, `scripts/${script}`), '#!/usr/bin/env bash\n');
     chmodSync(resolve(directory, `scripts/${script}`), 0o755);
   }
   chmodSync(resolve(directory, 'scripts/bootstrap.sh'), 0o755);
@@ -88,14 +94,14 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.3-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.4-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
-  writeFixture(patchFixture, '0.6.3-alpha');
+  writeFixture(patchFixture, '0.6.4-alpha');
   check('main after patch increment', validateDirectory(patchFixture).status === 0);
 
   const minorFixture = resolve(temporary, 'minor');
-  writeFixture(minorFixture, '0.6.3-alpha');
+  writeFixture(minorFixture, '0.6.4-alpha');
   check('main after minor increment', validateDirectory(minorFixture).status === 0);
 
   const repositoryFixture = resolve(temporary, 'repository');
@@ -104,7 +110,7 @@ try {
   runGit(repositoryFixture, ['config', 'user.name', 'trinityrrocha']);
   runGit(repositoryFixture, ['config', 'user.email', 'trinityrocha@sti1.com.br']);
   runGit(repositoryFixture, ['add', '-A']);
-  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'repair-installation-state.sh', 'renew-certificate.sh', 'updater-daemon.sh']) {
+  for (const script of ['bootstrap.sh', 'install.sh', 'update.sh', 'version.sh', 'health.sh', 'uninstall.sh', 'diagnose.sh', 'repair-installation-state.sh', 'renew-certificate.sh', 'updater-daemon.sh', 'update-cli.sh', 'update-bootstrap.sh']) {
     runGit(repositoryFixture, ['update-index', '--chmod=+x', `scripts/${script}`]);
   }
   runGit(repositoryFixture, ['commit', '-m', 'test: version policy fixture']);

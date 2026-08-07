@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 20
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: database
     networks: [devflow_internal]
 
@@ -29,19 +29,20 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.4-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.4-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
       MIGRATIONS_DIR: /database/migrations
       UPLOAD_DIR: /var/lib/devflow/uploads
       UPDATE_REQUEST_DIR: /var/lib/devflow-updater/requests
+      UPDATE_STATUS_DIR: /var/lib/devflow-updater/status
     expose: ["3000"]
     volumes:
       - ${DEVFLOW_UPLOADS_PATH:-/opt/devflow/storage/uploads}:/var/lib/devflow/uploads
@@ -56,7 +57,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: backend
     networks: [devflow_internal, devflow_edge]
 
@@ -68,7 +69,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.4-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     depends_on:
@@ -82,7 +83,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: frontend
     networks: [devflow_edge]
 
@@ -94,7 +95,7 @@ services:
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.4-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
@@ -108,7 +109,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: email-worker
     networks: [devflow_internal]
 
@@ -132,7 +133,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: proxy
     networks: [devflow_edge]
 
@@ -143,7 +144,7 @@ services:
       context: .
       dockerfile: docker/updater/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.3-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.4-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     command: ["bash", "/opt/devflow/app/scripts/updater-daemon.sh"]
@@ -165,7 +166,7 @@ services:
       start_period: 15s
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.3-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.4-alpha}
       devflow.component: updater
     networks: [devflow_internal, devflow_edge]
 

@@ -1,8 +1,8 @@
-const { getUpdateCapabilities, createSignedRequest } = require('../services/updateOperationService');
+const { getUpdateCapabilities, createSignedRequest, getRequestStatus } = require('../services/updateOperationService');
 const { recordAudit } = require('../services/auditService');
 
-function getCapabilities(_req, res) {
-  res.json(getUpdateCapabilities());
+async function getCapabilities(_req, res, next) {
+  try { res.json(await getUpdateCapabilities()); } catch (error) { next(error); }
 }
 
 async function createRequest(req, res) {
@@ -17,4 +17,8 @@ async function createRequest(req, res) {
   res.status(202).json(request);
 }
 
-module.exports = { getCapabilities, createRequest };
+function getStatus(req, res) {
+  res.json(getRequestStatus(req.params.id));
+}
+
+module.exports = { getCapabilities, createRequest, getStatus };

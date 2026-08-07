@@ -1,6 +1,6 @@
 # Primeiro deployment de homologacao
 
-O DevFlow `0.6.3-alpha` exige controle exclusivo de 80/443.
+O DevFlow `0.6.4-alpha` exige controle exclusivo de 80/443.
 
 1. Inspecione transacao, containers e volumes existentes.
 2. Configure todos os registros A para o IPv4 publico da VPS.

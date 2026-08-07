@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const [requestPath, expectedId] = process.argv.slice(2);
+const [requestPath, expectedId, requestRoot] = process.argv.slice(2);
 const secret = process.env.UPDATE_REQUEST_SECRET || '';
 const fail = (message) => { process.stderr.write(`invalid-update-request:${message}\n`); process.exit(2); };
-if (!requestPath || !expectedId || secret.length < 64) fail('arguments');
+if (!requestPath || !expectedId || !requestRoot || secret.length < 64) fail('arguments');
+const root = resolve(requestRoot);
+const processingPath = resolve(requestPath);
+if (processingPath !== resolve(root, 'processing', `${expectedId}.json`)) fail('path');
+if (existsSync(resolve(root, 'processed', `${expectedId}.json`))
+  || existsSync(resolve(root, 'failed', `${expectedId}.json`))) fail('replay');
 let stat;
 try { stat = lstatSync(requestPath); } catch { fail('missing'); }
 if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) fail('unsafe-file');

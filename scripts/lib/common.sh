@@ -637,8 +637,12 @@ check_capacity() {
 
 write_version_state() {
   local expected_commit="${1:-}" temporary
-  resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
-    || return 1
+  if [[ "${DEVFLOW_EXPLICIT_RELEASE_IDENTITY:-false}" == true ]]; then
+    validate_explicit_release_identity || return 1
+  else
+    resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
+      || return 1
+  fi
   [[ -z "$expected_commit" || "$expected_commit" == "$INSTALLED_COMMIT" ]] || return 1
   install -d -m 0750 "$DEVFLOW_STATE_ROOT"
   temporary="$(mktemp "$DEVFLOW_STATE_ROOT/.version.XXXXXX")"
@@ -651,6 +655,28 @@ write_version_state() {
   } > "$temporary"
   chmod 0600 "$temporary"
   mv -f -- "$temporary" "$DEVFLOW_STATE_ROOT/version.json"
+}
+
+validate_explicit_release_identity() {
+  local source_dir="${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}"
+  local release_root="${DEVFLOW_IDENTITY_RELEASE_ROOT:-}" marker version repository
+  [[ "$release_root" == "$DEVFLOW_INSTALL_ROOT/releases/"* && -d "$release_root" ]] || return 1
+  [[ -r "$release_root/.devflow-release" && -r "$release_root/VERSION" ]] || return 1
+  marker="$(tr -d '\r\n' < "$release_root/.devflow-release")"
+  version="$(devflow_read_version_file "$release_root/VERSION")" || return 1
+  [[ "$marker" == "${DEVFLOW_RELEASE_COMMIT:-}" && "$version" == "${DEVFLOW_VERSION:-}" ]] || return 1
+  [[ "$marker" =~ ^[0-9a-f]{40}$ && -d "$source_dir/.git" ]] || return 1
+  git -C "$source_dir" cat-file -e "$marker^{commit}" 2>/dev/null || return 1
+  repository="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
+  case "$repository" in
+    'https://github.com/trinityrrocha/DevFlow'|'https://github.com/trinityrrocha/DevFlow.git'|'git@github.com:trinityrrocha/DevFlow.git') ;;
+    *) return 1 ;;
+  esac
+  INSTALLED_VERSION="$version"
+  INSTALLED_COMMIT="$marker"
+  INSTALLED_REF=main
+  INSTALLED_REPOSITORY="$DEVFLOW_CANONICAL_REPOSITORY_URL"
+  export INSTALLED_VERSION INSTALLED_COMMIT INSTALLED_REF INSTALLED_REPOSITORY
 }
 
 installation_state_schema_valid() {
@@ -677,8 +703,12 @@ diagnose_installation_state() {
 
 write_installation_state() {
   local report="$DEVFLOW_STATE_ROOT/installation.json" validator
-  resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
-    || return 1
+  if [[ "${DEVFLOW_EXPLICIT_RELEASE_IDENTITY:-false}" == true ]]; then
+    validate_explicit_release_identity || return 1
+  else
+    resolve_installed_release_identity "${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}" main >/dev/null \
+      || return 1
+  fi
   [[ "${DEVFLOW_VERSION:-$INSTALLED_VERSION}" == "$INSTALLED_VERSION" ]] || return 1
   validator="${DEVFLOW_INSTALLATION_STATE_VALIDATOR:-$DEVFLOW_SOURCE_ROOT/scripts/validate-installation-state.py}"
   command -v python3 >/dev/null 2>&1 || return 1

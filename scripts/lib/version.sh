@@ -172,7 +172,8 @@ devflow_validate_checkout_version_consistency() {
     scripts/bootstrap.sh scripts/install.sh scripts/update.sh scripts/version.sh scripts/health.sh \
     scripts/uninstall.sh scripts/diagnose.sh scripts/repair-installation-state.sh \
     scripts/renew-certificate.sh scripts/updater-daemon.sh \
-    scripts/validate-updater-request.mjs scripts/validate-shell-syntax.mjs \
+    scripts/update-cli.sh scripts/update-bootstrap.sh scripts/write-update-status.mjs \
+    scripts/validate-updater-request.mjs scripts/validate-update-workflow.mjs scripts/validate-shell-syntax.mjs \
     scripts/validate-bootstrap-interface.mjs scripts/validate-updater-installation-lifecycle.mjs \
     scripts/validate-auth-state-recovery.mjs \
     scripts/resolve-compose-image.py \
@@ -204,7 +205,9 @@ devflow_validate_git_tree_version_consistency() {
     docs/roadmap.md docs/traceability.md scripts/bootstrap.sh scripts/install.sh scripts/update.sh \
     scripts/version.sh scripts/health.sh scripts/uninstall.sh scripts/diagnose.sh \
     scripts/repair-installation-state.sh \
-    scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/validate-updater-request.mjs \
+    scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/update-cli.sh \
+    scripts/update-bootstrap.sh scripts/write-update-status.mjs scripts/validate-updater-request.mjs \
+    scripts/validate-update-workflow.mjs \
     scripts/validate-shell-syntax.mjs scripts/validate-bootstrap-interface.mjs \
     scripts/validate-updater-installation-lifecycle.mjs scripts/validate-auth-state-recovery.mjs \
     scripts/resolve-compose-image.py scripts/validate-isolated-architecture.mjs \

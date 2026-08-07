@@ -1,6 +1,6 @@
 # Instalacao em VPS Linux para homologacao
 
-Versao `0.6.3-alpha`. Nao aprovada para producao.
+Versao `0.6.4-alpha`. Nao aprovada para producao.
 
 Antes de qualquer nova tentativa em uma VPS com instalacao parcial, preserve evidencias:
 
@@ -82,8 +82,8 @@ sudo ./scripts/repair-installation-state.sh --repair
 O modo `--repair` ja executa o `health.sh` da copia nova em processo separado. Nao execute ainda o `health.sh` de `/opt/devflow/app`: enquanto a release ativa for `0.5.3-alpha`, esse arquivo ainda contem o parser que motivou o reparo. Em seguida, a atualizacao continua pertencendo exclusivamente ao motor transacional:
 
 ```bash
-sudo ./scripts/update.sh --check
-sudo ./scripts/update.sh
+sudo ./scripts/update-cli.sh --check
+sudo ./scripts/update-cli.sh
 sudo /opt/devflow/app/scripts/version.sh
 sudo /opt/devflow/app/scripts/health.sh
 ```

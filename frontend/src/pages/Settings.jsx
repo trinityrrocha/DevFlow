@@ -51,8 +51,31 @@ export default function Settings({ section = 'catalogs' }) {
 }
 
 function UpdateSettings({ capabilities, emailStatus, queued, saving, mutate, setQueued }) {
+  const [updateStatus, setUpdateStatus] = useState(null);
+  useEffect(() => {
+    if (!queued?.id || ['completed', 'failed'].includes(updateStatus?.state)) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const { data } = await api.get(`/operations/update/requests/${queued.id}`);
+        if (active) setUpdateStatus(data);
+      } catch { /* A proxima consulta tenta novamente sem expor detalhes internos. */ }
+    };
+    poll();
+    const timer = window.setInterval(poll, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [queued?.id, updateStatus?.state]);
   if (!capabilities) return <Loading />;
-  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">Versao instalada: <strong>{capabilities.version}</strong></p><p className="mt-1 text-xs text-slate-500">O pedido e assinado e enfileirado; somente update.sh pode executa-lo.</p>{queued && <p className="mt-2 text-xs font-medium text-emerald-700">Pedido {queued.id} enfileirado.</p>}</div><button type="button" disabled={!capabilities.enabled || saving} className="btn-primary" onClick={() => { if (!window.confirm('Confirmar solicitacao de atualizacao?')) return; mutate(async () => { const { data } = await api.post('/operations/update/requests'); setQueued(data); }, 'Pedido de atualizacao enfileirado.'); }}><RefreshCw className="mr-2 h-4 w-4" />Solicitar atualizacao</button></div></Section>
+  const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !queued?.id;
+  const confirmUpdate = () => {
+    const message = `Atualizar o DevFlow de ${capabilities.installedVersion} para ${capabilities.availableVersion}?\n\nUm backup validado sera criado e o sistema ficara temporariamente em manutencao. Em caso de falha, o rollback sera automatico.`;
+    if (!window.confirm(message)) return;
+    mutate(async () => {
+      const { data } = await api.post('/operations/update/requests');
+      setQueued(data); setUpdateStatus({ state: 'pending', message: 'Atualizacao aguardando processamento.' });
+    }, 'Pedido de atualizacao enfileirado.');
+  };
+  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p></div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
     <Section icon={Mail} title="E-mail transacional"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">SMTP: <strong>{emailStatus?.configured ? 'configurado' : 'nao configurado'}</strong></p><p className="mt-1 text-xs text-slate-500">O teste entra na outbox e sera processado pelo worker. Nenhum segredo e exibido.</p></div><button type="button" disabled={!emailStatus?.configured || saving} className="btn-secondary" onClick={() => mutate(() => api.post('/notifications/email/test'), 'E-mail de teste colocado na fila.')}>Enviar e-mail de teste</button></div></Section></div>;
 }
 

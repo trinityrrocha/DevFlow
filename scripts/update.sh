@@ -12,16 +12,11 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHECK_ONLY=false
 ROLLBACK_REQUESTED=false
 EXPECTED_UPDATE_VERSION=
-REQUEST_FILE=
-DAEMON_MODE=false
+INTERNAL_MODE="${DEVFLOW_UPDATE_INTERNAL:-false}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true; shift ;;
     --rollback) ROLLBACK_REQUESTED=true; shift ;;
-    --request-file)
-      [[ -n "${2:-}" ]] || die '--request-file exige um arquivo.'
-      REQUEST_FILE="$2"; DAEMON_MODE=true; shift 2
-      ;;
     --expected-version)
       [[ -n "${2:-}" ]] || die '--expected-version exige um valor.'
       EXPECTED_UPDATE_VERSION="$2"
@@ -35,7 +30,7 @@ Uso:
 
 --check  consulta versão e changelog, sem backup ou alterações
 
-Sem argumentos, exibe o plano e exige a escolha numérica explícita ATUALIZAR DEVFLOW.
+Sem argumentos, executa o motor nao interativo. Use update-cli.sh para confirmacao manual.
 EOF
       exit 0
       ;;
@@ -49,6 +44,8 @@ done
   || die '--expected-version nao se aplica ao rollback.'
 [[ -z "$EXPECTED_UPDATE_VERSION" ]] || devflow_semver_is_valid "$EXPECTED_UPDATE_VERSION" \
   || die 'Versão explicitamente esperada não atende ao contrato SemVer.'
+[[ "$INTERNAL_MODE" == true || "$INTERNAL_MODE" == false ]] \
+  || die 'DEVFLOW_UPDATE_INTERNAL deve ser true ou false.'
 
 require_linux
 require_root
@@ -64,15 +61,6 @@ flock -n 9 || die 'Outra atualização DevFlow está em andamento.'
 
 load_devflow_env
 validate_runtime_paths
-if [[ "$DAEMON_MODE" == true ]]; then
-  [[ "${DEVFLOW_UPDATE_DAEMON:-false}" == true \
-    && "$REQUEST_FILE" == /var/lib/devflow-updater/processing/*.json \
-    && -f "$REQUEST_FILE" && ! -L "$REQUEST_FILE" ]] || die 'Contexto do updater daemon invalido.'
-  request_id="${REQUEST_FILE##*/}"; request_id="${request_id%.json}"
-  node "$SCRIPT_DIR/validate-updater-request.mjs" "$REQUEST_FILE" "$request_id" >/dev/null \
-    || die 'Solicitacao assinada do updater invalida.'
-  [[ "$ROLLBACK_REQUESTED" == false && "$CHECK_ONLY" == false ]] || die 'O daemon aceita somente install-update.'
-fi
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Diretório instalado inesperado.'
 validate_domain "$DEVFLOW_DOMAIN"
 check_capacity "$DEVFLOW_INSTALL_ROOT"
@@ -89,28 +77,42 @@ source_mode="$(stat -c '%a' "$SOURCE_DIR")"
 [[ "$(git -C "$SOURCE_DIR" config --local --get core.hooksPath 2>/dev/null || true)" == /dev/null ]] \
   || die 'Hooks Git devem permanecer desabilitados no checkout operacional.'
 [[ "$(git -C "$SOURCE_DIR" branch --show-current)" == main ]] || die 'O checkout operacional deve estar na branch main.'
-[[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || die 'O checkout operacional possui alterações locais.'
+if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=no)" ]]; then
+  printf '%s\n' 'update_blocked=dirty-worktree'
+  die 'O checkout operacional possui arquivos rastreados alterados.'
+fi
 remote_url="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
-[[ "$remote_url" == 'https://github.com/trinityrrocha/DevFlow.git' ]] \
-  || die 'O remote origin deve ser o HTTPS público de trinityrrocha/DevFlow.'
+case "$remote_url" in
+  'https://github.com/trinityrrocha/DevFlow'|'https://github.com/trinityrrocha/DevFlow.git'|'git@github.com:trinityrrocha/DevFlow.git') ;;
+  *) die 'Remote origin nao autorizado para o atualizador.' ;;
+esac
 
 OLD_RELEASE_DIR="$(readlink -f "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
 validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release instalada'
 [[ "$OLD_RELEASE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* ]] || die 'A release instalada está fora de /opt/devflow/releases.'
 DEVFLOW_INSTALLED_SOURCE_DIR="$SOURCE_DIR"
 DEVFLOW_IDENTITY_RELEASE_ROOT="$OLD_RELEASE_DIR"
-validate_installed_state_consistency "$DEVFLOW_STATE_ROOT/installation.json" \
-  || die 'Estado instalado schema v3 inconsistente; atualização bloqueada.'
+load_installation_state "$DEVFLOW_STATE_ROOT/installation.json" \
+  || die 'Estado instalado schema v3 inconsistente; atualizacao bloqueada.'
 [[ "$DEVFLOW_INSTALLATION_STATE_MODE" == isolated ]] || die 'A atualização aceita somente instalações isoladas.'
-OLD_SHA="$INSTALLED_COMMIT"
-OLD_VERSION="$INSTALLED_VERSION"
+OLD_SHA="$DEVFLOW_INSTALLATION_STATE_COMMIT"
+OLD_VERSION="$DEVFLOW_INSTALLATION_STATE_VERSION"
 SOURCE_OLD_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
-[[ "$SOURCE_OLD_SHA" == "$OLD_SHA" ]] \
-  || die 'O checkout operacional não corresponde exatamente à release instalada.'
+git -C "$SOURCE_DIR" cat-file -e "$OLD_SHA^{commit}" 2>/dev/null \
+  || die 'O commit instalado nao existe no checkout operacional.'
+[[ "$(tr -d '\r\n' < "$OLD_RELEASE_DIR/.devflow-release" 2>/dev/null || true)" == "$OLD_SHA" ]] \
+  || die 'A release ativa diverge do commit registrado.'
+[[ "$(devflow_read_version_file "$OLD_RELEASE_DIR/VERSION" 2>/dev/null || true)" == "$OLD_VERSION" ]] \
+  || die 'A release ativa diverge da versao registrada.'
+git -C "$SOURCE_DIR" merge-base --is-ancestor "$OLD_SHA" "$SOURCE_OLD_SHA" \
+  || die 'O checkout operacional nao descende da release instalada.'
+INSTALLED_COMMIT="$OLD_SHA"; INSTALLED_VERSION="$OLD_VERSION"; INSTALLED_REF=main
+INSTALLED_REPOSITORY="$DEVFLOW_CANONICAL_REPOSITORY_URL"
+export INSTALLED_COMMIT INSTALLED_VERSION INSTALLED_REF INSTALLED_REPOSITORY
 devflow_semver_is_valid "$OLD_VERSION" || die 'Versão instalada inválida.'
 [[ "${DEVFLOW_VERSION:-}" == "$OLD_VERSION" ]] \
   || die 'DEVFLOW_VERSION diverge da release instalada; corrija a configuração antes de atualizar.'
-if [[ "$DAEMON_MODE" == false ]]; then
+if [[ "$INTERNAL_MODE" == false ]]; then
 for unit_file in /etc/systemd/system/devflow-backup.service /etc/systemd/system/devflow-backup.timer; do
   [[ -f "$unit_file" ]] || die "Unidade obrigatória ausente: $unit_file"
   managed_file "$unit_file" '# Managed by DevFlow installer.' || die "$unit_file pertence a outro sistema."
@@ -125,6 +127,22 @@ DEVFLOW_RELEASE_COMMIT="$OLD_SHA"
 export DEVFLOW_APP_ROOT DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_INSTALLED_SOURCE_DIR \
   DEVFLOW_IDENTITY_RELEASE_ROOT
 compose_files
+
+UPDATE_SERVICES="${UPDATE_SERVICES:-db backend frontend worker edge}"
+declare -a UPDATE_SERVICE_LIST=()
+for service in $UPDATE_SERVICES; do
+  case "$service" in
+    db|backend|frontend|worker|edge) ;;
+    updater) die 'O updater em execucao nao pode atualizar a si proprio.' ;;
+    *) die "Servico de update nao autorizado: $service" ;;
+  esac
+  [[ " ${UPDATE_SERVICE_LIST[*]} " != *" $service "* ]] && UPDATE_SERVICE_LIST+=("$service")
+done
+[[ ${#UPDATE_SERVICE_LIST[@]} -gt 0 ]] || die 'A allowlist interna de servicos esta vazia.'
+for required_service in db backend frontend worker edge; do
+  [[ " ${UPDATE_SERVICE_LIST[*]} " == *" $required_service "* ]] \
+    || die "Servico obrigatorio ausente da allowlist interna: $required_service"
+done
 
 compose_has_worker() {
   "${DEVFLOW_COMPOSE[@]}" config --services 2>/dev/null | grep -Fxq worker
@@ -143,6 +161,10 @@ up_runtime_services() {
 }
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
+"${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
+  || die 'Banco instalado nao esta saudavel.'
+[[ -x "$OLD_RELEASE_DIR/scripts/backup.sh" && -x "$OLD_RELEASE_DIR/scripts/verify-backup.sh" ]] \
+  || die 'Motor de backup validado nao esta disponivel.'
 
 TEMP_REMOTE_REPO=
 if [[ "$ROLLBACK_REQUESTED" == false && "$CHECK_ONLY" == true ]]; then
@@ -161,6 +183,7 @@ elif [[ "$ROLLBACK_REQUESTED" == false ]]; then
   touch "$UPDATE_LOG"
   chmod 0640 "$UPDATE_LOG"
   exec > >(redact_stream | tee -a "$UPDATE_LOG") 2>&1
+  GIT_TERMINAL_PROMPT=0 git -C "$SOURCE_DIR" checkout main
   GIT_TERMINAL_PROMPT=0 git -C "$SOURCE_DIR" fetch origin main
   REMOTE_REPO="$SOURCE_DIR"
   REMOTE_REF=origin/main
@@ -179,8 +202,12 @@ if [[ -n "$EXPECTED_UPDATE_VERSION" && "$NEW_VERSION" != "$EXPECTED_UPDATE_VERSI
   exit 1
 fi
 
-printf '\nVersão instalada: %s\nCommit instalado: %s\n' "$OLD_VERSION" "$OLD_SHA"
-printf 'Versão disponível: %s\nCommit disponível: %s\n\n' "$NEW_VERSION" "$NEW_SHA"
+printf '%s\n' \
+  "installed_version=$OLD_VERSION" \
+  "installed_commit=$OLD_SHA" \
+  "available_version=$NEW_VERSION" \
+  "available_commit=$NEW_SHA" \
+  "update_available=$([[ "$NEW_SHA" == "$OLD_SHA" ]] && echo false || echo true)"
 
 if [[ "$NEW_SHA" == "$OLD_SHA" ]]; then
   log INFO 'A instalação já corresponde à versão disponível.'
@@ -196,33 +223,14 @@ CHANGELOG_SECTION="$(printf '%s\n' "$CHANGELOG_CONTENT" | awk -v version="$NEW_V
   printing { print }
 ')"
 [[ -n "$CHANGELOG_SECTION" ]] || die "Changelog da versão $NEW_VERSION não encontrado."
-printf '%s\n\n' "$CHANGELOG_SECTION"
+printf '%s\n%s\n%s\n' 'changelog_begin' "$CHANGELOG_SECTION" 'changelog_end'
 
 if [[ "$CHECK_ONLY" == true ]]; then
   log INFO 'Verificação concluída sem alterações.'
   exit 0
 fi
 
-cat <<EOF
-Plano de atualização:
-  1. gerar e verificar backup criptografado;
-  2. preparar release imutável $NEW_SHA;
-  3. ativar modo de manutenção HTTP 503;
-  4. aplicar migrations pendentes sob lock;
-  5. recriar somente containers DevFlow;
-  6. executar health checks internos e públicos;
-  7. promover $NEW_VERSION e retirar manutenção;
-  8. após a primeira mutação, restaurar backup e release $OLD_VERSION em qualquer falha.
-
-Log sanitizado: $UPDATE_LOG
-EOF
-if [[ "$DAEMON_MODE" == false ]]; then
-require_numeric_confirmation application-update \
-  "A atualização do DevFlow de $OLD_VERSION para $NEW_VERSION está pronta." \
-  'ATUALIZAR DEVFLOW'
-else
-  log INFO "Atualizacao autorizada por solicitacao assinada: $request_id"
-fi
+log INFO "Motor nao interativo autorizado para atualizar $OLD_VERSION para $NEW_VERSION."
 
 else
   install -d -m 0750 "$DEVFLOW_LOG_ROOT" "$DEVFLOW_STATE_ROOT" "$DEVFLOW_INSTALL_ROOT/releases"
@@ -268,8 +276,21 @@ UPDATE_PHASE=backup
 [[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
 
+UPDATE_STATUS_FILE="${DEVFLOW_UPDATE_STATUS_FILE:-}"
+if [[ -n "$UPDATE_STATUS_FILE" ]]; then
+  [[ "$INTERNAL_MODE" == true && "$UPDATE_STATUS_FILE" == /var/lib/devflow-updater/status/*.json ]] \
+    || die 'Arquivo de status do update invalido.'
+  [[ -r "$SCRIPT_DIR/write-update-status.mjs" ]] || die 'Gravador de status do update ausente.'
+fi
+
+set_update_status() {
+  local state="$1"
+  [[ -z "$UPDATE_STATUS_FILE" ]] || node "$SCRIPT_DIR/write-update-status.mjs" "$UPDATE_STATUS_FILE" "$state"
+}
+set_update_status processing
+
 pause_backup_schedule() {
-  [[ "$DAEMON_MODE" == true ]] && return 0
+  [[ "$INTERNAL_MODE" == true ]] && return 0
   systemctl stop devflow-backup.timer
   BACKUP_TIMER_PAUSED=true
   if systemctl is-active --quiet devflow-backup.service; then
@@ -281,7 +302,7 @@ pause_backup_schedule() {
 
 refresh_host_units() {
   local release="$1" unit_name
-  [[ "$DAEMON_MODE" == true ]] && return 0
+  [[ "$INTERNAL_MODE" == true ]] && return 0
   for unit_name in devflow-backup.service devflow-backup.timer \
     devflow-certificate-renewal.service devflow-certificate-renewal.timer; do
     install -m 0644 "$release/scripts/systemd/$unit_name" "/etc/systemd/system/$unit_name" || return 1
@@ -325,7 +346,8 @@ persist_operational_installation_state() {
 }
 
 write_update_report() {
-  local result="$1"
+  local result="$1" rollback_status="$ROLLBACK_RESULT"
+  [[ "$rollback_status" != success ]] || rollback_status=successful
   {
     printf 'DevFlow update report\n'
     printf 'timestamp=%s\n' "$(timestamp)"
@@ -336,7 +358,7 @@ write_update_report() {
     printf 'from_commit=%s\n' "$OLD_SHA"
     printf 'to_commit=%s\n' "$NEW_SHA"
     printf 'backup=%s\n' "${BACKUP_FILE:-none}"
-    printf 'rollback=%s\n' "$ROLLBACK_RESULT"
+    printf 'rollback_status=%s\n' "$rollback_status"
     printf 'log=%s\n' "$UPDATE_LOG"
   } > "$DEVFLOW_STATE_ROOT/update-report.txt"
   chmod 0640 "$DEVFLOW_STATE_ROOT/update-report.txt"
@@ -356,7 +378,7 @@ maintenance_compose_for() {
 
 maintenance_http_ok() {
   local status resolve_ip=127.0.0.1
-  if [[ "$DAEMON_MODE" == true ]]; then
+  if [[ "$INTERNAL_MODE" == true ]]; then
     resolve_ip="$(docker inspect --format '{{(index .NetworkSettings.Networks "devflow_edge").IPAddress}}' devflow-maintenance 2>/dev/null || true)"
   fi
   validate_ipv4 "$resolve_ip" || return 1
@@ -392,6 +414,7 @@ restore_proxy_for() {
 rollback_update() {
   local rollback_failures=0 recorded_previous_commit
   set +e
+  set_update_status rollback || true
   log ERROR "Falha na fase $UPDATE_PHASE. Iniciando rollback automático."
   recorded_previous_commit="$(installation_state_value previousInstalledCommit "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)"
   if [[ "$recorded_previous_commit" != "$OLD_SHA" ]] \
@@ -414,15 +437,13 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o link da release anterior.'; rollback_failures=$((rollback_failures + 1)); }
   rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"
   [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  if [[ "$SOURCE_ADVANCED" == true ]]; then
-    git -C "$SOURCE_DIR" reset --hard "$OLD_SHA"
-    [[ $? -eq 0 ]] || { log ERROR 'Não foi possível retornar o checkout operacional.'; rollback_failures=$((rollback_failures + 1)); }
-  fi
+  # O checkout pode permanecer adiantado em main; a release ativa e o estado
+  # instalado continuam apontando atomicamente para o commit anterior.
 
   set_compose_for "$OLD_RELEASE_DIR"
   stop_runtime_services
   [[ $? -eq 0 ]] || rollback_failures=$((rollback_failures + 1))
-  "${DEVFLOW_COMPOSE[@]}" build backend frontend updater
+  "${DEVFLOW_COMPOSE[@]}" build backend frontend
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível reconstruir as imagens anteriores.'; rollback_failures=$((rollback_failures + 1)); }
 
   UPDATE_PHASE=rollback-restore
@@ -470,18 +491,20 @@ rollback_update() {
     DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
       'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
       2>/dev/null || true)"
-    resolve_installed_release_identity "$SOURCE_DIR" main >/dev/null \
-      && [[ "$INSTALLED_COMMIT" == "$recorded_previous_commit" ]] \
-      && persist_operational_installation_state \
+    DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+    export DEVFLOW_EXPLICIT_RELEASE_IDENTITY
+    persist_operational_installation_state \
       || rollback_failures=$((rollback_failures + 1))
   fi
 
   if [[ "$rollback_failures" -eq 0 ]]; then
     write_update_transaction rolled-back || rollback_failures=$((rollback_failures + 1))
     ROLLBACK_RESULT=success
+    log WARN 'rollback_status=successful'
     log WARN "Rollback concluído. DevFlow retornou a $OLD_VERSION ($OLD_SHA)."
   else
     ROLLBACK_RESULT=failed
+    log ERROR 'rollback_status=failed'
     log ERROR "Rollback terminou com $rollback_failures falha(s); mantenha o ambiente isolado e use $UPDATE_LOG."
   fi
   set -e
@@ -500,12 +523,15 @@ update_failed() {
   if [[ "$ROLLBACK_ARMED" == false && "$CANDIDATE_CREATED" == true && "$CANDIDATE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* ]]; then
     rm -rf -- "$CANDIDATE_DIR"
   fi
-  if [[ "$DAEMON_MODE" == false && "$ROLLBACK_ARMED" == false && "$BACKUP_TIMER_PAUSED" == true ]]; then
+  if [[ "$INTERNAL_MODE" == false && "$ROLLBACK_ARMED" == false && "$BACKUP_TIMER_PAUSED" == true ]]; then
     systemctl start devflow-backup.timer || true
   fi
   if [[ "$ROLLBACK_ARMED" == true ]]; then
     rollback_update || true
+  else
+    printf '%s\n' 'changes_applied=false'
   fi
+  set_update_status failed || true
   UPDATE_PHASE="$failed_phase"
   write_update_report failure || true
   log ERROR "Atualização interrompida (código $exit_code). rollback=$ROLLBACK_RESULT"
@@ -515,9 +541,6 @@ trap update_failed EXIT
 trap 'exit 130' INT TERM
 
 if [[ "$ROLLBACK_REQUESTED" == true ]]; then
-  require_numeric_confirmation application-update-rollback \
-    "A release $CURRENT_VERSION sera revertida para $OLD_VERSION usando o backup validado da atualizacao." \
-    'REVERTER ATUALIZACAO'
   manual_rollback_status=0
   rollback_update || manual_rollback_status=$?
   ROLLBACK_ARMED=false
@@ -529,6 +552,7 @@ fi
 
 write_update_transaction prepared \
   || die 'Não foi possível registrar a identidade transacional da atualização.'
+set_update_status backup
 log INFO 'Criando backup pré-update.'
 BACKUP_OUTPUT="$(DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
   DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
@@ -567,7 +591,7 @@ ROLLBACK_ARMED=true
 UPDATE_PHASE=source
 SOURCE_ADVANCED=true
 GIT_TERMINAL_PROMPT=0 git -C "$SOURCE_DIR" pull --ff-only origin main
-[[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || die 'Checkout ficou inconsistente após fast-forward.'
+[[ -z "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=no)" ]] || die 'Checkout ficou inconsistente após fast-forward.'
 [[ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" == "$NEW_SHA" ]] || die 'Checkout não atingiu o commit esperado.'
 
 export DEVFLOW_VERSION="$NEW_VERSION"
@@ -575,7 +599,7 @@ export DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
-"${DEVFLOW_COMPOSE[@]}" build backend frontend updater
+"${DEVFLOW_COMPOSE[@]}" build backend frontend
 candidate_backend_image="$(resolve_compose_service_image backend)" \
   || die 'A imagem candidata do backend não pôde ser resolvida após a build.'
 candidate_backend_image_id="$(docker image inspect --format '{{.Id}}' "$candidate_backend_image")"
@@ -593,9 +617,11 @@ case "$candidate_image_validation_status" in
 esac
 
 UPDATE_PHASE=maintenance
+set_update_status maintenance
 enter_maintenance "$CANDIDATE_DIR"
 
 UPDATE_PHASE=migrations
+set_update_status migrations
 set_compose_for "$CANDIDATE_DIR"
 stop_runtime_services
 "${DEVFLOW_COMPOSE[@]}" up -d db --wait
@@ -606,9 +632,11 @@ DEVFLOW_MIGRATION_VERSION="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
 [[ -n "$DEVFLOW_MIGRATION_VERSION" ]] || die 'PostgreSQL não confirmou a migration após atualização.'
 
 UPDATE_PHASE=containers
+set_update_status containers
 up_runtime_services --force-recreate --remove-orphans
 
 UPDATE_PHASE=health-internal
+set_update_status health
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_EXPECTED_VERSION="$NEW_VERSION" \
   DEVFLOW_HEALTH_ALLOW_PENDING_VERSION=true \
   "$CANDIDATE_DIR/scripts/health.sh" --internal
@@ -634,11 +662,11 @@ refresh_host_units "$CANDIDATE_DIR"
 DEVFLOW_VERSION="$NEW_VERSION"
 DEVFLOW_RELEASE_COMMIT="$NEW_SHA"
 DEVFLOW_IDENTITY_RELEASE_ROOT="$CANDIDATE_DIR"
-export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
-resolve_installed_release_identity "$SOURCE_DIR" main >/dev/null \
-  || die 'Checkout canônico não confirma a release candidata promovida.'
-[[ "$INSTALLED_COMMIT" == "$NEW_SHA" && "$INSTALLED_VERSION" == "$NEW_VERSION" ]] \
-  || die 'Identidade promovida diverge da release candidata.'
+DEVFLOW_EXPLICIT_RELEASE_IDENTITY=true
+export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT \
+  DEVFLOW_EXPLICIT_RELEASE_IDENTITY
+validate_explicit_release_identity \
+  || die 'Release candidata promovida nao confirmou sua identidade.'
 validate_installed_release_runtime \
   || die 'Imagens ou API divergem da identidade candidata após o health.'
 persist_operational_installation_state \
@@ -646,6 +674,7 @@ persist_operational_installation_state \
 ROLLBACK_RESULT=not-required
 write_update_transaction completed
 write_update_report success
+set_update_status completed
 ROLLBACK_ARMED=false
 trap - EXIT ERR INT TERM
 log INFO "Atualização concluída: $OLD_VERSION ($OLD_SHA) -> $NEW_VERSION ($NEW_SHA)."

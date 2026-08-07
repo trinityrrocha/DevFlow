@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.3-alpha`
+## Marco `0.6.4-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
