@@ -40,6 +40,7 @@ export default function App() {
   else if (pathname === '/settings/security/mfa') page = <ProtectedRoute superAdmin><Settings section="mfa" /></ProtectedRoute>;
   else if (pathname === '/settings/modules/catalogs') page = <ProtectedRoute permission="catalogs.manage"><Settings section="catalogs" /></ProtectedRoute>;
   else if (pathname === '/settings/modules/workflows') page = <ProtectedRoute permission="catalogs.manage"><Settings section="workflows" /></ProtectedRoute>;
+  else if (pathname === '/settings/server/smtp') page = <ProtectedRoute superAdmin><Settings section="smtp" /></ProtectedRoute>;
   else if (pathname === '/settings/updates') page = <ProtectedRoute superAdmin><Settings section="updates" /></ProtectedRoute>;
   else page = <Navigate to="/dashboard" replace />;
 

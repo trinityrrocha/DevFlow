@@ -88,6 +88,13 @@ function emailStatus(_req, res) {
     configured: smtpConfigured(),
     host_configured: Boolean(env.SMTP_HOST),
     sender_configured: Boolean(env.SMTP_FROM),
+    host: env.SMTP_HOST || null,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+    authentication_configured: Boolean(env.SMTP_USER),
+    from: env.SMTP_FROM || null,
+    reply_to: env.SMTP_REPLY_TO || null,
+    configuration_source: '/opt/devflow/config/devflow.env',
     worker: 'email_outbox'
   });
 }

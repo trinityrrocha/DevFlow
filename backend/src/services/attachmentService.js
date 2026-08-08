@@ -48,7 +48,7 @@ function resolveStorageKey(storageKey) {
   return filePath;
 }
 
-async function createAttachment(req, taskId, file, description) {
+async function createAttachment(req, taskId, file, description, context = {}) {
   assert(file?.path, 'FILE_REQUIRED', 'Selecione um arquivo.');
   const companyId = req.user.company_id;
   const storageKey = `${companyId}/${path.basename(file.filename)}`;
@@ -60,16 +60,24 @@ async function createAttachment(req, taskId, file, description) {
   try {
     await client.query('BEGIN');
     await taskService.getTask(taskId, companyId, client, req.user);
+    if (context.test_id) {
+      const test = await client.query('SELECT 1 FROM task_tests WHERE id=$1 AND task_id=$2 AND company_id=$3', [context.test_id, taskId, companyId]);
+      assert(test.rowCount, 'TEST_NOT_FOUND', 'Teste nao encontrado.', 404);
+    }
+    if (context.comment_id) {
+      const comment = await client.query('SELECT 1 FROM task_comments WHERE id=$1 AND task_id=$2 AND company_id=$3', [context.comment_id, taskId, companyId]);
+      assert(comment.rowCount, 'COMMENT_NOT_FOUND', 'Comentario nao encontrado.', 404);
+    }
     const attachment = (await client.query(
       `INSERT INTO task_attachments (
-         company_id,task_id,original_name,storage_key,mime_type,size_bytes,sha256,description,created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING id,original_name,mime_type,size_bytes,description,created_at`,
+         company_id,task_id,original_name,storage_key,mime_type,size_bytes,sha256,description,created_by,test_id,comment_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING id,original_name,mime_type,size_bytes,description,test_id,comment_id,created_at`,
       [
         companyId, taskId, path.basename(file.originalname).slice(0, 255), storageKey,
         String(file.mimetype || 'application/octet-stream').slice(0, 160), stat.size,
         await sha256File(finalPath), String(description || '').trim().slice(0, 1000) || null,
-        req.user.id
+        req.user.id, context.test_id || null, context.comment_id || null
       ]
     )).rows[0];
     await taskService.addEvent(client, req, taskId, 'ATTACHMENT_ADDED', `Anexo ${file.originalname} incluído.`, {}, {

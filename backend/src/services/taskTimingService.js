@@ -64,7 +64,8 @@ async function timerAction(req, taskId, action) {
          updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND company_id=$2 RETURNING *`,
       [taskId, req.user.company_id, next, active, overdue, action, req.user.id]
     )).rows[0];
-    await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.user.company_id, taskId, action.toUpperCase() === 'START' ? 'STARTED' : action.toUpperCase() === 'RESUME' ? 'RESUMED' : `${action.toUpperCase()}D`, req.user.id, task.timer_status, next, task.estimated_duration_seconds, active]);
+    const eventTypes = { start: 'STARTED', pause: 'PAUSED', resume: 'RESUMED', complete: 'COMPLETED', cancel: 'CANCELLED' };
+    await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.user.company_id, taskId, eventTypes[action], req.user.id, task.timer_status, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);
     return { ...updated, ...timingSnapshot(updated), became_overdue: overdue && !task.is_overdue };

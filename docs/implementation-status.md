@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-07. Versao: `0.6.5-alpha`.
+Data de corte: 2026-08-07. Versao: `0.6.6-alpha`.
+
+Revisao 0.6.6 implementada localmente: codigos gerados e imutaveis, filtro UUID defensivo, cronometro corrigido, evidencias e perfis de teste, anexos em comentarios, referencia de codigo GitHub, recuperacao do botao de update e pagina SMTP sanitizada. Migration 007 e validacao em PostgreSQL/VPS ainda dependem de homologacao.
 
 Fase 4 concluida localmente: notificacoes internas paginadas, preferencias, eventos de etapa/atribuicao/atraso/conclusao, recuperacao de senha e outbox transacional cifrada. O worker usa claim concorrente, idempotencia, retry/backoff e auditoria sem conteudo sensivel. SMTP, entrega real, PostgreSQL em container e operacao do worker na VPS permanecem pendentes de homologacao manual.
 

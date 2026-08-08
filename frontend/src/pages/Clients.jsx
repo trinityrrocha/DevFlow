@@ -3,7 +3,7 @@ import { Eye, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { name: '', code: '', contact_name: '', contact_email: '', notes: '', is_active: true };
+const emptyForm = { name: '', contact_name: '', contact_email: '', notes: '', is_active: true };
 
 export default function Clients() {
   const { user } = useAuth();
@@ -42,7 +42,7 @@ export default function Clients() {
     event.preventDefault();
     setError('');
     try {
-      const payload = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value === '' ? null : value]));
+      const payload = Object.fromEntries(Object.entries(form).filter(([key]) => key !== 'code').map(([key, value]) => [key, value === '' ? null : value]));
       if (dialog.type === 'create') await api.post('/catalogs/clients', payload);
       else await api.patch(`/catalogs/clients/${dialog.client.id}`, payload);
       setDialog(null);
@@ -82,7 +82,7 @@ export default function Clients() {
 
 function ClientForm({ form, setForm, save, onCancel }) {
   const field = (key) => (event) => setForm({ ...form, [key]: event.target.value });
-  return <form onSubmit={save} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Nome<input required minLength="2" maxLength="180" className="field mt-1" value={form.name} onChange={field('name')} /></label><label className="text-sm font-medium">Codigo<input maxLength="64" className="field mt-1" value={form.code || ''} onChange={field('code')} /></label><label className="text-sm font-medium">Contato<input maxLength="160" className="field mt-1" value={form.contact_name || ''} onChange={field('contact_name')} /></label><label className="text-sm font-medium">E-mail<input type="email" maxLength="320" className="field mt-1" value={form.contact_email || ''} onChange={field('contact_email')} /></label><label className="text-sm font-medium sm:col-span-2">Observacoes<textarea maxLength="10000" rows="4" className="textarea-field mt-1" value={form.notes || ''} onChange={field('notes')} /></label><div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button><button className="btn-primary">Salvar</button></div></form>;
+  return <form onSubmit={save} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Nome<input required minLength="2" maxLength="180" className="field mt-1" value={form.name} onChange={field('name')} /></label>{form.code && <label className="text-sm font-medium">Codigo gerado<input readOnly className="field mt-1 bg-slate-50 font-mono text-xs" value={form.code} /></label>}<label className="text-sm font-medium">Contato<input maxLength="160" className="field mt-1" value={form.contact_name || ''} onChange={field('contact_name')} /></label><label className="text-sm font-medium">E-mail<input type="email" maxLength="320" className="field mt-1" value={form.contact_email || ''} onChange={field('contact_email')} /></label><label className="text-sm font-medium sm:col-span-2">Observacoes<textarea maxLength="10000" rows="4" className="textarea-field mt-1" value={form.notes || ''} onChange={field('notes')} /></label><div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button><button className="btn-primary">Salvar</button></div></form>;
 }
 
 function Dialog({ title, onClose, children }) { return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl"><div className="mb-5 flex items-center justify-between"><h2 id="dialog-title" className="text-lg font-semibold">{title}</h2><button type="button" onClick={onClose} className="rounded p-2" aria-label="Fechar">×</button></div>{children}</div></div>; }

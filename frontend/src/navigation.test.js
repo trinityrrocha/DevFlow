@@ -16,7 +16,9 @@ describe('navegacao superior', () => {
 
   it('permite ao Super Admin acessar itens exclusivos', () => {
     expect(canAccessNavigationItem({ is_super_admin: true }, { superAdmin: true })).toBe(true);
-    expect(visibleNavigation({ is_super_admin: true }).find((group) => group.label === 'Sistema').items).toHaveLength(5);
+    const items = visibleNavigation({ is_super_admin: true }).find((group) => group.label === 'Sistema').items;
+    expect(items).toHaveLength(6);
+    expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ label: 'Servidor SMTP', to: '/settings/server/smtp' })]));
   });
 
   it('identifica rota ativa sem confundir prefixos', () => {

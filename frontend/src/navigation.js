@@ -23,6 +23,7 @@ export const navigationGroups = [
       { label: 'Politica de autenticacao multifator', to: '/settings/security/mfa', superAdmin: true },
       { label: 'Catalogos configuraveis', to: '/settings/modules/catalogs', permission: 'catalogs.manage' },
       { label: 'Fluxos configuraveis', to: '/settings/modules/workflows', permission: 'catalogs.manage' },
+      { label: 'Servidor SMTP', to: '/settings/server/smtp', superAdmin: true },
       { label: 'Atualizacoes', to: '/settings/updates', superAdmin: true }
     ]
   }

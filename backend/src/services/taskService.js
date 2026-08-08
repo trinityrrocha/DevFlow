@@ -293,7 +293,11 @@ async function getTaskDetail(taskId, user) {
   const task = await getTask(taskId, companyId, db, user);
   const [tests, approvals, github, comments, attachments, events, submissions, intervals, stages, relatedBugs, timerEvents] = await Promise.all([
     db.query(
-      `SELECT test.*,stage.code AS stage,stage.name AS stage_name,u.name AS created_by_name
+      `SELECT test.*,stage.code AS stage,stage.name AS stage_name,u.name AS created_by_name,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes
+              ) ORDER BY a.created_at) FROM task_attachments a
+              WHERE a.test_id=test.id AND a.deleted_at IS NULL),'[]'::jsonb) AS attachments
        FROM task_tests test JOIN workflow_stages stage ON stage.id=test.stage_id
        JOIN users u ON u.id=test.created_by
        WHERE test.task_id=$1 AND test.company_id=$2 ORDER BY test.created_at DESC`,
@@ -308,7 +312,11 @@ async function getTaskDetail(taskId, user) {
     ),
     db.query('SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2', [taskId, companyId]),
     db.query(
-      `SELECT comment.*,u.name AS created_by_name
+      `SELECT comment.*,u.name AS created_by_name,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes
+              ) ORDER BY a.created_at) FROM task_attachments a
+              WHERE a.comment_id=comment.id AND a.deleted_at IS NULL),'[]'::jsonb) AS attachments
        FROM task_comments comment JOIN users u ON u.id=comment.created_by
        WHERE comment.task_id=$1 AND comment.company_id=$2 ORDER BY comment.created_at`,
       [taskId, companyId]
@@ -741,11 +749,13 @@ async function addTest(req, taskId, payload) {
     assert(workflow.canOperateStage(req.user, task, stage), 'STAGE_FORBIDDEN', 'Você não é responsável por esta etapa.', 403);
     const test = (await client.query(
       `INSERT INTO task_tests (
-         company_id,task_id,stage_id,description,result,evidence,created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+         company_id,task_id,stage_id,description,result,evidence,
+         tested_as_super_admin,tested_as_admin,tested_as_user,created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [
         companyId, taskId, stage.id, payload.description,
-        payload.result, payload.evidence || null, req.user.id
+        payload.result, payload.evidence || null,
+        payload.tested_as_super_admin, payload.tested_as_admin, payload.tested_as_user, req.user.id
       ]
     )).rows[0];
     await addEvent(client, req, taskId, 'TASK_TEST_ADDED', `Teste ${stage.name}: ${payload.result}.`, {}, {
@@ -811,12 +821,6 @@ async function saveGithub(req, taskId, payload) {
       'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
       [task.current_stage_id, companyId]
     )).rows[0];
-    assert(
-      Array.isArray(stage.requirements?.github_fields) && stage.requirements.github_fields.length,
-      'GITHUB_STAGE_INVALID',
-      'Os metadados do GitHub não são preenchidos nesta etapa.',
-      409
-    );
     assert(workflow.canOperateStage(req.user, task, stage), 'STAGE_FORBIDDEN', 'Você não é responsável por esta etapa.', 403);
     const before = (await client.query(
       'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2',
@@ -824,17 +828,18 @@ async function saveGithub(req, taskId, payload) {
     )).rows[0] || {};
     const github = (await client.query(
       `INSERT INTO task_github_metadata (
-         company_id,task_id,repository_url,branch,commit_sha,pull_request_url,release,updated_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         company_id,task_id,repository_url,branch,commit_sha,pull_request_url,release,code_reference,updated_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (task_id) DO UPDATE SET
          repository_url=EXCLUDED.repository_url,branch=EXCLUDED.branch,
          commit_sha=EXCLUDED.commit_sha,pull_request_url=EXCLUDED.pull_request_url,
-         release=EXCLUDED.release,updated_by=EXCLUDED.updated_by,updated_at=CURRENT_TIMESTAMP
+         release=EXCLUDED.release,code_reference=EXCLUDED.code_reference,
+         updated_by=EXCLUDED.updated_by,updated_at=CURRENT_TIMESTAMP
        RETURNING *`,
       [
         companyId, taskId, payload.repository_url || null, payload.branch || null,
         payload.commit_sha || null, payload.pull_request_url || null,
-        payload.release || null, req.user.id
+        payload.release || null, payload.code_reference || null, req.user.id
       ]
     )).rows[0];
     await addEvent(client, req, taskId, 'TASK_GITHUB_SAVED', 'Metadados do GitHub atualizados.', before, payload);

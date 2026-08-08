@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.5-alpha`
+## Instalacao isolada `0.6.6-alpha`
 
 | Update transacional | Evidencia |
 |---|---|

@@ -109,7 +109,10 @@ async function addTest(req, res) {
   const payload = z.object({
     description: z.string().trim().min(3).max(50000),
     result: z.enum(['PASSED', 'FAILED', 'BLOCKED']),
-    evidence: z.string().trim().max(50000).optional()
+    evidence: z.string().trim().max(50000).optional(),
+    tested_as_super_admin: z.boolean().default(false),
+    tested_as_admin: z.boolean().default(false),
+    tested_as_user: z.boolean().default(false)
   }).parse(req.body);
   const test = await taskService.addTest(req, req.params.id, payload);
   await recordAudit({ req, operation: 'TASK_TEST_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { test_id: test.id, stage_id: test.stage_id, result: test.result } });
@@ -132,7 +135,8 @@ async function saveGithub(req, res) {
     branch: z.string().trim().max(255).nullable().optional(),
     commit_sha: z.string().trim().max(64).nullable().optional(),
     pull_request_url: z.string().url().nullable().optional(),
-    release: z.string().trim().max(255).nullable().optional()
+    release: z.string().trim().max(255).nullable().optional(),
+    code_reference: z.string().trim().max(20000).nullable().optional()
   }).parse(req.body);
   const github = await taskService.saveGithub(req, req.params.id, payload);
   await recordAudit({ req, operation: 'TASK_GITHUB_SAVED', entityType: 'TASK', entityId: req.params.id, newValues: payload });
@@ -148,7 +152,11 @@ async function addComment(req, res) {
 
 async function uploadAttachment(req, res) {
   try {
-    const attachment = await attachmentService.createAttachment(req, req.params.id, req.file, req.body?.description);
+    const context = z.object({
+      test_id: z.preprocess((value) => value || undefined, z.string().uuid().optional()),
+      comment_id: z.preprocess((value) => value || undefined, z.string().uuid().optional())
+    }).refine((value) => !(value.test_id && value.comment_id), { message: 'Informe apenas um contexto de anexo.' }).parse(req.body || {});
+    const attachment = await attachmentService.createAttachment(req, req.params.id, req.file, req.body?.description, context);
     await recordAudit({ req, operation: 'TASK_ATTACHMENT_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { attachment_id: attachment.id } });
     res.status(201).json({ attachment });
   } catch (error) {

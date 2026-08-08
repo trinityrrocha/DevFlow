@@ -12,7 +12,6 @@ const responsible = z.object({
 
 const clientSchema = z.object({
   name: z.string().trim().min(2).max(180),
-  code: nullableText(64),
   contact_name: nullableText(160),
   contact_email: z.string().email().max(320).nullable().optional(),
   notes: nullableText(10000),
@@ -23,7 +22,6 @@ const projectSchema = z.object({
   client_id: z.string().uuid(),
   default_environment_id: z.string().uuid(),
   name: z.string().trim().min(2).max(180),
-  code,
   description: nullableText(20000),
   github_repository_url: z.string().url().nullable().optional(),
   status: z.enum(['DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED']).optional(),
@@ -101,7 +99,7 @@ async function listProjects(req, res) {
   const filters = z.object({
     search: z.string().trim().max(120).optional(),
     status: z.enum(['all', 'DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED']).default('all'),
-    client_id: z.string().uuid().optional(),
+    client_id: z.preprocess((value) => value === '' ? undefined : value, z.string().uuid().optional()),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20)
   }).parse(req.query);

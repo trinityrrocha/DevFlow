@@ -31,8 +31,8 @@ export default function Settings({ section = 'catalogs' }) {
     if (!user?.is_super_admin) return;
     if (section === 'updates') {
       api.get('/operations/update/capabilities').then(({ data: value }) => setCapabilities(value)).catch(() => setCapabilities(null));
-      api.get('/notifications/email/status').then(({ data: value }) => setEmailStatus(value)).catch(() => setEmailStatus(null));
     }
+    if (section === 'smtp') api.get('/notifications/email/status').then(({ data: value }) => setEmailStatus(value)).catch(() => setEmailStatus(null));
     if (section === 'mfa') api.get('/auth/mfa/policy').then(({ data: value }) => { setMfaPolicy(value); setSelectedMfaPolicy(value.enforcement_mode); }).catch(() => setMfaPolicy(null));
   }, [section, user?.is_super_admin]);
 
@@ -41,16 +41,17 @@ export default function Settings({ section = 'catalogs' }) {
     try { await operation(); await loadCatalogs(); setNotice(message); } catch (requestError) { setError(errorMessage(requestError)); } finally { setSaving(false); }
   };
 
-  const titles = { mfa: ['Politica de autenticacao multifator', 'Defina a obrigatoriedade do segundo fator sem alterar configuracoes existentes.'], catalogs: ['Catalogos configuraveis', 'Ambientes, prioridades e tipos de tarefa da empresa ativa.'], workflows: ['Fluxos configuraveis', 'Etapas, responsabilidades e requisitos do ciclo de desenvolvimento.'], updates: ['Atualizacoes', 'Solicitacoes assinadas para o mecanismo transacional de atualizacao.'] };
+  const titles = { mfa: ['Politica de autenticacao multifator', 'Defina a obrigatoriedade do segundo fator sem alterar configuracoes existentes.'], catalogs: ['Catalogos configuraveis', 'Ambientes, prioridades e tipos de tarefa da empresa ativa.'], workflows: ['Fluxos configuraveis', 'Etapas, responsabilidades e requisitos do ciclo de desenvolvimento.'], smtp: ['Servidor SMTP', 'Consulte a configuracao sanitizada do servidor de e-mail e envie uma mensagem de teste.'], updates: ['Atualizacoes', 'Solicitacoes assinadas para o mecanismo transacional de atualizacao.'] };
   return <div className="space-y-7"><header><h1 className="text-2xl font-bold">{titles[section][0]}</h1><p className="mt-1 text-sm text-slate-500">{titles[section][1]}</p></header>{error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}{notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div>}
-    {section === 'updates' && <UpdateSettings capabilities={capabilities} emailStatus={emailStatus} queued={queued} saving={saving} mutate={mutate} setQueued={setQueued} />}
+    {section === 'updates' && <UpdateSettings capabilities={capabilities} queued={queued} saving={saving} mutate={mutate} setQueued={setQueued} />}
+    {section === 'smtp' && <SmtpSettings status={emailStatus} saving={saving} mutate={mutate} />}
     {section === 'mfa' && <MfaSettings policy={mfaPolicy} selected={selectedMfaPolicy} setSelected={setSelectedMfaPolicy} saving={saving} mutate={mutate} setPolicy={setMfaPolicy} />}
     {section === 'catalogs' && (data ? <CatalogSettings data={data} forms={catalogForms} setForms={setCatalogForms} saving={saving} mutate={mutate} /> : <Loading />)}
     {section === 'workflows' && (data ? <WorkflowSettings data={data} workflow={workflow} setWorkflow={setWorkflow} saving={saving} mutate={mutate} /> : <Loading />)}
   </div>;
 }
 
-function UpdateSettings({ capabilities, emailStatus, queued, saving, mutate, setQueued }) {
+function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
   const [updateStatus, setUpdateStatus] = useState(null);
   useEffect(() => {
     if (!queued?.id || ['completed', 'failed'].includes(updateStatus?.state)) return undefined;
@@ -66,7 +67,8 @@ function UpdateSettings({ capabilities, emailStatus, queued, saving, mutate, set
     return () => { active = false; window.clearInterval(timer); };
   }, [queued?.id, updateStatus?.state]);
   if (!capabilities) return <Loading />;
-  const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !queued?.id;
+  const requestActive = queued?.id && !['completed', 'failed'].includes(updateStatus?.state);
+  const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !requestActive;
   const confirmUpdate = () => {
     const message = `Atualizar o DevFlow de ${capabilities.installedVersion} para ${capabilities.availableVersion}?\n\nUm backup validado sera criado e o sistema ficara temporariamente em manutencao. Em caso de falha, o rollback sera automatico.`;
     if (!window.confirm(message)) return;
@@ -76,7 +78,13 @@ function UpdateSettings({ capabilities, emailStatus, queued, saving, mutate, set
     }, 'Pedido de atualizacao enfileirado.');
   };
   return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p></div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
-    <Section icon={Mail} title="E-mail transacional"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm">SMTP: <strong>{emailStatus?.configured ? 'configurado' : 'nao configurado'}</strong></p><p className="mt-1 text-xs text-slate-500">O teste entra na outbox e sera processado pelo worker. Nenhum segredo e exibido.</p></div><button type="button" disabled={!emailStatus?.configured || saving} className="btn-secondary" onClick={() => mutate(() => api.post('/notifications/email/test'), 'E-mail de teste colocado na fila.')}>Enviar e-mail de teste</button></div></Section></div>;
+    </div>;
+}
+
+function SmtpSettings({ status, saving, mutate }) {
+  if (!status) return <Loading />;
+  const values = [['Estado', status.configured ? 'Configurado' : 'Nao configurado'], ['Servidor', status.host || 'Nao informado'], ['Porta', status.port], ['TLS implicito', status.secure ? 'Sim' : 'Nao (STARTTLS)'], ['Autenticacao', status.authentication_configured ? 'Configurada' : 'Sem credenciais'], ['Remetente', status.from || 'Nao informado'], ['Responder para', status.reply_to || 'Nao informado']];
+  return <Section icon={Mail} title="Servidor SMTP"><div className="grid gap-3 sm:grid-cols-2">{values.map(([name, value]) => <div key={name} className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{name}</p><p className="mt-1 break-all text-sm font-medium">{value}</p></div>)}</div><div className="mt-4 rounded-md bg-slate-50 p-4 text-xs text-slate-600">As credenciais permanecem no arquivo protegido <code>{status.configuration_source}</code>. Senhas nunca sao retornadas pela API. Aplique alteracoes no ambiente da VPS e reinicie somente os servicos do DevFlow.</div><div className="mt-4 flex justify-end"><button type="button" disabled={!status.configured || saving} className="btn-secondary" onClick={() => mutate(() => api.post('/notifications/email/test'), 'E-mail de teste colocado na fila.')}>Enviar e-mail de teste</button></div></Section>;
 }
 
 function MfaSettings({ policy, selected, setSelected, saving, mutate, setPolicy }) {

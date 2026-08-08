@@ -118,14 +118,16 @@ async function getClient(companyId, id) {
 
 async function createClient(companyId, payload) {
   return (await db.query(
-    `INSERT INTO clients (company_id,name,code,contact_name,contact_email,notes)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [companyId, payload.name, payload.code || null, payload.contact_name || null, payload.contact_email || null, payload.notes || null]
+    `WITH generated AS (SELECT gen_random_uuid() AS id)
+     INSERT INTO clients (id,company_id,name,code,contact_name,contact_email,notes)
+     SELECT id,$1,$2,'CLI_' || UPPER(REPLACE(id::text,'-','')),$3,$4,$5 FROM generated
+     RETURNING *`,
+    [companyId, payload.name, payload.contact_name || null, payload.contact_email || null, payload.notes || null]
   )).rows[0];
 }
 
 async function updateClient(companyId, id, payload) {
-  const allowed = ['name', 'code', 'contact_name', 'contact_email', 'notes', 'is_active'];
+  const allowed = ['name', 'contact_name', 'contact_email', 'notes', 'is_active'];
   const fields = allowed.filter((field) => payload[field] !== undefined);
   assert(fields.length, 'NO_CHANGES', 'Nenhuma alteração informada.');
   const result = await db.query(
@@ -245,11 +247,13 @@ async function createProject(companyId, payload) {
   return db.transaction(async (client) => {
     await assertProjectReferences(client, companyId, payload);
     const project = (await client.query(
-      `INSERT INTO projects (
-         company_id,client_id,default_environment_id,name,code,description,github_repository_url,status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `WITH generated AS (SELECT gen_random_uuid() AS id)
+       INSERT INTO projects (
+         id,company_id,client_id,default_environment_id,name,code,description,github_repository_url,status
+       ) SELECT id,$1,$2,$3,$4,'PRJ_' || UPPER(REPLACE(id::text,'-','')),$5,$6,$7 FROM generated
+       RETURNING *`,
       [
-        companyId, payload.client_id, payload.default_environment_id, payload.name, payload.code,
+        companyId, payload.client_id, payload.default_environment_id, payload.name,
         payload.description || null, payload.github_repository_url || null, payload.status || 'ACTIVE'
       ]
     )).rows[0];
@@ -272,13 +276,13 @@ async function updateProject(companyId, id, payload) {
     await assertProjectReferences(client, companyId, merged);
     const project = (await client.query(
       `UPDATE projects SET client_id=$3,default_environment_id=$4,
-         name=COALESCE($5,name),code=COALESCE($6,code),description=COALESCE($7,description),
-         github_repository_url=COALESCE($8,github_repository_url),status=COALESCE($9,status),
+         name=COALESCE($5,name),description=COALESCE($6,description),
+         github_repository_url=COALESCE($7,github_repository_url),status=COALESCE($8,status),
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
       [
         id, companyId, merged.client_id, merged.default_environment_id, payload.name,
-        payload.code, payload.description, payload.github_repository_url, payload.status
+        payload.description, payload.github_repository_url, payload.status
       ]
     )).rows[0];
     if (payload.responsibles) await syncProjectResponsibles(client, companyId, id, payload.responsibles);

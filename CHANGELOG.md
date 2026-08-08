@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.6-alpha] - 2026-08-07
+
+### Corrigido
+
+- filtro de projetos deixa de enviar UUID vazio e o backend normaliza clientes sem filtro;
+- eventos do cronometro usam mapeamento explicito, incluindo `CANCELLED`;
+- botao de atualizacao pode ser reutilizado depois de uma solicitacao concluida ou com falha.
+
+### Adicionado
+
+- codigos de clientes e projetos gerados no backend e imutaveis pela API;
+- perfis validados e anexo de evidencia em testes, anexos em comentarios e conversa em formato de chat;
+- referencia de codigo em alteracao nos metadados GitHub;
+- submenu de Servidor SMTP com configuracao sanitizada e teste pela outbox.
+
 ## [0.6.5-alpha] - 2026-08-07
 
 ### Corrigido

@@ -216,7 +216,9 @@ function Summary({ data, user, mutate }) {
 
 function Tests({ data, user, mutate }) {
   const { task } = data;
-  const [form, setForm] = useState({ description: '', result: 'PASSED', evidence: '' });
+  const emptyTest = { description: '', result: 'PASSED', evidence: '', tested_as_super_admin: false, tested_as_admin: false, tested_as_user: false };
+  const [form, setForm] = useState(emptyTest);
+  const [evidenceFile, setEvidenceFile] = useState(null);
   const [approval, setApproval] = useState({ decision: 'APPROVED', notes: '' });
   const canApprove = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER');
   const canOperate = canApprove
@@ -224,6 +226,15 @@ function Tests({ data, user, mutate }) {
     || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const canRegisterTest = canOperate && task.requirements?.passing_test;
+  const registerTest = async () => {
+    const response = await api.post(`/tasks/${task.id}/tests`, form);
+    if (evidenceFile) {
+      const body = new FormData();
+      body.append('file', evidenceFile);
+      body.append('test_id', response.data.test.id);
+      await api.post(`/tasks/${task.id}/attachments`, body);
+    }
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -233,15 +244,18 @@ function Tests({ data, user, mutate }) {
           {data.tests.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">Nenhum teste registrado.</p>}
           {data.tests.map((test) => <div key={test.id} className="rounded-md border border-slate-200 p-4"><div className="flex justify-between gap-3"><div><StatusBadge value={test.result} /><span className="ml-2 text-xs font-medium text-slate-500">{test.stage_name}</span></div><span className="text-xs text-slate-400">{formatDate(test.created_at)}</span></div><p className="mt-2 text-sm font-medium">{test.description}</p>{test.evidence && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{test.evidence}</p>}<p className="mt-2 text-xs text-slate-400">por {test.created_by_name}</p></div>)}
         </div>
+        {data.tests.some((test) => test.tested_as_super_admin || test.tested_as_admin || test.tested_as_user) && <div className="mt-3 rounded-md bg-indigo-50 p-3 text-xs text-indigo-800">Perfis cobertos nos testes: {[['tested_as_super_admin', 'Super Admin'], ['tested_as_admin', 'Admin'], ['tested_as_user', 'Usuario']].filter(([key]) => data.tests.some((test) => test[key])).map(([, text]) => text).join(', ')}.</div>}
         {data.approvals.length > 0 && <><h3 className="mt-6 font-semibold">Aprovações</h3><div className="mt-3 space-y-2">{data.approvals.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-3 text-sm"><StatusBadge value={item.decision} /><strong className="ml-2">{item.stage_name}</strong><p className="mt-1 text-slate-600">{item.notes}</p><p className="mt-1 text-xs text-slate-400">{item.created_by_name} · {formatDate(item.created_at)}</p></div>)}</div></>}
       </div>
       <div className="space-y-4">
-        {canRegisterTest && <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.post(`/tasks/${task.id}/tests`, form), 'Teste registrado.'); setForm({ ...form, description: '', evidence: '' }); }} className="rounded-lg border border-slate-200 p-4">
+        {canRegisterTest && <form onSubmit={(event) => { event.preventDefault(); mutate(registerTest, 'Teste registrado.'); setForm(emptyTest); setEvidenceFile(null); }} className="rounded-lg border border-slate-200 p-4">
           <h3 className="font-semibold">Registrar teste</h3>
           <div className="mt-3 space-y-3">
             <p className="text-sm font-medium text-slate-600">Contexto: {label(task.stage)}</p>
             <textarea required rows={3} className="textarea-field" placeholder="Teste realizado" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             <Select value={form.result} onChange={(value) => setForm({ ...form, result: value })} options={['PASSED', 'FAILED', 'BLOCKED'].map((value) => [value, label(value)])} />
+            <fieldset className="rounded-md border border-slate-200 p-3"><legend className="px-1 text-xs font-medium text-slate-600">Perfis validados</legend>{[['tested_as_super_admin', 'Super Admin'], ['tested_as_admin', 'Admin'], ['tested_as_user', 'Usuario']].map(([key, text]) => <label key={key} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.checked })} />{text}</label>)}</fieldset>
+            <label className="block text-sm font-medium">Anexar evidencia<input type="file" onChange={(event) => setEvidenceFile(event.target.files[0] || null)} className="mt-1 block w-full text-xs" /></label>
             <textarea rows={3} className="textarea-field" placeholder="Evidências" value={form.evidence} onChange={(e) => setForm({ ...form, evidence: e.target.value })} />
             <button className="btn-primary w-full"><TestTube2 className="mr-2 h-4 w-4" />Registrar</button>
           </div>
@@ -264,10 +278,13 @@ function Tests({ data, user, mutate }) {
 
 function Github({ data, user, mutate }) {
   const { task } = data;
-  const [form, setForm] = useState(data.github || { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '' });
-  const canEdit = Array.isArray(task.requirements?.github_fields)
-    && (user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER'));
-  useEffect(() => setForm(data.github || { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '' }), [data.github]);
+  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', code_reference: '' };
+  const [form, setForm] = useState(data.github || emptyGithub);
+  const canEdit = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER')
+      || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
+      || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
+      || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
+  useEffect(() => setForm(data.github || { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', code_reference: '' }), [data.github]);
   return (
     <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.put(`/tasks/${task.id}/github`, form), 'Metadados GitHub salvos.'); }} className="mx-auto max-w-2xl">
       <div className="mb-5 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">Integração automática será adicionada futuramente. Nesta fase, os vínculos são registrados manualmente.</div>
@@ -277,6 +294,7 @@ function Github({ data, user, mutate }) {
         <Input label="Commit" value={form.commit_sha || ''} onChange={(value) => setForm({ ...form, commit_sha: value })} />
         <Input label="Pull Request" value={form.pull_request_url || ''} onChange={(value) => setForm({ ...form, pull_request_url: value })} />
         <Input label="Release" value={form.release || ''} onChange={(value) => setForm({ ...form, release: value })} />
+        <label className="text-sm font-medium sm:col-span-2">Codigo em alteracao<input value={form.code_reference || ''} onChange={(event) => setForm({ ...form, code_reference: event.target.value })} className="field mt-1 font-mono text-xs" placeholder="src/modulo/arquivo.js: funcaoOuTrecho" maxLength="20000" /></label>
       </div>
       {canEdit && <button className="btn-primary mt-4"><Save className="mr-2 h-4 w-4" />Salvar GitHub</button>}
     </form>
@@ -320,18 +338,32 @@ function Attachments({ data, user, mutate }) {
 
 function Comments({ data, mutate }) {
   const [content, setContent] = useState('');
+  const [file, setFile] = useState(null);
+  const sendComment = async () => {
+    const response = await api.post(`/tasks/${data.task.id}/comments`, { content });
+    if (file) {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('comment_id', response.data.comment.id);
+      await api.post(`/tasks/${data.task.id}/attachments`, body);
+    }
+  };
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="space-y-3">
+      <div className="space-y-3 rounded-xl bg-slate-50 p-4">
         {data.comments.length === 0 && <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum comentário.</p>}
-        {data.comments.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 p-4"><div className="flex justify-between gap-3"><strong className="text-sm">{item.created_by_name}</strong><span className="text-xs text-slate-400">{formatDate(item.created_at)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{item.content}</p></div>)}
+        {data.comments.map((item) => <div key={item.id} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 shadow-sm"><div className="flex justify-between gap-5"><strong className="text-sm text-indigo-700">{item.created_by_name}</strong><span className="text-xs text-slate-400">{formatDate(item.created_at)}</span></div><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.content}</p>{item.attachments?.map((attachment) => <AttachmentLink key={attachment.id} taskId={data.task.id} item={attachment} />)}</div>)}
       </div>
-      <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.post(`/tasks/${data.task.id}/comments`, { content }), 'Comentário registrado.'); setContent(''); }} className="mt-5 flex gap-3">
-        <textarea required rows={3} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Escreva um comentário..." className="textarea-field" />
+      <form onSubmit={(event) => { event.preventDefault(); mutate(sendComment, 'Comentário registrado.'); setContent(''); setFile(null); }} className="mt-5 flex items-end gap-3">
+        <div className="flex-1"><textarea required rows={1} value={content} onChange={(event) => { setContent(event.target.value); event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`; }} placeholder="Escreva um comentário..." className="textarea-field min-h-10 resize-none py-2" /><label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs text-slate-500"><Paperclip className="h-4 w-4" /><input type="file" onChange={(event) => setFile(event.target.files[0] || null)} className="sr-only" />{file ? file.name : 'Anexar arquivo'}</label></div>
         <button className="btn-primary h-auto px-4"><Send className="h-4 w-4" /><span className="sr-only">Enviar</span></button>
       </form>
     </div>
   );
+}
+
+function AttachmentLink({ taskId, item }) {
+  return <a href={`${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`} className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"><Paperclip className="h-3.5 w-3.5" />{item.original_name}</a>;
 }
 
 function History({ events, timerEvents = [] }) {
