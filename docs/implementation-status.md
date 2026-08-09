@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.10-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.11-alpha`.
+
+Revisao 0.6.11 implementada localmente: o estagio Docker do frontend recebe `NODE_OPTIONS=--max-old-space-size=4096` imediatamente antes do build e o Rollup isola `monaco-editor` e `@monaco-editor` em chunk dedicado. A mudanca corrige a causa identificada do rollback de `0.6.10-alpha`. O build local foi validado; Docker e VPS reais dependem de nova homologacao.
 
 Revisao 0.6.10 implementada localmente: pedido de atualizacao restrito ao Super Admin com sessao valida e CSRF, sem gate de MFA inclusive quando a politica global exige configuracao; toggle unico do cronometro com spinner e bloqueio concorrente, sem cancelamento na API de tempo; controller de estado com respostas JSON 400/404/409 e falha interna 500 sanitizada. A base Monaco e as migrations 009/010 foram verificadas sem reescrita. Navegador autenticado, PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 

@@ -1,6 +1,13 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.10-alpha`
+## Instalacao isolada `0.6.11-alpha`
+
+| Revisao 0.6.11 | Evidencia |
+|---|---|
+| Heap do build | `frontend/Dockerfile` define `NODE_OPTIONS=--max-old-space-size=4096` imediatamente antes do build |
+| Chunk Monaco | `frontend/vite.config.js` agrupa `monaco-editor` e `@monaco-editor` no chunk `monaco` |
+| Regressao | `buildConfiguration.test.js` protege a ordem do Dockerfile e a configuracao Rollup |
+| Homologacao | build Vite validado localmente; build Docker e VPS permanecem pendentes |
 
 | Revisao 0.6.10 | Evidencia |
 |---|---|

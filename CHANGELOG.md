@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.11-alpha] - 2026-08-09
+
+### Corrigido
+
+- heap do Node ampliado para 4096 MB exclusivamente no estagio Docker que compila o frontend;
+- Monaco e seu adaptador React isolados em chunk dedicado por `manualChunks`, reduzindo a pressao do empacotamento principal;
+- versao promovida apos rollback da homologacao de `0.6.10-alpha`, permitindo nova deteccao pelo updater.
+
+### Validado
+
+- build Vite local concluido com o chunk `monaco` separado;
+- contrato do Dockerfile e configuracao Rollup protegidos por teste automatizado.
+
 ## [0.6.10-alpha] - 2026-08-09
 
 ### Corrigido

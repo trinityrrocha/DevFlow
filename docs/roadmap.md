@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.10-alpha`
+## Marco `0.6.11-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
@@ -21,6 +21,7 @@
 - [x] separar health candidato da identidade instalada e tornar promocao/rollback transacionais;
 - [x] ativar o symlink operacional antes do updater, com rollback e gate da fila;
 - [x] renovar certificado por timer systemd e hook escopado;
+- [x] ampliar o heap do build Docker do frontend e isolar o chunk Monaco;
 - [x] cobrir 30 cenarios de alinhamento e 24 cenarios do ciclo updater/instalacao;
 - [ ] homologar instalacao/retomada em VPS AMD64 e ARM64;
 - [ ] homologar Certbot, renovacao, backup, restore e rollback reais;
