@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.12-alpha`
+## Marco `0.6.13-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
@@ -23,6 +23,7 @@
 - [x] renovar certificado por timer systemd e hook escopado;
 - [x] ampliar o heap do build Docker do frontend e isolar o chunk Monaco;
 - [x] tornar o Monaco editavel nao controlado e corrigir foco/sizing no modal GitHub;
+- [x] corrigir a tipagem SQL, autoria, concorrencia e respostas semanticas da rota de timer;
 - [x] cobrir 30 cenarios de alinhamento e 24 cenarios do ciclo updater/instalacao;
 - [ ] homologar instalacao/retomada em VPS AMD64 e ARM64;
 - [ ] homologar Certbot, renovacao, backup, restore e rollback reais;

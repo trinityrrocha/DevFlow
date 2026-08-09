@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.13-alpha] - 2026-08-09
+
+### Corrigido
+
+- `POST /api/tasks/:id/timer` deixa de reutilizar parametros PostgreSQL com tipos ambiguos; UUID, `varchar`, `text`, `bigint` e `boolean` recebem casts explicitos;
+- inicio do cronometro valida tarefa, associacao do operador, estado ativo, etapa com controle de tempo e sobreposicao dentro do mesmo lock transacional;
+- autoria de `tasks` e `task_timer_events` deriva somente de `req.user.id`; campos de autoria enviados pelo cliente sao rejeitados;
+- controller responde JSON 400/403/404/409 para falhas previstas e registra falhas inesperadas com `[TIMER_ERROR]` antes do 500 generico.
+
+### Validado
+
+- SQL anterior reproduziu `42P08: inconsistent types deduced for parameter $3 (text versus character varying)` em PostgreSQL local;
+- SQL corrigido persistiu `running`, UUID do ator e evento `STARTED`; testes cobrem lock, autoria, concorrencia, permissao e respostas semanticas.
+
 ## [0.6.12-alpha] - 2026-08-09
 
 ### Corrigido

@@ -110,11 +110,27 @@ async function updateAdministration(req, res) {
 }
 
 async function timerAction(req, res) {
-  const { action } = z.object({ action: z.enum(['start', 'pause', 'resume', 'complete']) }).parse(req.body);
-  const task = await taskService.timerAction(req, req.params.id, action);
-  await recordAudit({ req, operation: `TASK_TIMER_${action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { timer_status: task.timer_status, active_elapsed_seconds: task.active_elapsed_seconds, is_overdue: task.is_overdue } });
-  if (task.became_overdue) await recordAudit({ req, operation: 'TASK_OVERDUE', entityType: 'TASK', entityId: task.id, newValues: { active_elapsed_seconds: task.active_elapsed_seconds, estimated_duration_seconds: task.estimated_duration_seconds } });
-  res.json({ task });
+  try {
+    const { action } = z.object({
+      action: z.enum(['start', 'pause', 'resume', 'complete'])
+    }).strict().parse(req.body);
+    const task = await taskService.timerAction(req, req.params.id, action);
+    await recordAudit({ req, operation: `TASK_TIMER_${action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { timer_status: task.timer_status, active_elapsed_seconds: task.active_elapsed_seconds, is_overdue: task.is_overdue } });
+    if (task.became_overdue) await recordAudit({ req, operation: 'TASK_OVERDUE', entityType: 'TASK', entityId: task.id, newValues: { active_elapsed_seconds: task.active_elapsed_seconds, estimated_duration_seconds: task.estimated_duration_seconds } });
+    return res.json({ task });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        error: 'Acao de cronometro invalida.',
+        details: error.issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message }))
+      });
+    }
+    if (error instanceof AppError && [400, 401, 403, 404, 409].includes(error.status)) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('[TIMER_ERROR]', error);
+    return res.status(500).json({ error: 'Falha interna ao processar o cronometro.' });
+  }
 }
 
 async function saveSubmission(req, res) {

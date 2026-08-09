@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.12-alpha**. Esta revisao torna o Monaco do modal GitHub nao controlado durante a digitacao, le o modelo somente ao salvar e acrescenta uma area clicavel de 400 px com foco, placeholder e loading estavel. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.13-alpha**. Esta revisao corrige a tipagem PostgreSQL da transacao do cronometro, deriva a autoria exclusivamente da sessao autenticada e retorna erros JSON semanticos para tarefa ausente, falta de permissao, estado invalido e timer concorrente. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

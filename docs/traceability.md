@@ -1,6 +1,15 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.12-alpha`
+## Instalacao isolada `0.6.13-alpha`
+
+| Revisao 0.6.13 | Evidencia |
+|---|---|
+| Causa raiz | SQL antigo reproduz `42P08` ao inferir `$3` como `text` e `varchar` no mesmo `UPDATE` |
+| Integridade | `taskTimingService.js` usa `FOR UPDATE`, casts explicitos e evento na mesma transacao |
+| Autoria | `actorId` e `companyId` derivam de `req.user`; payload desconhecido e rejeitado pelo controller |
+| Regras | tarefa, permissao, estado ativo, etapa temporizada e timer ja ativo retornam 403/404/409 |
+| Diagnostico | falha inesperada gera `[TIMER_ERROR]` interno e resposta 500 generica |
+| Regressao | `taskTimerTransaction.test.js` cobre autoria, lock, conflito, permissao e JSON semantico |
 
 | Revisao 0.6.12 | Evidencia |
 |---|---|

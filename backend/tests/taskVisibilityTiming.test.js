@@ -36,7 +36,7 @@ describe('visibilidade Roadmap e cronometros', () => {
   });
 
   it('converte falhas conhecidas do PostgreSQL em respostas controladas', () => {
-    expect(timingService).toContain("error.code === '22P02'");
+    expect(timingService).toContain("error?.code === '22P02'");
     expect(timingService).toContain("'TIMER_CONFLICT'");
     expect(timingService).toContain(', 409)');
   });

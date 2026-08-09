@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.12-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.13-alpha`.
+
+Revisao 0.6.13 implementada localmente: a rota de timer usa lock de linha e autoria exclusiva da sessao, valida tarefa, permissao, estado, etapa e sobreposicao e tipa explicitamente todos os parametros do `UPDATE`/evento. O SQL antigo reproduziu `42P08` em PostgreSQL local e o SQL corrigido persistiu o estado `running` e o evento `STARTED`. Testes e lint do backend foram validados; a atualizacao e a operacao autenticada na VPS ainda dependem de homologacao.
 
 Revisao 0.6.12 implementada localmente: o Monaco editavel usa `defaultValue`, conserva seu modelo sem atualizacoes React por tecla e entrega o conteudo por `editor.getValue()` somente no save. O wrapper possui altura minima de 400 px, foco por clique, borda, padding, placeholder e loading; arquivo e linguagem foram alinhados. Testes e build locais cobrem o contrato, mas a interacao autenticada em navegador e a VPS ainda dependem de homologacao.
 
