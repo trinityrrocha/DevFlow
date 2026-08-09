@@ -45,6 +45,7 @@ describe('visibilidade Roadmap e cronometros', () => {
     expect(taskService).toContain("'[DevFlow task state] Falha interna sanitizada.'");
     expect(taskService).toContain("'TASK_STATE_CONFLICT'");
     expect(taskService).toContain("'TASK_ID_INVALID'");
+    expect(taskService).toContain("'TASK_STATE_UPDATE_FAILED'");
   });
 
   it('aplica Roadmap em lista, detalhe, relacionados, dashboard e notificacoes', () => {

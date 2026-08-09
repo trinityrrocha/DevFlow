@@ -626,19 +626,22 @@ async function setTaskState(req, taskId, action, reason) {
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     if (error instanceof AppError) throw error;
+    if (error?.code === '22P02') {
+      throw new AppError('TASK_ID_INVALID', 'Identificador da tarefa invalido.', 400);
+    }
+    if (['23502', '23503', '23505', '23514', '40001', '40P01'].includes(error?.code)) {
+      throw new AppError(
+        'TASK_STATE_CONFLICT',
+        'Nao foi possivel alterar o estado da tarefa no estado atual.',
+        409
+      );
+    }
     console.error('[DevFlow task state] Falha interna sanitizada.', {
       code: String(error?.code || 'UNKNOWN').slice(0, 40),
       request_id: req.requestId || null,
       action
     });
-    if (error?.code === '22P02') {
-      throw new AppError('TASK_ID_INVALID', 'Identificador da tarefa invalido.', 400);
-    }
-    throw new AppError(
-      'TASK_STATE_CONFLICT',
-      'Nao foi possivel alterar o estado da tarefa. Recarregue a pagina e tente novamente.',
-      409
-    );
+    throw new AppError('TASK_STATE_UPDATE_FAILED', 'Erro interno ao atualizar estado', 500);
   } finally {
     client.release();
   }

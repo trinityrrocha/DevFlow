@@ -3,6 +3,24 @@ const { AppError } = require('../utils/errors');
 const { hasPermission } = require('../services/tenantService');
 const { requiresMfaSetup } = require('../services/mfaPolicyService');
 
+const mfaSetupAllowedPaths = new Set([
+  '/api/auth/me',
+  '/api/auth/csrf',
+  '/api/auth/logout',
+  '/api/auth/mfa/status',
+  '/api/auth/mfa/setup/start',
+  '/api/auth/mfa/setup/confirm',
+  '/api/users/profile/password'
+]);
+
+function isMfaSetupAllowed(req, user) {
+  const requestPath = req.originalUrl.split('?')[0];
+  return mfaSetupAllowedPaths.has(requestPath)
+    || (req.method === 'POST'
+      && requestPath === '/api/operations/update/requests'
+      && user.is_super_admin === true);
+}
+
 async function requireAuth(req, _res, next) {
   try {
     const token = req.cookies?.[SESSION_COOKIE];
@@ -43,17 +61,8 @@ async function requireAuth(req, _res, next) {
         403
       );
     }
-    const mfaSetupAllowed = new Set([
-      '/api/auth/me',
-      '/api/auth/csrf',
-      '/api/auth/logout',
-      '/api/auth/mfa/status',
-      '/api/auth/mfa/setup/start',
-      '/api/auth/mfa/setup/confirm',
-      '/api/users/profile/password'
-    ]);
     if (req.user.mfa_setup_required && !req.user.must_change_password
-      && !mfaSetupAllowed.has(req.originalUrl.split('?')[0])) {
+      && !isMfaSetupAllowed(req, req.user)) {
       throw new AppError(
         'MFA_SETUP_REQUIRED',
         'Configure a autenticação em dois fatores antes de continuar.',
@@ -99,4 +108,4 @@ function requirePermission(code) {
   };
 }
 
-module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requireMfa, requirePermission };
+module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requireMfa, requirePermission, isMfaSetupAllowed };

@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.9-alpha`
+## Instalacao isolada `0.6.10-alpha`
+
+| Revisao 0.6.10 | Evidencia |
+|---|---|
+| Update sem MFA | `updateOperationRoutes.js` remove o gate específico e `authMiddleware.js` libera somente POST do Super Admin durante setup obrigatório |
+| CSRF preservado | `app.js` mantém `csrfProtection` antes das rotas e o contrato é exercitado em `updateOperation.test.js` |
+| Toggle de tempo | `TaskDetail.jsx` usa um único botão reativo, `timerPending`, spinner e bloqueio concorrente |
+| Estado sem 500 cego | `taskController.js` responde JSON 400/404/409; falhas de infraestrutura recebem 500 genérico e log sanitizado |
+| Monaco preservado | componente, autodetecção Pascal, validação, migrations 009/010 e autor derivado da sessão continuam cobertos |
 
 | Revisao 0.6.9 | Evidencia |
 |---|---|

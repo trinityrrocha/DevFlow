@@ -45,10 +45,10 @@ async function timerAction(req, taskId, action) {
     const task = (await client.query(`SELECT t.*,s.responsibility,s.tracks_time,s.completes_task,s.code AS stage,s.name AS stage_name FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
     assert(task, 'TASK_NOT_FOUND', 'Tarefa nao encontrada.', 404);
     assert(canOperateTimer(req.user, task, task), 'TIMER_FORBIDDEN', 'Voce nao pode operar o cronometro desta etapa.', 403);
-    const allowed = { start: ['not_started'], pause: ['running'], resume: ['paused'], complete: ['running', 'paused'], cancel: ['not_started', 'running', 'paused'] };
+    const allowed = { start: ['not_started'], pause: ['running'], resume: ['paused'], complete: ['running', 'paused'] };
     assert(allowed[action]?.includes(task.timer_status), 'TIMER_STATE_INVALID', 'Transicao de cronometro invalida.', 409);
     const snapshot = timingSnapshot(task);
-    const next = { start: 'running', pause: 'paused', resume: 'running', complete: 'completed', cancel: 'cancelled' }[action];
+    const next = { start: 'running', pause: 'paused', resume: 'running', complete: 'completed' }[action];
     const active = snapshot.active_elapsed_seconds;
     const overdue = snapshot.estimated_duration_seconds != null && active >= snapshot.estimated_duration_seconds && !['completed', 'cancelled'].includes(next);
     const updated = (await client.query(
@@ -65,7 +65,7 @@ async function timerAction(req, taskId, action) {
          updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND company_id=$2 RETURNING *`,
       [taskId, req.user.company_id, next, active, overdue, action, req.user.id]
     )).rows[0];
-    const eventTypes = { start: 'STARTED', pause: 'PAUSED', resume: 'RESUMED', complete: 'COMPLETED', cancel: 'CANCELLED' };
+    const eventTypes = { start: 'STARTED', pause: 'PAUSED', resume: 'RESUMED', complete: 'COMPLETED' };
     await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.user.company_id, taskId, eventTypes[action], req.user.id, task.timer_status, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);

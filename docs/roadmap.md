@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.9-alpha`
+## Marco `0.6.10-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
@@ -10,7 +10,7 @@
 - [x] concluir Fase 4: e-mail, recuperacao, notificacoes e outbox;
 - [x] implementar configuracao SMTP cifrada e teste direto no painel;
 - [x] implementar registros GitHub 1:N e lista de tarefas compacta/priorizada;
-- [x] proteger update do painel com MFA e acompanhar retorno pelo health;
+- [x] restringir update do painel ao Super Admin com CSRF, sem exigir MFA, e acompanhar retorno pelo health;
 - [ ] homologar migration 008, SMTP, entrega, retry e worker na VPS;
 
 - [x] substituir ACME temporario por Certbot standalone do host;

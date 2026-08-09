@@ -14,7 +14,10 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
 
   it('usa um unico toggle reativo sem botao Cancelar', () => {
     expect(detail).toContain("task.timer_status === 'running' ? 'pause'");
-    expect(detail).toContain("<Pause className=\"mr-2 h-4 w-4\" />Pause");
+    expect(detail).toContain("task.timer_status === 'running' ? <Pause");
+    expect(detail).toContain("{task.timer_status === 'running' ? 'Pause' : 'Iniciar'}");
+    expect(detail).toContain('aria-busy={timerPending}');
+    expect(detail).toContain('animate-spin');
     expect(detail).not.toContain("timerAction('cancel')");
     expect(detail).not.toContain("stateAction('cancel')");
   });

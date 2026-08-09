@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.10-alpha] - 2026-08-09
+
+### Corrigido
+
+- solicitacao de atualizacao liberada exclusivamente ao Super Admin com sessao valida, sem exigir MFA, preservando CSRF;
+- cronometro com toggle unico `Iniciar`/`Pause`, bloqueio concorrente e spinner durante a requisicao, sem acao de cancelamento na API de tempo;
+- mudanca administrativa de estado com JSON semantico 400/404/409 e resposta 500 generica para falhas reais de infraestrutura.
+
+### Validado
+
+- Monaco, autodeteccao Pascal `.pas`/`.dpr`, persistencia estruturada, autor derivado da sessao e migrations 009/010 permanecem cobertos;
+- nenhuma migration publicada foi reescrita e a arquitetura isolada do instalador permaneceu inalterada.
+
 ## [0.6.9-alpha] - 2026-08-09
 
 ### Adicionado

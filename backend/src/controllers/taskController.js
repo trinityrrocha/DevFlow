@@ -1,10 +1,11 @@
 const path = require('path');
 const fs = require('fs/promises');
-const { z } = require('zod');
+const { z, ZodError } = require('zod');
 const taskService = require('../services/taskService');
 const attachmentService = require('../services/attachmentService');
 const { recordAudit } = require('../services/auditService');
 const { createGithubCardSchema, updateGithubCardSchema } = require('../validation/githubCard');
+const { AppError } = require('../utils/errors');
 
 const taskSchema = z.object({
   kind: z.enum(['REQUEST', 'BUG']),
@@ -69,10 +70,30 @@ async function transition(req, res) {
 }
 
 async function stateAction(req, res) {
-  const payload = z.object({ action: z.enum(['pause', 'reopen', 'cancel']), reason: z.string().trim().min(5).max(2000) }).parse(req.body);
-  const task = await taskService.setTaskState(req, req.params.id, payload.action, payload.reason);
-  await recordAudit({ req, operation: `TASK_${payload.action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { state: task.state } });
-  res.json({ task });
+  try {
+    const payload = z.object({ action: z.enum(['pause', 'reopen', 'cancel']), reason: z.string().trim().min(5).max(2000) }).parse(req.body);
+    const task = await taskService.setTaskState(req, req.params.id, payload.action, payload.reason);
+    await recordAudit({ req, operation: `TASK_${payload.action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { state: task.state } });
+    return res.json({ task });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        error: 'Dados invalidos para atualizar o estado.',
+        details: error.issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message }))
+      });
+    }
+    if (error instanceof AppError && error.status === 404) {
+      return res.status(404).json({ error: 'Tarefa não encontrada' });
+    }
+    if (error instanceof AppError && [400, 403, 409].includes(error.status)) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('[DevFlow task state controller] Falha interna sanitizada.', {
+      code: String(error?.code || 'UNKNOWN').slice(0, 40),
+      request_id: req.requestId || null
+    });
+    return res.status(500).json({ error: 'Erro interno ao atualizar estado' });
+  }
 }
 
 async function updateAdministration(req, res) {
@@ -89,7 +110,7 @@ async function updateAdministration(req, res) {
 }
 
 async function timerAction(req, res) {
-  const { action } = z.object({ action: z.enum(['start', 'pause', 'resume', 'complete', 'cancel']) }).parse(req.body);
+  const { action } = z.object({ action: z.enum(['start', 'pause', 'resume', 'complete']) }).parse(req.body);
   const task = await taskService.timerAction(req, req.params.id, action);
   await recordAudit({ req, operation: `TASK_TIMER_${action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { timer_status: task.timer_status, active_elapsed_seconds: task.active_elapsed_seconds, is_overdue: task.is_overdue } });
   if (task.became_overdue) await recordAudit({ req, operation: 'TASK_OVERDUE', entityType: 'TASK', entityId: task.id, newValues: { active_elapsed_seconds: task.active_elapsed_seconds, estimated_duration_seconds: task.estimated_duration_seconds } });

@@ -29,6 +29,7 @@ export default function TaskDetail() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [timerPending, setTimerPending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -79,12 +80,20 @@ export default function TaskDetail() {
     mutate(() => api.post(`/tasks/${id}/transition`, { target_stage: target, reason }), backward ? 'Etapa retornada.' : 'Tarefa avançada.');
   };
 
-  const stateAction = (action) => {
-    const reason = window.prompt(`Informe o motivo para ${action === 'pause' ? 'pausar' : action === 'reopen' ? 'reabrir' : 'cancelar'}:`);
+  const reopenTask = () => {
+    const reason = window.prompt('Informe o motivo para reabrir:');
     if (!reason) return;
-    mutate(() => api.post(`/tasks/${id}/state`, { action, reason }), 'Estado atualizado.');
+    mutate(() => api.post(`/tasks/${id}/state`, { action: 'reopen', reason }), 'Estado atualizado.');
   };
-  const timerAction = (action) => mutate(() => api.post(`/tasks/${id}/timer`, { action }), `Cronometro ${action === 'start' ? 'iniciado' : action === 'pause' ? 'pausado' : action === 'resume' ? 'retomado' : action === 'complete' ? 'concluido' : 'cancelado'}.`);
+  const timerAction = async (action) => {
+    const messages = { start: 'Cronometro iniciado.', pause: 'Cronometro pausado.', resume: 'Cronometro retomado.', complete: 'Cronometro concluido.' };
+    setTimerPending(true);
+    try {
+      return await mutate(() => api.post(`/tasks/${id}/timer`, { action }), messages[action]);
+    } finally {
+      setTimerPending(false);
+    }
+  };
 
   return (
     <div className="animate-fadeIn space-y-6">
@@ -97,7 +106,7 @@ export default function TaskDetail() {
             <p className="mt-1 text-sm text-slate-500">Solicitante: {task.requester_name} · Criada em {formatDate(task.created_at)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManage && ['PAUSED', 'CANCELED', 'COMPLETED'].includes(task.state) && <button onClick={() => stateAction('reopen')} className="btn-secondary"><Play className="mr-2 h-4 w-4" />Reabrir</button>}
+            {canManage && ['PAUSED', 'CANCELED', 'COMPLETED'].includes(task.state) && <button onClick={reopenTask} className="btn-secondary"><Play className="mr-2 h-4 w-4" />Reabrir</button>}
           </div>
         </div>
       </header>
@@ -111,7 +120,7 @@ export default function TaskDetail() {
           ['Tempo ativo', formatSignedDuration(task.active_elapsed_seconds)],
           ['Desde o inicio', formatSignedDuration(task.elapsed_since_start_seconds)],
           ['Cronometro', task.timer_status]
-        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && ['not_started', 'running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving} onClick={() => timerAction(task.timer_status === 'running' ? 'pause' : task.timer_status === 'paused' ? 'resume' : 'start')} className={task.timer_status === 'running' ? 'inline-flex h-10 items-center justify-center rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50' : 'btn-primary'}>{task.timer_status === 'running' ? <><Pause className="mr-2 h-4 w-4" />Pause</> : <><Play className="mr-2 h-4 w-4" />Iniciar</>}</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving} onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
+        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && ['not_started', 'running', 'paused'].includes(task.timer_status) && <button type="button" aria-busy={timerPending} disabled={saving || timerPending} onClick={() => timerAction(task.timer_status === 'running' ? 'pause' : task.timer_status === 'paused' ? 'resume' : 'start')} className={task.timer_status === 'running' ? 'inline-flex h-10 items-center justify-center rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50' : 'btn-primary'}>{timerPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : task.timer_status === 'running' ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{task.timer_status === 'running' ? 'Pause' : 'Iniciar'}</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving || timerPending} onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
         <p className={`mt-4 text-sm font-semibold ${task.is_overdue ? 'text-red-700' : 'text-emerald-700'}`}><span className="sr-only">Status do prazo: </span>{task.is_overdue ? 'Tarefa atrasada' : task.estimated_duration_seconds == null ? 'Estimativa nao definida' : 'Dentro do prazo'}</p>
       </section>
 

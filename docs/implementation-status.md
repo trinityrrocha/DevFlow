@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.9-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.10-alpha`.
+
+Revisao 0.6.10 implementada localmente: pedido de atualizacao restrito ao Super Admin com sessao valida e CSRF, sem gate de MFA inclusive quando a politica global exige configuracao; toggle unico do cronometro com spinner e bloqueio concorrente, sem cancelamento na API de tempo; controller de estado com respostas JSON 400/404/409 e falha interna 500 sanitizada. A base Monaco e as migrations 009/010 foram verificadas sem reescrita. Navegador autenticado, PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.9 implementada localmente: Monaco reutilizavel com configuracao segura, Pascal/Delphi e PowerShell, deteccao automatica reversivel sem sobrescrever escolha manual, tema observado no documento, previews expansivos sob demanda, validacao de codigo obrigatorio e limite UTF-8 de 200 KB. A migration 010 acrescenta exclusao logica auditavel aos cards sem alterar as migrations 008/009 publicadas. PostgreSQL, Docker, console do navegador e VPS reais ainda dependem de homologacao.
 
