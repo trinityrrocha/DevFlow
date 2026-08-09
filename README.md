@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.13-alpha**. Esta revisao corrige a tipagem PostgreSQL da transacao do cronometro, deriva a autoria exclusivamente da sessao autenticada e retorna erros JSON semanticos para tarefa ausente, falta de permissao, estado invalido e timer concorrente. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.14-alpha**. Esta revisao rastreia pedidos de update em `requests`, `processing`, `processed` e `failed`, preserva as fases detalhadas do status e mantem o polling ativo durante reinicio dos servicos. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

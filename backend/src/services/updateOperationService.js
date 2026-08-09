@@ -7,8 +7,10 @@ const { AppError } = require('../utils/errors');
 const UPDATE_ENGINE = 'scripts/update.sh';
 const UPDATE_OPERATIONS = Object.freeze(['install-update']);
 const UPDATE_STATES = Object.freeze(['pending', 'processing', 'backup', 'maintenance', 'migrations', 'containers', 'health', 'rollback', 'completed', 'failed']);
+const UPDATE_PROCESSING_STATES = Object.freeze(['processing', 'backup', 'maintenance', 'migrations', 'containers', 'health', 'rollback']);
 const REPOSITORY_API = 'https://api.github.com/repos/trinityrrocha/DevFlow';
 const RAW_MAIN = 'https://raw.githubusercontent.com/trinityrrocha/DevFlow/main';
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function changelogSection(content, version) {
   const lines = content.split(/\r?\n/);
@@ -103,22 +105,92 @@ function createSignedRequest(actorEmail) {
   return request;
 }
 
-function getRequestStatus(id) {
-  if (!/^[0-9a-f-]{36}$/.test(id)) throw new AppError('UPDATE_REQUEST_NOT_FOUND', 'Solicitacao de atualizacao nao encontrada.', 404);
-  const source = path.join(env.UPDATE_STATUS_DIR, `${id}.json`);
-  let stat; let payload;
-  try {
-    stat = fs.lstatSync(source);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) throw new Error('unsafe');
-    payload = JSON.parse(fs.readFileSync(source, 'utf8'));
-  } catch {
-    throw new AppError('UPDATE_REQUEST_NOT_FOUND', 'Solicitacao de atualizacao nao encontrada.', 404);
-  }
-  if (payload.schemaVersion !== 1 || payload.id !== id || !UPDATE_STATES.includes(payload.state)
-    || typeof payload.message !== 'string' || payload.message.length > 240) {
-    throw new AppError('UPDATE_STATUS_INVALID', 'Status de atualizacao invalido.', 503);
-  }
-  return Object.freeze({ id, state: payload.state, message: payload.message, requestedAt: payload.requestedAt, updatedAt: payload.updatedAt });
+function getUpdateQueueDirectories() {
+  const queueRoot = path.dirname(env.UPDATE_REQUEST_DIR);
+  return Object.freeze([
+    Object.freeze({ name: 'requests', directory: env.UPDATE_REQUEST_DIR, status: 'pending' }),
+    Object.freeze({ name: 'processing', directory: path.join(queueRoot, 'processing'), status: 'processing' }),
+    Object.freeze({ name: 'processed', directory: path.join(queueRoot, 'processed'), status: 'completed' }),
+    Object.freeze({ name: 'failed', directory: path.join(queueRoot, 'failed'), status: 'failed' })
+  ]);
 }
 
-module.exports = { getUpdateCapabilities, createSignedRequest, writeStatus, getRequestStatus, UPDATE_ENGINE, UPDATE_OPERATIONS, UPDATE_STATES };
+function readSafeJson(source, filesystem = fs) {
+  if (!filesystem.existsSync(source)) return null;
+  try {
+    const stat = filesystem.lstatSync(source);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) throw new Error('unsafe');
+    return JSON.parse(filesystem.readFileSync(source, 'utf8'));
+  } catch {
+    throw new AppError('UPDATE_STATUS_INVALID', 'Status de atualizacao invalido.', 503);
+  }
+}
+
+function safeFailureMessage(...values) {
+  const message = values.find((value) => typeof value === 'string' && value.trim());
+  return String(message || 'Atualizacao interrompida. Consulte o diagnostico do servidor.').trim().slice(0, 240);
+}
+
+function getRequestStatus(id, {
+  filesystem = fs,
+  directories = getUpdateQueueDirectories(),
+  statusDirectory = env.UPDATE_STATUS_DIR
+} = {}) {
+  if (!REQUEST_ID_PATTERN.test(id)) throw new AppError('UPDATE_REQUEST_NOT_FOUND', 'Solicitacao de atualizacao nao encontrada.', 404);
+  let lifecycle;
+  for (const entry of directories) {
+    const source = path.join(entry.directory, `${id}.json`);
+    if (!filesystem.existsSync(source)) continue;
+    const request = readSafeJson(source, filesystem);
+    if (request?.id !== id) throw new AppError('UPDATE_STATUS_INVALID', 'Status de atualizacao invalido.', 503);
+    lifecycle = { ...entry, request };
+    break;
+  }
+  if (!lifecycle) throw new AppError('UPDATE_REQUEST_NOT_FOUND', 'Solicitacao de atualizacao nao encontrada.', 404);
+
+  const statusSource = path.join(statusDirectory, `${id}.json`);
+  const payload = readSafeJson(statusSource, filesystem);
+  if (payload && (payload.schemaVersion !== 1 || payload.id !== id || !UPDATE_STATES.includes(payload.state)
+    || typeof payload.message !== 'string' || payload.message.length > 240)) {
+    throw new AppError('UPDATE_STATUS_INVALID', 'Status de atualizacao invalido.', 503);
+  }
+
+  const state = lifecycle.status === 'processing' && UPDATE_PROCESSING_STATES.includes(payload?.state)
+    ? payload.state
+    : lifecycle.status;
+  const messages = {
+    pending: 'Atualizacao aguardando processamento.',
+    processing: 'Atualizacao em processamento.',
+    completed: 'Atualizacao concluida com sucesso.',
+    failed: 'Atualizacao interrompida. Consulte o diagnostico do servidor.'
+  };
+  const message = state === payload?.state ? payload.message : messages[state];
+  const response = {
+    id,
+    status: lifecycle.status,
+    state,
+    message,
+    requestedAt: payload?.requestedAt || lifecycle.request.requestedAt || lifecycle.request.timestamp || null,
+    updatedAt: payload?.updatedAt || null
+  };
+  if (lifecycle.status === 'failed') {
+    response.error = safeFailureMessage(
+      lifecycle.request.error,
+      lifecycle.request.failureReason,
+      lifecycle.request.rootCause,
+      payload?.message
+    );
+  }
+  return Object.freeze(response);
+}
+
+module.exports = {
+  getUpdateCapabilities,
+  createSignedRequest,
+  writeStatus,
+  getRequestStatus,
+  getUpdateQueueDirectories,
+  UPDATE_ENGINE,
+  UPDATE_OPERATIONS,
+  UPDATE_STATES
+};

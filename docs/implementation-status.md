@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.13-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.14-alpha`.
+
+Revisao 0.6.14 implementada localmente: o backend usa os quatro diretorios do daemon como autoridade do ciclo de vida e o arquivo `status/` apenas para a fase detalhada. O frontend preserva loading e polling em timeout/Network Error/502/503/504, mostra reinicio dos servicos e recarrega somente apos `completed`. Testes locais cobrem todas as transicoes; a troca real de containers e o retorno da VPS ainda dependem de homologacao.
 
 Revisao 0.6.13 implementada localmente: a rota de timer usa lock de linha e autoria exclusiva da sessao, valida tarefa, permissao, estado, etapa e sobreposicao e tipa explicitamente todos os parametros do `UPDATE`/evento. O SQL antigo reproduziu `42P08` em PostgreSQL local e o SQL corrigido persistiu o estado `running` e o evento `STARTED`. Testes e lint do backend foram validados; a atualizacao e a operacao autenticada na VPS ainda dependem de homologacao.
 

@@ -1,6 +1,15 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.13-alpha`
+## Instalacao isolada `0.6.14-alpha`
+
+| Revisao 0.6.14 | Evidencia |
+|---|---|
+| Ciclo da fila | `updateOperationService.js` procura `requests`, `processing`, `processed` e `failed` em ordem |
+| Leitura segura | UUID estrito, `existsSync`, `lstat`, bloqueio de symlink, limite de 8 KiB e validacao de schema/identidade |
+| Estado publico | localizacao define pending/processing/completed/failed; `status/` conserva a fase operacional detalhada |
+| Polling resiliente | `updatePolling.js` classifica timeout, Network Error e 502/503/504 como interrupcao temporaria |
+| Retorno | `Settings.jsx` mantem loading, exibe reinicio e recarrega quando a API responde `completed` |
+| Regressao | testes backend percorrem os quatro diretorios; testes frontend cobrem erros transitorios e reload |
 
 | Revisao 0.6.13 | Evidencia |
 |---|---|

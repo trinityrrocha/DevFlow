@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.14-alpha] - 2026-08-09
+
+### Corrigido
+
+- leitura do pedido de update passa a localizar o JSON sequencialmente em `requests`, `processing`, `processed` e `failed`, retornando 404 somente quando ausente em todo o ciclo;
+- arquivo da fila define o estado publico `pending`/`processing`/`completed`/`failed`, enquanto `status/` preserva fases detalhadas como backup, migrations, health e rollback;
+- arquivos de fila e status recebem validacao de UUID, tipo, symlink, tamanho, schema e identidade antes da resposta;
+- polling web trata timeout, Network Error e HTTP 502/503/504 como reinicio temporario, mantem o loading e continua tentando;
+- retorno `completed` pela API grava o aviso de conclusao e recarrega a pagina automaticamente.
+
+### Validado
+
+- regressao move o mesmo request pelos quatro diretorios e verifica os estados esperados, detalhe de migrations, erro seguro e 404 real;
+- frontend cobre indisponibilidade temporaria, normalizacao do contrato e reload condicionado ao estado concluido.
+
 ## [0.6.13-alpha] - 2026-08-09
 
 ### Corrigido

@@ -3,6 +3,7 @@ import { Layers3, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import SmtpSettings from '../components/SmtpSettings';
+import { isTransientUpdatePollingError, normalizeUpdateStatus } from '../utils/updatePolling';
 
 const newStage = (index, terminal = false) => ({ code: terminal ? 'DONE' : `STAGE_${index + 1}`, name: terminal ? 'Concluido' : `Etapa ${index + 1}`, responsibility: 'ANY', requirements: '{}', tracks_time: !terminal, completes_task: terminal });
 const emptyWorkflow = { code: '', name: '', task_kind: 'BOTH', is_default: false, stages: [newStage(0), newStage(1, true)] };
@@ -66,8 +67,23 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
     const poll = async () => {
       try {
         const { data } = await api.get(`/operations/update/requests/${queued.id}`);
-        if (active) setUpdateStatus(data);
-      } catch { /* A proxima consulta tenta novamente sem expor detalhes internos. */ }
+        if (!active) return;
+        const nextStatus = normalizeUpdateStatus(data);
+        setConnectionInterrupted(false);
+        setUpdateStatus(nextStatus);
+        if (nextStatus.state === 'completed') {
+          window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
+          window.location.reload();
+        }
+      } catch (requestError) {
+        if (!active || !isTransientUpdatePollingError(requestError)) return;
+        setConnectionInterrupted(true);
+        setUpdateStatus((current) => ['completed', 'failed'].includes(current?.state) ? current : {
+          ...(current || {}),
+          state: current?.state || 'processing',
+          message: 'Reiniciando servicos...'
+        });
+      }
     };
     poll();
     const timer = window.setInterval(poll, 2000);
@@ -78,16 +94,7 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
     let active = true;
     const pollHealth = async () => {
       try {
-        const { data } = await api.get('/health', { timeout: 4500 });
-        if (!active) return;
-        const expected = data.status === 'ok' && (connectionInterrupted || (
-          data.version === capabilities.availableVersion
-          && (!capabilities.availableCommit || data.commit === capabilities.availableCommit)
-        ));
-        if (expected && (connectionInterrupted || updateStatus?.state === 'completed')) {
-          window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
-          window.location.reload();
-        }
+        await api.get('/health', { timeout: 4500 });
       } catch {
         if (active) setConnectionInterrupted(true);
       }
@@ -95,7 +102,7 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
     pollHealth();
     const timer = window.setInterval(pollHealth, 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [queued?.id, capabilities?.availableVersion, capabilities?.availableCommit, connectionInterrupted, updateStatus?.state]);
+  }, [queued?.id, capabilities?.availableVersion, updateStatus?.state]);
   if (!capabilities) return <Loading />;
   const requestActive = queued?.id && !['completed', 'failed'].includes(updateStatus?.state);
   const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !requestActive;
@@ -107,7 +114,7 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
       setQueued(data); setUpdateStatus({ state: 'pending', message: 'Atualizacao aguardando processamento.' });
     }, 'Pedido de atualizacao enfileirado.');
   };
-  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{connectionInterrupted && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Aguardando o retorno saudavel da nova versao...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
+  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{connectionInterrupted && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Reiniciando servicos...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
     </div>;
 }
 

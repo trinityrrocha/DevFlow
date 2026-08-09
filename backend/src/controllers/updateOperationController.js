@@ -38,8 +38,12 @@ async function createRequest(req, res) {
   res.status(202).json({ id: request.id, operation: request.operation, status: 'pending', requestedAt: request.requestedAt });
 }
 
-function getStatus(req, res) {
-  res.json(getRequestStatus(req.params.id));
+function getStatus(req, res, next) {
+  try {
+    return res.json(getRequestStatus(req.params.id));
+  } catch (error) {
+    return next(error);
+  }
 }
 
 module.exports = { getCapabilities, createRequest, getStatus };
