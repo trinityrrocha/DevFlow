@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.7-alpha`
+## Instalacao isolada `0.6.8-alpha`
+
+| Revisao 0.6.8 | Evidencia |
+|---|---|
+| Lista e cronometro | `Tasks.jsx`, toggle reativo em `TaskDetail.jsx` e contratos em `taskExperience.test.js` |
+| Transicao de estado | `setTaskState` preserva 400/404 e converte conflitos conhecidos em JSON 409, com log interno sanitizado |
+| Anotacoes GitHub | migration `009_github_code_annotations.sql`, campos estruturados e cards com autor, etapa e data |
+| Editor seguro | `@monaco-editor/react`, `monaco-editor`, workers locais e CSP sem origem de CDN |
+| Fila de update | controller grava JSON schema 2 atomico, assinado por HMAC, e a UI consulta `/api/health` a cada cinco segundos |
 
 | Revisao 0.6.7 | Evidencia |
 |---|---|

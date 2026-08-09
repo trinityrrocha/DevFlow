@@ -87,22 +87,20 @@ function createSignedRequest(actorEmail) {
     throw new AppError('UPDATE_API_DISABLED', 'Atualizacao pela API esta desabilitada.', 503);
   }
   const request = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: crypto.randomUUID(),
+    action: 'update',
+    timestamp: new Date().toISOString(),
+    requester: String(actorEmail).toLowerCase(),
     operation: 'install-update',
-    requestedAt: new Date().toISOString(),
+    requestedAt: null,
     requestedBy: String(actorEmail).toLowerCase(),
     nonce: crypto.randomBytes(32).toString('hex')
   };
+  request.requestedAt = request.timestamp;
   const canonical = JSON.stringify(request);
   request.signature = crypto.createHmac('sha256', env.UPDATE_REQUEST_SECRET).update(canonical).digest('hex');
-  fs.mkdirSync(env.UPDATE_REQUEST_DIR, { recursive: true, mode: 0o700 });
-  const destination = path.join(env.UPDATE_REQUEST_DIR, `${request.id}.json`);
-  const temporary = path.join(env.UPDATE_REQUEST_DIR, `.${request.id}.tmp`);
-  fs.writeFileSync(temporary, `${JSON.stringify(request)}\n`, { flag: 'wx', mode: 0o600 });
-  writeStatus(request.id, 'pending', request.requestedAt);
-  fs.renameSync(temporary, destination);
-  return { id: request.id, operation: request.operation, status: 'pending', requestedAt: request.requestedAt };
+  return request;
 }
 
 function getRequestStatus(id) {
@@ -123,4 +121,4 @@ function getRequestStatus(id) {
   return Object.freeze({ id, state: payload.state, message: payload.message, requestedAt: payload.requestedAt, updatedAt: payload.updatedAt });
 }
 
-module.exports = { getUpdateCapabilities, createSignedRequest, getRequestStatus, UPDATE_ENGINE, UPDATE_OPERATIONS, UPDATE_STATES };
+module.exports = { getUpdateCapabilities, createSignedRequest, writeStatus, getRequestStatus, UPDATE_ENGINE, UPDATE_OPERATIONS, UPDATE_STATES };

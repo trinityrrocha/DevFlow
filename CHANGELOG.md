@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.8-alpha] - 2026-08-09
+
+### Adicionado
+
+- anotacoes GitHub estruturadas por arquivo, linguagem, codigo, explicacao, autor e etapa, com migration 009;
+- Monaco Editor e workers empacotados localmente, deteccao de linguagem por extensao, modo somente leitura e copia do codigo;
+- contrato schema 2 para pedidos fisicos do updater com aliases operacionais, persistencia atomica e assinatura HMAC.
+
+### Corrigido
+
+- cabecalho da lista de tarefas com maior contraste e remocao do subtitulo redundante;
+- cronometro com um unico botao reativo para iniciar, retomar ou pausar, sem acao de cancelamento na interface;
+- falhas conhecidas de transicao de estado retornam JSON 400/404/409 e falhas internas recebem diagnostico sanitizado;
+- painel de update recarrega somente depois de detectar indisponibilidade e retorno do health, mantendo o polling de cinco segundos.
+
+### Seguranca
+
+- codigo permanece renderizado como texto pelo Monaco, sem `innerHTML`, scripts externos ou CDN;
+- pedido do updater e criado com permissao restritiva, arquivo temporario exclusivo e rename atomico antes do consumo.
+
 ## [0.6.7-alpha] - 2026-08-08
 
 ### Adicionado

@@ -130,28 +130,33 @@ async function addApproval(req, res) {
 }
 
 const optionalUrl = z.preprocess((value) => value === '' ? null : value, z.string().url().nullable().optional());
+const githubLanguages = ['plaintext', 'javascript', 'typescript', 'sql', 'python', 'json', 'html', 'css', 'shell', 'yaml', 'xml', 'java', 'c', 'cpp', 'csharp', 'go', 'php', 'ruby', 'rust', 'markdown'];
 const githubFields = {
-    title: z.string().trim().min(2).max(160),
+    title: z.string().trim().min(2).max(160).optional(),
     repository_url: optionalUrl,
     branch: z.string().trim().max(255).nullable().optional(),
     commit_sha: z.string().trim().max(64).nullable().optional(),
     pull_request_url: optionalUrl,
     release: z.string().trim().max(255).nullable().optional(),
-    notes_code: z.string().max(50000).nullable().optional()
+    notes_code: z.string().max(50000).nullable().optional(),
+    file_name: z.string().trim().max(500).nullable().optional(),
+    language: z.enum(githubLanguages).optional(),
+    code_content: z.string().max(200000).nullable().optional(),
+    explanation: z.string().max(50000).nullable().optional()
 };
 
 async function addGithub(req, res) {
-  const payload = z.object(githubFields).parse(req.body);
+  const payload = z.object(githubFields).refine((value) => [value.repository_url, value.branch, value.commit_sha, value.pull_request_url, value.release, value.file_name, value.code_content, value.explanation].some(Boolean), { message: 'Informe ao menos um vinculo, arquivo, codigo ou explicacao.' }).parse(req.body);
   const github = await taskService.saveGithub(req, req.params.id, payload);
-  await recordAudit({ req, operation: 'TASK_GITHUB_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null } });
+  await recordAudit({ req, operation: 'TASK_GITHUB_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null, code_content: payload.code_content ? '[REDACTED_CODE]' : null } });
   res.status(201).json({ github });
 }
 
 async function updateGithub(req, res) {
-  const payload = z.object({ ...githubFields, title: githubFields.title.optional() }).partial()
+  const payload = z.object(githubFields).partial()
     .refine((value) => Object.keys(value).length > 0, { message: 'Informe ao menos um campo.' }).parse(req.body);
   const github = await taskService.saveGithub(req, req.params.id, payload, req.params.cardId);
-  await recordAudit({ req, operation: 'TASK_GITHUB_UPDATED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null } });
+  await recordAudit({ req, operation: 'TASK_GITHUB_UPDATED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null, code_content: payload.code_content ? '[REDACTED_CODE]' : null } });
   res.json({ github });
 }
 

@@ -41,6 +41,12 @@ describe('visibilidade Roadmap e cronometros', () => {
     expect(timingService).toContain(', 409)');
   });
 
+  it('converte falhas da mudanca administrativa de estado em JSON controlado', () => {
+    expect(taskService).toContain("'[DevFlow task state] Falha interna sanitizada.'");
+    expect(taskService).toContain("'TASK_STATE_CONFLICT'");
+    expect(taskService).toContain("'TASK_ID_INVALID'");
+  });
+
   it('aplica Roadmap em lista, detalhe, relacionados, dashboard e notificacoes', () => {
     for (const source of [taskService, dashboardService, notificationController]) {
       expect(source).toMatch(/ROADMAP/);

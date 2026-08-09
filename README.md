@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.7-alpha**. Esta revisao torna o SMTP configuravel e cifrado, amplia o dossie com registros GitHub 1:N, compacta e ordena a lista de tarefas, endurece o cronometro e acompanha o retorno do updater pelo health publico. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.8-alpha**. Esta revisao simplifica o controle do cronometro, estrutura anotacoes GitHub com Monaco Editor local e torna explicita a gravacao atomica dos pedidos assinados do updater. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

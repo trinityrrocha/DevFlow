@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-08. Versao: `0.6.7-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.8-alpha`.
+
+Revisao 0.6.8 implementada localmente: lista de tarefas sem subtitulo redundante e com cabecalho de maior contraste; controle unico e reativo do cronometro; erros de transicao conhecidos em JSON 400/404/409; anotacoes GitHub estruturadas com arquivo, linguagem, codigo, explicacao, autor e etapa; Monaco Editor e workers empacotados localmente; pedido fisico do updater gravado atomicamente na fila HMAC e monitoramento de indisponibilidade/retorno pelo health. A migration 009, o updater em container e os fluxos contra PostgreSQL/Docker/VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.7 implementada localmente: SMTP persistente cifrado e teste direto, lista compacta e ordenada, erros conhecidos do cronometro em 400/409, registros GitHub 1:N e solicitacao de update com MFA e polling do health. A migration 008 e a operacao em PostgreSQL/Docker/VPS ainda dependem de homologacao.
 

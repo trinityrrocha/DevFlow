@@ -1,6 +1,6 @@
 {
   "name": "@devflow/frontend",
-  "version": "0.6.7-alpha",
+  "version": "0.6.8-alpha",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,10 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "axios": "^1.11.0",
     "lucide-react": "^0.542.0",
+    "monaco-editor": "^0.56.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

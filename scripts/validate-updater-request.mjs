@@ -18,9 +18,11 @@ if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) fail('unsafe-fi
 let request;
 try { request = JSON.parse(readFileSync(requestPath, 'utf8')); } catch { fail('json'); }
 const keys = Object.keys(request).sort();
-const expectedKeys = ['id', 'nonce', 'operation', 'requestedAt', 'requestedBy', 'schemaVersion', 'signature'].sort();
+const expectedKeys = ['action', 'id', 'nonce', 'operation', 'requestedAt', 'requestedBy', 'requester', 'schemaVersion', 'signature', 'timestamp'].sort();
 if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) fail('keys');
-if (request.schemaVersion !== 1 || request.id !== expectedId || request.operation !== 'install-update') fail('contract');
+if (request.schemaVersion !== 2 || request.id !== expectedId || request.action !== 'update'
+  || request.operation !== 'install-update' || request.timestamp !== request.requestedAt
+  || request.requester !== request.requestedBy) fail('contract');
 if (!/^[0-9a-f-]{36}$/.test(request.id) || !/^[0-9a-f]{64}$/.test(request.nonce)) fail('identity');
 if (typeof request.requestedBy !== 'string' || request.requestedBy.length < 3 || request.requestedBy.length > 320) fail('actor');
 const requestedAt = Date.parse(request.requestedAt);
@@ -29,6 +31,9 @@ if (!Number.isFinite(requestedAt) || age < -300000 || age > 7 * 86400000) fail('
 const canonical = JSON.stringify({
   schemaVersion: request.schemaVersion,
   id: request.id,
+  action: request.action,
+  timestamp: request.timestamp,
+  requester: request.requester,
   operation: request.operation,
   requestedAt: request.requestedAt,
   requestedBy: request.requestedBy,

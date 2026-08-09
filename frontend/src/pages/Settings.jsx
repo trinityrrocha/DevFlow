@@ -80,9 +80,10 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
       try {
         const { data } = await api.get('/health', { timeout: 4500 });
         if (!active) return;
-        const expected = data.status === 'ok'
-          && data.version === capabilities.availableVersion
-          && (!capabilities.availableCommit || data.commit === capabilities.availableCommit);
+        const expected = data.status === 'ok' && (connectionInterrupted || (
+          data.version === capabilities.availableVersion
+          && (!capabilities.availableCommit || data.commit === capabilities.availableCommit)
+        ));
         if (expected && (connectionInterrupted || updateStatus?.state === 'completed')) {
           window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
           window.location.reload();

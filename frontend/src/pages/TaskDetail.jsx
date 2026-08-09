@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Clock3, Download, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Upload, X, XCircle } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, CheckCircle2, Clock3, Copy, Download, FileCode2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Upload, X, XCircle } from 'lucide-react';
 import { Link, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
@@ -7,6 +7,9 @@ import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
 import { formatDate, formatDuration, label } from '../utils/formatters';
 import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
+import { CODE_LANGUAGES, detectCodeLanguage } from '../utils/codeLanguages';
+
+const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
 const tabs = [
   ['summary', 'Resumo', Clock3],
@@ -93,9 +96,7 @@ export default function TaskDetail() {
             <p className="mt-1 text-sm text-slate-500">Solicitante: {task.requester_name} · Criada em {formatDate(task.created_at)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManage && task.state === 'ACTIVE' && <button onClick={() => stateAction('pause')} className="btn-secondary"><Pause className="mr-2 h-4 w-4" />Pausar</button>}
             {canManage && ['PAUSED', 'CANCELED', 'COMPLETED'].includes(task.state) && <button onClick={() => stateAction('reopen')} className="btn-secondary"><Play className="mr-2 h-4 w-4" />Reabrir</button>}
-            {canManage && !['CANCELED', 'COMPLETED'].includes(task.state) && <button onClick={() => stateAction('cancel')} className="btn-danger"><XCircle className="mr-2 h-4 w-4" />Cancelar</button>}
           </div>
         </div>
       </header>
@@ -109,7 +110,7 @@ export default function TaskDetail() {
           ['Tempo ativo', formatSignedDuration(task.active_elapsed_seconds)],
           ['Desde o inicio', formatSignedDuration(task.elapsed_since_start_seconds)],
           ['Cronometro', task.timer_status]
-        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && task.timer_status === 'not_started' && <button type="button" onClick={() => timerAction('start')} className="btn-primary"><Play className="mr-2 h-4 w-4" />Iniciar</button>}{canOperate && task.timer_status === 'running' && <button type="button" onClick={() => timerAction('pause')} className="btn-secondary"><Pause className="mr-2 h-4 w-4" />Pausar tempo</button>}{canOperate && task.timer_status === 'paused' && <button type="button" onClick={() => timerAction('resume')} className="btn-primary"><Play className="mr-2 h-4 w-4" />Retomar</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
+        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && ['not_started', 'running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving} onClick={() => timerAction(task.timer_status === 'running' ? 'pause' : task.timer_status === 'paused' ? 'resume' : 'start')} className={task.timer_status === 'running' ? 'inline-flex h-10 items-center justify-center rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50' : 'btn-primary'}>{task.timer_status === 'running' ? <><Pause className="mr-2 h-4 w-4" />Pause</> : <><Play className="mr-2 h-4 w-4" />Iniciar</>}</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving} onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
         <p className={`mt-4 text-sm font-semibold ${task.is_overdue ? 'text-red-700' : 'text-emerald-700'}`}><span className="sr-only">Status do prazo: </span>{task.is_overdue ? 'Tarefa atrasada' : task.estimated_duration_seconds == null ? 'Estimativa nao definida' : 'Dentro do prazo'}</p>
       </section>
 
@@ -280,9 +281,10 @@ function Tests({ data, user, mutate }) {
 
 function Github({ data, user, mutate }) {
   const { task } = data;
-  const emptyGithub = { title: '', repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', notes_code: '' };
+  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', file_name: '', language: 'plaintext', code_content: '', explanation: '' };
   const [form, setForm] = useState(emptyGithub);
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState('');
   const dialogRef = useRef(null);
   const lastTrigger = useRef(null);
   const canEdit = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER')
@@ -290,16 +292,17 @@ function Github({ data, user, mutate }) {
       || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
       || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const cards = data.github_cards || (data.github ? [data.github] : []);
+  const normalizeCard = (card) => ({ ...emptyGithub, ...card, repository_url: card.repository_url || '', branch: card.branch || '', commit_sha: card.commit_sha || '', pull_request_url: card.pull_request_url || '', release: card.release || '', file_name: card.file_name || '', code_content: card.code_content || '', explanation: card.explanation || card.notes_code || '' });
   const close = () => { setOpen(false); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
   const show = (event, card = null) => {
     lastTrigger.current = event.currentTarget;
-    setForm(card ? { ...emptyGithub, ...card } : emptyGithub);
+    setForm(card ? normalizeCard(card) : emptyGithub);
     setOpen(true);
   };
   useEffect(() => {
     if (!open) return undefined;
     const dialog = dialogRef.current;
-    const focusable = () => [...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled])')];
+    const focusable = () => [...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled])')];
     focusable()[0]?.focus();
     const onKeyDown = (event) => {
       if (event.key === 'Escape') { event.preventDefault(); close(); return; }
@@ -315,25 +318,44 @@ function Github({ data, user, mutate }) {
   }, [open]);
   const save = async (event) => {
     event.preventDefault();
-    const payload = { title: form.title, repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, notes_code: form.notes_code || null };
+    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: form.language, code_content: form.code_content || null, explanation: form.explanation || null };
     const saved = await mutate(() => form.id ? api.patch(`/tasks/${task.id}/github/${form.id}`, payload) : api.post(`/tasks/${task.id}/github`, payload), form.id ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.');
     if (saved) close();
   };
+  const updateFileName = (fileName) => setForm((current) => ({ ...current, file_name: fileName, language: detectCodeLanguage(fileName) || current.language }));
+  const copyCode = async (event, card) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(card.code_content || '');
+      setCopied(card.id);
+    } catch {
+      setCopied(`error:${card.id}`);
+    }
+    window.setTimeout(() => setCopied(''), 1800);
+  };
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-5xl">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800"><span>Os vinculos tecnicos sao registrados manualmente e preservados no dossie da tarefa.</span>{canEdit && <button type="button" onClick={(event) => show(event)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Adicionar Github</button>}</div>
-      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="grid gap-3 md:grid-cols-2">{cards.map((card) => <button key={card.id} type="button" onClick={(event) => show(event, card)} className="rounded-lg border border-slate-200 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"><strong className="block truncate text-sm">{card.title}</strong><p className="mt-2 truncate text-xs text-slate-500">{card.branch || 'Sem branch'}{card.commit_sha ? ` · ${card.commit_sha}` : ''}</p>{card.notes_code && <pre className="mt-3 line-clamp-3 whitespace-pre-wrap break-words font-mono text-xs text-slate-600">{card.notes_code}</pre>}</button>)}</div>}
+      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="space-y-4">{cards.map((card) => <article key={card.id} role="button" tabIndex={0} onClick={(event) => show(event, card)} onKeyDown={(event) => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); show(event, card); } }} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"><div className="min-w-0"><p className="flex items-center gap-2 truncate text-sm font-semibold"><FileCode2 className="h-4 w-4 text-indigo-600" />{card.file_name || card.title || 'Trecho sem arquivo'}</p><p className="mt-1 text-xs text-slate-500">{card.author_name || 'Autor nao identificado'} · {formatDate(card.created_at || card.updated_at)} · {card.stage_name || 'Etapa nao registrada'}</p></div><div className="flex items-center gap-2">{card.code_content && <button type="button" onClick={(event) => copyCode(event, card)} className="btn-secondary h-8 px-3 text-xs"><Copy className="mr-1.5 h-3.5 w-3.5" />{copied === card.id ? 'Copiado' : copied === `error:${card.id}` ? 'Falha ao copiar' : 'Copiar codigo'}</button>}{canEdit && <span className="inline-flex items-center text-xs font-medium text-indigo-600"><Pencil className="mr-1 h-3.5 w-3.5" />Editar</span>}</div></header>
+        {card.code_content && <div className="border-b border-slate-200" onClick={(event) => event.stopPropagation()}><MonacoEditor height="190px" language={card.language || 'plaintext'} value={card.code_content} theme="vs" options={{ readOnly: true, domReadOnly: true, minimap: { enabled: false }, lineNumbers: 'on', folding: false, scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, renderLineHighlight: 'none', overviewRulerLanes: 0 }} /></div>}
+        {card.explanation && <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-6 text-slate-700">{card.explanation}</p>}
+        {(card.repository_url || card.branch || card.commit_sha) && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{card.repository_url || 'Repositorio nao informado'}{card.branch ? ` · ${card.branch}` : ''}{card.commit_sha ? ` · ${card.commit_sha}` : ''}</p>}
+      </article>)}</div>}
       {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
-        <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
           <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Registro GitHub' : 'Adicionar Github'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
           <form onSubmit={save} className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Input label="Titulo" value={form.title} onChange={(value) => setForm({ ...form, title: value })} className="sm:col-span-2" required maxLength={160} />
-            <Input label="Link do repositorio" type="url" value={form.repository_url} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />
+            <Input label="Arquivo" value={form.file_name} onChange={updateFileName} placeholder="src/modulo/arquivo.js" maxLength={500} />
+            <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+            <label className="text-sm font-medium sm:col-span-2">Codigo<div className="mt-1 overflow-hidden rounded-md border border-slate-300"><MonacoEditor height="380px" language={form.language} value={form.code_content} onChange={(value) => setForm({ ...form, code_content: value || '' })} theme="vs" options={{ readOnly: !canEdit, minimap: { enabled: true }, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, tabSize: 2 }} /></div></label>
+            <label className="text-sm font-medium sm:col-span-2">Explicacao tecnica<textarea rows={6} value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} readOnly={!canEdit} className="textarea-field mt-1" maxLength="50000" placeholder="Contexto, motivo e impacto deste trecho." /></label>
+            <div className="sm:col-span-2"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Vinculos opcionais</p><div className="grid gap-4 sm:grid-cols-2"><Input label="Link do repositorio" type="url" value={form.repository_url} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />
             <Input label="Branch" value={form.branch} onChange={(value) => setForm({ ...form, branch: value })} />
             <Input label="Commit" value={form.commit_sha} onChange={(value) => setForm({ ...form, commit_sha: value })} />
             <Input label="Pull Request" type="url" value={form.pull_request_url} onChange={(value) => setForm({ ...form, pull_request_url: value })} />
             <Input label="Release" value={form.release} onChange={(value) => setForm({ ...form, release: value })} />
-            <label className="text-sm font-medium sm:col-span-2">Anotacoes e codigo<textarea rows={14} value={form.notes_code} onChange={(event) => setForm({ ...form, notes_code: event.target.value })} readOnly={!canEdit} className="textarea-field mt-1 font-mono text-xs" maxLength="50000" /></label>
+            </div></div>
             <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={close} className="btn-secondary">Fechar</button>{canEdit && <button className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar</button>}</div>
           </form>
         </div>
@@ -418,6 +440,9 @@ function History({ events, timerEvents = [] }) {
 
 function Select({ value, onChange, options }) {
   return <select value={value} onChange={(e) => onChange(e.target.value)} className="field">{options.map(([optionValue, text]) => <option key={optionValue} value={optionValue}>{text}</option>)}</select>;
+}
+function MonacoEditor(props) {
+  return <Suspense fallback={<div className="flex h-full min-h-40 items-center justify-center bg-slate-950 text-sm text-slate-300"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Carregando editor...</div>}><CodeEditor {...props} /></Suspense>;
 }
 function Input({ label: inputLabel, value, onChange, className = '', ...props }) {
   return <label className={`text-sm font-medium ${className}`}>{inputLabel}<input value={value} onChange={(e) => onChange(e.target.value)} className="field mt-1" {...props} /></label>;

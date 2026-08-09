@@ -318,7 +318,12 @@ async function getTaskDetail(taskId, user) {
        WHERE approval.task_id=$1 AND approval.company_id=$2 ORDER BY approval.created_at DESC`,
       [taskId, companyId]
     ),
-    db.query('SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2 ORDER BY updated_at DESC,id DESC', [taskId, companyId]),
+    db.query(`SELECT github.*,author.name AS author_name,stage.name AS stage_name,stage.code AS stage_code
+      FROM task_github_metadata github
+      JOIN users author ON author.id=github.author_id
+      LEFT JOIN workflow_stages stage ON stage.id=github.stage_id
+      WHERE github.task_id=$1 AND github.company_id=$2
+      ORDER BY github.created_at DESC,github.id DESC`, [taskId, companyId]),
     db.query(
       `SELECT comment.*,u.name AS created_by_name,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -620,7 +625,20 @@ async function setTaskState(req, taskId, action, reason) {
     return updated;
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    throw error;
+    if (error instanceof AppError) throw error;
+    console.error('[DevFlow task state] Falha interna sanitizada.', {
+      code: String(error?.code || 'UNKNOWN').slice(0, 40),
+      request_id: req.requestId || null,
+      action
+    });
+    if (error?.code === '22P02') {
+      throw new AppError('TASK_ID_INVALID', 'Identificador da tarefa invalido.', 400);
+    }
+    throw new AppError(
+      'TASK_STATE_CONFLICT',
+      'Nao foi possivel alterar o estado da tarefa. Recarregue a pagina e tente novamente.',
+      409
+    );
   } finally {
     client.release();
   }
@@ -843,24 +861,31 @@ async function saveGithub(req, taskId, payload, cardId = null) {
       github = (await client.query(
         `UPDATE task_github_metadata SET
            title=$4,repository_url=$5,branch=$6,commit_sha=$7,pull_request_url=$8,
-           release=$9,notes_code=$10,updated_by=$11,updated_at=CURRENT_TIMESTAMP
+           release=$9,notes_code=$10,file_name=$11,language=$12,code_content=$13,
+           explanation=$14,updated_by=$15,updated_at=CURRENT_TIMESTAMP
          WHERE id=$1 AND task_id=$2 AND company_id=$3 RETURNING *`,
         [cardId, taskId, companyId, value('title'), value('repository_url'), value('branch'),
-          value('commit_sha'), value('pull_request_url'), value('release'), value('notes_code'), req.user.id]
+          value('commit_sha'), value('pull_request_url'), value('release'), value('notes_code'),
+          value('file_name'), value('language'), value('code_content'), value('explanation'), req.user.id]
       )).rows[0];
     } else {
+      const title = payload.title || payload.file_name || 'Anotacao GitHub';
       github = (await client.query(
         `INSERT INTO task_github_metadata (
            company_id,task_id,title,repository_url,branch,commit_sha,pull_request_url,
-           release,notes_code,created_by,updated_by
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
-        [companyId, taskId, payload.title, payload.repository_url || null, payload.branch || null,
+           release,notes_code,file_name,language,code_content,explanation,created_by,author_id,
+           stage_id,updated_by
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$15,$14) RETURNING *`,
+        [companyId, taskId, title, payload.repository_url || null, payload.branch || null,
           payload.commit_sha || null, payload.pull_request_url || null, payload.release || null,
-          payload.notes_code || null, req.user.id]
+          payload.notes_code || null, payload.file_name || null, payload.language || 'plaintext',
+          payload.code_content || null, payload.explanation || null, req.user.id, task.current_stage_id]
       )).rows[0];
     }
     await addEvent(client, req, taskId, cardId ? 'TASK_GITHUB_UPDATED' : 'TASK_GITHUB_ADDED',
-      cardId ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.', before, github);
+      cardId ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.',
+      before.id ? { id: before.id, file_name: before.file_name, language: before.language } : {},
+      { id: github.id, file_name: github.file_name, language: github.language, stage_id: github.stage_id });
     await client.query('COMMIT');
     return github;
   } catch (error) {
