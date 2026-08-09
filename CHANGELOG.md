@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.12-alpha] - 2026-08-09
+
+### Corrigido
+
+- Monaco editavel deixa de receber `value` e `setForm` a cada tecla; o modelo interno preserva Enter, Backspace e whitespace sem ciclos React;
+- salvamento passa a ler `editor.getValue()` diretamente, mantendo o codigo exatamente como digitado;
+- wrapper clicavel com altura minima de 400 px, borda, padding, foco programatico, placeholder e loading estavel;
+- arquivo e linguagem alinhados em uma grade compacta no modal GitHub.
+
+### Validado
+
+- regressao cobre `defaultValue`, ausencia de `onChange` no codigo, leitura no save e area minima clicavel;
+- deteccao de linguagem continua dependente apenas do nome do arquivo, sem parsing durante a digitacao do codigo.
+
 ## [0.6.11-alpha] - 2026-08-09
 
 ### Corrigido

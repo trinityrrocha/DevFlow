@@ -40,4 +40,16 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(editor).toContain('minimap: { enabled: false }');
     expect(monaco).not.toContain('http');
   });
+
+  it('mantem o modelo editavel no Monaco e le o codigo somente ao salvar', () => {
+    expect(editor).toContain('{ defaultValue: value }');
+    expect(editor).toContain('onClick={() => editorRef.current?.focus()}');
+    expect(editor).toContain("placeholder: readOnly ? undefined : 'Cole ou digite o codigo aqui...'");
+    expect(editor).toContain('loading={<EditorLoading');
+    expect(editor).not.toContain('onChange={(nextValue)');
+    expect(detail).toContain('codeEditorRef.current?.getValue()');
+    expect(detail).toContain('code_content: codeContent');
+    expect(detail).toContain('minHeight="400px"');
+    expect(detail).not.toContain('onChange={(value) => setForm({ ...form, code_content: value })');
+  });
 });

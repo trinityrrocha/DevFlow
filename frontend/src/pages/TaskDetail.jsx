@@ -299,6 +299,7 @@ function Github({ data, user, mutate, saving }) {
   const [formError, setFormError] = useState('');
   const dialogRef = useRef(null);
   const lastTrigger = useRef(null);
+  const codeEditorRef = useRef(null);
   const editorTheme = useEditorTheme();
   const canEdit = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER')
       || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
@@ -308,9 +309,10 @@ function Github({ data, user, mutate, saving }) {
   const cards = data.github_cards || (data.github ? [data.github] : []);
   const normalizeCard = (card) => ({ ...emptyGithub, ...card, language: card.language || 'plaintext', repository_url: card.repository_url || '', branch: card.branch || '', commit_sha: card.commit_sha || '', pull_request_url: card.pull_request_url || '', release: card.release || '', file_name: card.file_name || '', code_content: card.code_content || '', explanation: card.explanation || card.notes_code || '' });
   const effectiveLanguage = resolveCodeLanguage(form.file_name, form.language);
-  const close = () => { setOpen(false); setFormError(''); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
+  const close = () => { codeEditorRef.current = null; setOpen(false); setFormError(''); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
   const show = (event, card = null) => {
     lastTrigger.current = event.currentTarget;
+    codeEditorRef.current = null;
     setForm(card ? normalizeCard(card) : emptyGithub);
     setFormError('');
     setOpen(true);
@@ -334,10 +336,11 @@ function Github({ data, user, mutate, saving }) {
   }, [open]);
   const save = async (event) => {
     event.preventDefault();
-    if (!form.code_content.trim()) { setFormError('Informe o codigo da anotacao.'); return; }
-    if (new TextEncoder().encode(form.code_content).byteLength > 200000) { setFormError('O codigo excede o limite de 200 KB.'); return; }
+    const codeContent = codeEditorRef.current?.getValue() ?? form.code_content;
+    if (!codeContent.trim()) { setFormError('Informe o codigo da anotacao.'); return; }
+    if (new TextEncoder().encode(codeContent).byteLength > 200000) { setFormError('O codigo excede o limite de 200 KB.'); return; }
     setFormError('');
-    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: effectiveLanguage, code_content: form.code_content, explanation: form.explanation || null };
+    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: effectiveLanguage, code_content: codeContent, explanation: form.explanation || null };
     const saved = await mutate(() => form.id ? api.patch(`/tasks/${task.id}/github/${form.id}`, payload) : api.post(`/tasks/${task.id}/github`, payload), form.id ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.');
     if (saved) close();
   };
@@ -369,9 +372,11 @@ function Github({ data, user, mutate, saving }) {
         <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
           <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Editar anotacao GitHub' : 'Adicionar anotacao GitHub'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
           <form onSubmit={save} className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Input label="Nome ou caminho do arquivo" value={form.file_name} onChange={(fileName) => setForm({ ...form, file_name: fileName })} placeholder="backend/services/autenticacao.pas" maxLength={500} />
-            <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{value === 'auto' ? `${text} — ${codeLanguageLabel(effectiveLanguage)} detectado` : text}</option>)}</select></label>
-            <label className="text-sm font-medium sm:col-span-2">Codigo <span className="text-red-600">*</span><div className="mt-1 overflow-hidden rounded-md border border-slate-300"><MonacoEditor height="380px" language={effectiveLanguage} value={form.code_content} onChange={(value) => setForm({ ...form, code_content: value })} readOnly={!canEdit} theme={editorTheme} aria-label="Codigo da anotacao" /></div><span className="mt-1 block text-xs font-normal text-slate-500">Linguagem ativa: {codeLanguageLabel(effectiveLanguage)} · limite de 200 KB.</span></label>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2 sm:items-end">
+              <Input label="Nome ou caminho do arquivo" value={form.file_name} onChange={(fileName) => setForm({ ...form, file_name: fileName })} placeholder="backend/services/autenticacao.pas" maxLength={500} />
+              <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{value === 'auto' ? `${text} — ${codeLanguageLabel(effectiveLanguage)} detectado` : text}</option>)}</select></label>
+            </div>
+            <div className="sm:col-span-2"><p className="text-sm font-medium">Codigo <span className="text-red-600">*</span></p><MonacoEditor height="400px" minHeight="400px" wrapperClassName="mt-1" language={effectiveLanguage} value={form.code_content} onMount={(editor) => { codeEditorRef.current = editor; }} readOnly={!canEdit} theme={editorTheme} ariaLabel="Codigo da anotacao" /><span className="mt-1 block text-xs text-slate-500">Linguagem ativa: {codeLanguageLabel(effectiveLanguage)} · limite de 200 KB.</span></div>
             <label className="text-sm font-medium sm:col-span-2">Explicacao tecnica<textarea rows={6} value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} readOnly={!canEdit} className="textarea-field mt-1" maxLength="50000" placeholder="Contexto, motivo e impacto deste trecho." /></label>
             {formError && <p role="alert" className="sm:col-span-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
             <div className="sm:col-span-2"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Vinculos opcionais</p><div className="grid gap-4 sm:grid-cols-2"><Input label="Link do repositorio" type="url" value={form.repository_url} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />

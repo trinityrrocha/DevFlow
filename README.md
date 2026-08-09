@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.11-alpha**. Esta revisao amplia para 4096 MB o heap do Node durante o build Docker do frontend e isola Monaco em chunk dedicado no Vite, corrigindo o OOM observado na homologacao de `0.6.10-alpha`. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.12-alpha**. Esta revisao torna o Monaco do modal GitHub nao controlado durante a digitacao, le o modelo somente ao salvar e acrescenta uma area clicavel de 400 px com foco, placeholder e loading estavel. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

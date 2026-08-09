@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.11-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.12-alpha`.
+
+Revisao 0.6.12 implementada localmente: o Monaco editavel usa `defaultValue`, conserva seu modelo sem atualizacoes React por tecla e entrega o conteudo por `editor.getValue()` somente no save. O wrapper possui altura minima de 400 px, foco por clique, borda, padding, placeholder e loading; arquivo e linguagem foram alinhados. Testes e build locais cobrem o contrato, mas a interacao autenticada em navegador e a VPS ainda dependem de homologacao.
 
 Revisao 0.6.11 implementada localmente: o estagio Docker do frontend recebe `NODE_OPTIONS=--max-old-space-size=4096` imediatamente antes do build e o Rollup isola `monaco-editor` e `@monaco-editor` em chunk dedicado. A mudanca corrige a causa identificada do rollback de `0.6.10-alpha`. O build local foi validado; Docker e VPS reais dependem de nova homologacao.
 

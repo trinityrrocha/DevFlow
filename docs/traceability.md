@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.11-alpha`
+## Instalacao isolada `0.6.12-alpha`
+
+| Revisao 0.6.12 | Evidencia |
+|---|---|
+| Estado do Monaco | `CodeEditor.jsx` usa `defaultValue` no modo editavel; `TaskDetail.jsx` le `editor.getValue()` somente ao salvar |
+| Foco e sizing | wrapper com `minHeight=400px`, borda, padding, `onClick` e `focus()` |
+| Feedback visual | placeholder nativo e `loading` com spinner sem colapso de layout |
+| Digitacao leve | nenhum `setForm` ou deteccao de linguagem e executado no `onChange` do codigo |
+| Regressao | `taskExperience.test.js` protege o modelo nao controlado e a area clicavel |
 
 | Revisao 0.6.11 | Evidencia |
 |---|---|
