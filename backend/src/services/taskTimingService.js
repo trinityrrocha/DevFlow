@@ -1,5 +1,5 @@
 const db = require('../config/database');
-const { assert } = require('../utils/errors');
+const { AppError, assert } = require('../utils/errors');
 const workflow = require('./workflowService');
 const { hasPermission } = require('./tenantService');
 const { notifyOverdue } = require('./notificationService');
@@ -40,7 +40,8 @@ async function updateEstimate(req, taskId, seconds) {
 }
 
 async function timerAction(req, taskId, action) {
-  return db.transaction(async (client) => {
+  try {
+    return await db.transaction(async (client) => {
     const task = (await client.query(`SELECT t.*,s.responsibility,s.tracks_time,s.completes_task,s.code AS stage,s.name AS stage_name FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL FOR UPDATE OF t`, [taskId, req.user.company_id])).rows[0];
     assert(task, 'TASK_NOT_FOUND', 'Tarefa nao encontrada.', 404);
     assert(canOperateTimer(req.user, task, task), 'TIMER_FORBIDDEN', 'Voce nao pode operar o cronometro desta etapa.', 403);
@@ -69,7 +70,17 @@ async function timerAction(req, taskId, action) {
     if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, next, task.estimated_duration_seconds, active]);
     if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);
     return { ...updated, ...timingSnapshot(updated), became_overdue: overdue && !task.is_overdue };
-  });
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (error.code === '22P02') {
+      throw new AppError('TASK_ID_INVALID', 'Identificador da tarefa invalido.', 400);
+    }
+    if (['23502', '23503', '23505', '23514'].includes(error.code)) {
+      throw new AppError('TIMER_CONFLICT', 'Nao foi possivel iniciar o cronometro no estado atual da tarefa.', 409);
+    }
+    throw error;
+  }
 }
 
 module.exports = { MAX_ESTIMATE_SECONDS, timingSnapshot, canOperateTimer, updateEstimate, timerAction };

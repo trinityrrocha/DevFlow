@@ -35,6 +35,12 @@ describe('visibilidade Roadmap e cronometros', () => {
     expect(canOperateTimer({ id: 'admin', permissions: ['tasks.manage'], profiles: [] }, task, task)).toBe(true);
   });
 
+  it('converte falhas conhecidas do PostgreSQL em respostas controladas', () => {
+    expect(timingService).toContain("error.code === '22P02'");
+    expect(timingService).toContain("'TIMER_CONFLICT'");
+    expect(timingService).toContain(', 409)');
+  });
+
   it('aplica Roadmap em lista, detalhe, relacionados, dashboard e notificacoes', () => {
     for (const source of [taskService, dashboardService, notificationController]) {
       expect(source).toMatch(/ROADMAP/);

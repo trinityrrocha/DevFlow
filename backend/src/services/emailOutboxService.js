@@ -3,6 +3,7 @@ const nodemailer = require('nodemailer');
 const db = require('../config/database');
 const env = require('../config/env');
 const { renderTemplate } = require('./emailTemplateService');
+const { deliverySettings, transportOptions } = require('./smtpSettingsService');
 
 const key = Buffer.from(env.CONFIG_ENCRYPTION_KEY, 'base64');
 
@@ -20,22 +21,14 @@ function decryptPayload(value) {
   return JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8'));
 }
 
-function smtpConfigured() {
-  return env.SMTP_ENABLED && Boolean(env.SMTP_HOST && env.SMTP_FROM);
+async function smtpConfigured() {
+  try { return Boolean(await deliverySettings()); } catch { return false; }
 }
 
-function createTransport() {
-  if (!smtpConfigured()) return null;
-  return nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    requireTLS: !env.SMTP_SECURE,
-    auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD } : undefined,
-    connectionTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
-    greetingTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
-    socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS
-  });
+async function createTransport() {
+  const settings = await deliverySettings();
+  if (!settings) return null;
+  return { transporter: nodemailer.createTransport(transportOptions(settings)), settings };
 }
 
 async function enqueueEmail(queryable, job) {
@@ -72,8 +65,9 @@ async function claimBatch(limit = env.EMAIL_WORKER_BATCH_SIZE) {
   });
 }
 
-async function processJob(job, mailer = createTransport()) {
-  if (!mailer) {
+async function processJob(job, mailer) {
+  const transport = mailer || await createTransport();
+  if (!transport) {
     await db.query(
       `UPDATE email_outbox SET status='PENDING',locked_at=NULL,available_at=CURRENT_TIMESTAMP+INTERVAL '5 minutes',
        last_error_code='SMTP_NOT_CONFIGURED',updated_at=CURRENT_TIMESTAMP WHERE id=$1`, [job.id]
@@ -82,9 +76,11 @@ async function processJob(job, mailer = createTransport()) {
   }
   try {
     const rendered = renderTemplate(job.template_code, decryptPayload(job.encrypted_payload));
-    await mailer.sendMail({
-      from: env.SMTP_FROM,
-      replyTo: env.SMTP_REPLY_TO || undefined,
+    const transporter = transport.transporter || transport;
+    const settings = transport.settings || {};
+    await transporter.sendMail({
+      from: settings.from_email ? { name: settings.from_name || 'DevFlow', address: settings.from_email } : env.SMTP_FROM,
+      replyTo: settings.reply_to || env.SMTP_REPLY_TO || undefined,
       to: job.recipient_email,
       subject: rendered.subject,
       text: rendered.body
@@ -126,10 +122,15 @@ async function processJob(job, mailer = createTransport()) {
 
 async function processBatch() {
   const jobs = await claimBatch();
-  const mailer = createTransport();
-  const results = [];
-  for (const job of jobs) results.push(await processJob(job, mailer));
-  return results;
+  const mailer = await createTransport();
+  try {
+    const results = [];
+    for (const job of jobs) results.push(await processJob(job, mailer));
+    return results;
+  } finally {
+    mailer?.transporter?.close?.();
+    if (mailer?.settings?.password) mailer.settings.password = '';
+  }
 }
 
 module.exports = {

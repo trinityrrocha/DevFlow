@@ -27,7 +27,7 @@ O contrato usa o cookie `devflow_csrf` e o header `X-CSRF-Token`. O token possui
 
 ## E-mail e recuperacao
 
-O SMTP e opt-in por `SMTP_ENABLED=true`, exige remetente e host, usa TLS, timeouts e credenciais somente no ambiente privado. Jobs idempotentes sao gravados no PostgreSQL dentro da transacao de negocio. Tokens sao persistidos apenas como SHA-256; o payload temporario da outbox e cifrado com AES-256-GCM e apagado apos a entrega. Logs do worker registram apenas ID, estado e codigo sanitizado. Eventos criticos de seguranca nao podem ser desativados pelas preferencias.
+O SMTP e opt-in, exige remetente e host, usa TLS e timeouts. Credenciais podem vir do ambiente privado ou da configuracao persistente cifrada com AES-256-GCM; a API retorna apenas a indicacao de senha existente. Jobs idempotentes sao gravados no PostgreSQL dentro da transacao de negocio. Tokens sao persistidos apenas como SHA-256; o payload temporario da outbox e cifrado com AES-256-GCM e apagado apos a entrega. Logs do worker registram apenas ID, estado e codigo sanitizado. Eventos criticos de seguranca nao podem ser desativados pelas preferencias.
 
 ## TLS e proxy
 

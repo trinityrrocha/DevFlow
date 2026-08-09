@@ -1,6 +1,14 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.6-alpha`
+## Instalacao isolada `0.6.7-alpha`
+
+| Revisao 0.6.7 | Evidencia |
+|---|---|
+| SMTP persistente | migration `008_smtp_settings_and_github_cards.sql`, `smtpSettingsService.js` e rotas Super Admin com CSRF |
+| GitHub 1:N | chave propria por registro, rotas POST/PATCH, cards e modal com focus trap |
+| Lista priorizada | `ORDER BY CASE`, linhas de 40 px, avatares e campos compactos |
+| Cronometro | codigos PostgreSQL conhecidos convertidos em 400/409 pelo `taskTimingService.js` |
+| Update pelo painel | POST com MFA e polling de `/api/health` a cada cinco segundos |
 
 | Update transacional | Evidencia |
 |---|---|

@@ -175,7 +175,7 @@ async function requestOwnEmailChange(req, res) {
   const user = (await db.query('SELECT * FROM users WHERE id=$1 AND is_active=TRUE AND deleted_at IS NULL', [req.user.id])).rows[0];
   assert(user && await argon2.verify(user.password_hash, payload.current_password).catch(() => false), 'CURRENT_PASSWORD_INVALID', 'A senha atual esta incorreta.', 400);
   assert(payload.new_email !== user.email.toLowerCase(), 'EMAIL_UNCHANGED', 'Informe um e-mail diferente do atual.', 400);
-  assert(smtpConfigured(), 'SMTP_NOT_CONFIGURED', 'O envio de e-mail nao esta configurado. O endereco atual foi preservado.', 503);
+  assert(await smtpConfigured(), 'SMTP_NOT_CONFIGURED', 'O envio de e-mail nao esta configurado. O endereco atual foi preservado.', 503);
   const duplicate = await db.query('SELECT 1 FROM users WHERE (LOWER(email)=$1 OR LOWER(pending_email)=$1) AND id<>$2 AND deleted_at IS NULL', [payload.new_email, user.id]);
   assert(!duplicate.rowCount, 'EMAIL_IN_USE', 'Este e-mail ja esta em uso.', 409);
   const token = crypto.randomBytes(32).toString('base64url');

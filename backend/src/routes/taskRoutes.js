@@ -15,7 +15,8 @@ router.post('/:id/timer', requirePermission('tasks.operate'), controller.timerAc
 router.put('/:id/submission', requirePermission('tasks.operate'), controller.saveSubmission);
 router.post('/:id/tests', requirePermission('tasks.operate'), controller.addTest);
 router.post('/:id/approvals', requirePermission('tasks.operate'), controller.addApproval);
-router.put('/:id/github', requirePermission('tasks.operate'), controller.saveGithub);
+router.post('/:id/github', requirePermission('tasks.operate'), controller.addGithub);
+router.patch('/:id/github/:cardId', requirePermission('tasks.operate'), controller.updateGithub);
 router.post('/:id/comments', requirePermission('tasks.operate'), controller.addComment);
 router.post('/:id/attachments', requirePermission('tasks.operate'), attachmentService.upload.single('file'), controller.uploadAttachment);
 router.get('/:id/attachments/:attachmentId', requirePermission('tasks.view'), controller.downloadAttachment);

@@ -1,9 +1,7 @@
 const { z } = require('zod');
 const db = require('../config/database');
-const env = require('../config/env');
-const { enqueueEmail, smtpConfigured } = require('../services/emailOutboxService');
+const smtpSettings = require('../services/smtpSettingsService');
 const { recordAudit } = require('../services/auditService');
-const { AppError } = require('../utils/errors');
 
 const visibility = `(n.task_id IS NULL OR $3::boolean
   OR ((UPPER(s.code)='ROADMAP' OR LOWER(TRIM(s.name))='roadmap') AND t.created_by=$2)
@@ -82,32 +80,33 @@ async function updatePreferences(req, res) {
   res.json({ preferences: result.rows[0] });
 }
 
-function emailStatus(_req, res) {
-  res.json({
-    enabled: env.SMTP_ENABLED,
-    configured: smtpConfigured(),
-    host_configured: Boolean(env.SMTP_HOST),
-    sender_configured: Boolean(env.SMTP_FROM),
-    host: env.SMTP_HOST || null,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    authentication_configured: Boolean(env.SMTP_USER),
-    from: env.SMTP_FROM || null,
-    reply_to: env.SMTP_REPLY_TO || null,
-    configuration_source: '/opt/devflow/config/devflow.env',
-    worker: 'email_outbox'
-  });
+async function emailStatus(_req, res) {
+  res.json(await smtpSettings.getSettings());
 }
 
 async function testEmail(req, res) {
-  if (!smtpConfigured()) throw new AppError('SMTP_NOT_CONFIGURED', 'Configure e habilite o SMTP antes de enviar um teste.', 409);
-  const idempotencyKey = `smtp-test:${req.user.id}:${Date.now()}`;
-  await enqueueEmail(db, {
-    companyId: req.user.company_id, userId: req.user.id, email: req.user.email,
-    template: 'SMTP_TEST', data: { name: req.user.name }, idempotencyKey
-  });
-  await recordAudit({ req, operation: 'SMTP_TEST_QUEUED', entityType: 'USER', entityId: req.user.id });
-  res.status(202).json({ message: 'E-mail de teste colocado na fila.', idempotency_key: idempotencyKey });
+  const to = z.string().trim().email().max(320).optional().parse(req.body?.to) || req.user.email;
+  try {
+    const result = await smtpSettings.testConnection(to);
+    await recordAudit({ req, operation: 'SMTP_TEST_SUCCEEDED', entityType: 'SYSTEM_SMTP', entityId: req.user.id });
+    res.json(result);
+  } catch (error) {
+    await recordAudit({ req, operation: 'SMTP_TEST_FAILED', entityType: 'SYSTEM_SMTP', entityId: req.user.id, status: 'FAILED', newValues: { reason: error.code || 'SMTP_TEST_FAILED' } });
+    throw error;
+  }
 }
 
-module.exports = { listNotifications, markRead, markAllRead, getPreferences, updatePreferences, emailStatus, testEmail };
+async function saveEmailSettings(req, res) {
+  const payload = z.object({
+    enabled: z.boolean(), host: z.string().max(255), port: z.coerce.number().int().min(1).max(65535),
+    security: z.enum(['ssl_tls', 'starttls']), username: z.string().max(320),
+    password: z.string().max(4096).optional(), from_name: z.string().max(160),
+    from_email: z.string().max(320), reply_to: z.string().max(320),
+    timeout_seconds: z.coerce.number().int().min(1).max(120)
+  }).parse(req.body);
+  const settings = await smtpSettings.saveSettings(payload, req.user.id);
+  await recordAudit({ req, operation: 'SMTP_SETTINGS_UPDATED', entityType: 'SYSTEM_SMTP', entityId: req.user.id, newValues: { enabled: settings.enabled, host: settings.host, port: settings.port, security: settings.security, password_changed: Boolean(payload.password) } });
+  res.json(settings);
+}
+
+module.exports = { listNotifications, markRead, markAllRead, getPreferences, updatePreferences, emailStatus, testEmail, saveEmailSettings };

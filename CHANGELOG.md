@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.7-alpha] - 2026-08-08
+
+### Adicionado
+
+- configuracao SMTP persistente, cifrada com AES-256-GCM, teste direto com diagnostico sanitizado e uso centralizado pela outbox;
+- multiplos registros GitHub por tarefa, com migration 008, cards e modal acessivel para anotacoes tecnicas;
+- acompanhamento do update pelo health publico a cada cinco segundos, com recarga e aviso quando a nova versao retorna.
+
+### Corrigido
+
+- lista de tarefas compactada em linhas de 40 px, avatares, duracoes e datas em linha unica;
+- ordenacao padrao por Urgente Producao, Bug, Critica, Alta, Media e Baixa, com desempate pelas tarefas mais recentes;
+- erros conhecidos do cronometro convertidos em respostas 400/409, sem mascarar falhas inesperadas;
+- solicitacao de update passa a exigir MFA alem de sessao Super Admin e CSRF.
+
+### Seguranca
+
+- senha SMTP nunca retorna pela API nem entra em auditoria; testes possuem rate limit e retornam somente falhas sanitizadas;
+- anotacoes GitHub sao renderizadas como texto simples, sem interpretacao de HTML.
+
 ## [0.6.6-alpha] - 2026-08-07
 
 ### Corrigido

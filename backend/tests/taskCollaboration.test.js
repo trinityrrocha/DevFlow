@@ -10,7 +10,7 @@ describe('cadastros e dossie tecnico da tarefa', () => {
   const taskService = read('src/services/taskService.js');
   const timingService = read('src/services/taskTimingService.js');
   const attachmentService = read('src/services/attachmentService.js');
-  const migration = read('../database/migrations/007_task_collaboration_and_generated_codes.sql');
+  const migration = `${read('../database/migrations/007_task_collaboration_and_generated_codes.sql')}\n${read('../database/migrations/008_smtp_settings_and_github_cards.sql')}`;
 
   it('aceita filtro de cliente vazio sem tentar validar UUID vazio', () => {
     expect(catalogController).toContain("value === '' ? undefined : value");
@@ -30,8 +30,8 @@ describe('cadastros e dossie tecnico da tarefa', () => {
     expect(timingService).not.toContain('`${action.toUpperCase()}D`');
   });
 
-  it('persiste perfis testados, referencia de codigo e anexos contextualizados', () => {
-    for (const field of ['tested_as_super_admin', 'tested_as_admin', 'tested_as_user', 'code_reference']) {
+  it('persiste perfis testados, registros GitHub 1:N e anexos contextualizados', () => {
+    for (const field of ['tested_as_super_admin', 'tested_as_admin', 'tested_as_user', 'notes_code']) {
       expect(taskController).toContain(field);
       expect(taskService).toContain(field);
       expect(migration).toContain(field);
@@ -39,5 +39,7 @@ describe('cadastros e dossie tecnico da tarefa', () => {
     expect(attachmentService).toContain('context.test_id');
     expect(attachmentService).toContain('context.comment_id');
     expect(taskService).toContain('AS attachments');
+    expect(migration).toContain('PRIMARY KEY (id)');
+    expect(taskService).toContain('github_cards: github.rows');
   });
 });

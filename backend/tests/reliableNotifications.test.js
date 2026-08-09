@@ -7,6 +7,7 @@ const {
 const db = require('../src/config/database');
 const { renderTemplate } = require('../src/services/emailTemplateService');
 const { exemptPaths } = require('../src/middleware/csrfMiddleware');
+const { encryptSecret, decryptSecret } = require('../src/services/configSecretService');
 
 describe('outbox de e-mail confiavel', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -17,6 +18,14 @@ describe('outbox de e-mail confiavel', () => {
     expect(decryptPayload(encrypted)).toEqual(source);
   });
 
+  it('cifra a senha SMTP sem persistir texto puro', () => {
+    const password = 'smtp-password-with-symbols-!@#';
+    const encrypted = encryptSecret(password);
+    expect(encrypted).not.toContain(password);
+    expect(encrypted.split('.')).toHaveLength(4);
+    expect(decryptSecret(encrypted)).toBe(password);
+  });
+
   it('limita retry exponencial e sanitiza erros sem mensagem sensivel', () => {
     expect(backoffSeconds(1)).toBe(30);
     expect(backoffSeconds(20)).toBe(3600);
@@ -24,8 +33,8 @@ describe('outbox de e-mail confiavel', () => {
     expect(safeErrorCode({ code: 'EAUTH:password=secret' })).toBe('DELIVERY_ERROR');
   });
 
-  it('nao considera SMTP habilitado somente pela presenca de host', () => {
-    expect(smtpConfigured()).toBe(false);
+  it('nao considera SMTP habilitado somente pela presenca de host', async () => {
+    expect(await smtpConfigured()).toBe(false);
   });
 
   it('renderiza links controlados para recuperacao e tarefas', () => {

@@ -1,6 +1,6 @@
 # Notificacoes, e-mail e recuperacao
 
-Versao de referencia: `0.6.6-alpha`. Implementacao destinada a homologacao, nao aprovada para producao.
+Versao de referencia: `0.6.7-alpha`. Implementacao destinada a homologacao, nao aprovada para producao.
 
 ## Fluxo confiavel
 
@@ -31,7 +31,7 @@ PASSWORD_RESET_TTL_MINUTES=30
 
 `SMTP_SECURE=true` usa TLS implicito, normalmente na porta 465. Com `false`, o transport exige upgrade TLS. O arquivo real continua em `/opt/devflow/config/devflow.env`, modo `0600`; nao coloque credenciais no Git.
 
-O Super Admin consulta somente o estado booleano da configuracao em Sistema > Atualizacoes e pode enfileirar um e-mail de teste. A API nunca devolve host, usuario ou senha.
+O Super Admin pode administrar host, porta, modo TLS, usuario, remetente e timeout em Sistema > Servidor SMTP. A senha e cifrada no PostgreSQL com AES-256-GCM usando `CONFIG_ENCRYPTION_KEY`; o GET retorna apenas `has_password`, nunca o segredo. Se ainda nao houver configuracao persistente, as variaveis protegidas acima servem como fallback. O teste valida a conexao e envia uma mensagem diretamente, com rate limit e diagnostico sanitizado por fase (`verify` ou `send`). As rotas de gravacao e teste exigem sessao Super Admin e CSRF.
 
 ## Recuperacao
 
@@ -43,4 +43,4 @@ Notificacoes internas e por e-mail, movimentacoes, atribuicoes e atrasos podem s
 
 ## Homologacao pendente
 
-Na VPS, validar migration 006, health do `devflow-worker`, SMTP real, TLS, timeout, indisponibilidade, retry, entrega, recuperacao expirada/usada, preferencias, Roadmap e ausencia de segredos nos logs. Esses testes nao foram executados no Windows.
+Na VPS, validar migrations 006 e 008, health do `devflow-worker`, SMTP real, TLS, timeout, teste direto, indisponibilidade, retry, entrega, recuperacao expirada/usada, preferencias, Roadmap e ausencia de segredos nos logs. Esses testes nao foram executados no Windows.

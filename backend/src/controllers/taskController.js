@@ -129,17 +129,29 @@ async function addApproval(req, res) {
   res.status(201).json({ approval });
 }
 
-async function saveGithub(req, res) {
-  const payload = z.object({
-    repository_url: z.string().url().nullable().optional(),
+const optionalUrl = z.preprocess((value) => value === '' ? null : value, z.string().url().nullable().optional());
+const githubFields = {
+    title: z.string().trim().min(2).max(160),
+    repository_url: optionalUrl,
     branch: z.string().trim().max(255).nullable().optional(),
     commit_sha: z.string().trim().max(64).nullable().optional(),
-    pull_request_url: z.string().url().nullable().optional(),
+    pull_request_url: optionalUrl,
     release: z.string().trim().max(255).nullable().optional(),
-    code_reference: z.string().trim().max(20000).nullable().optional()
-  }).parse(req.body);
+    notes_code: z.string().max(50000).nullable().optional()
+};
+
+async function addGithub(req, res) {
+  const payload = z.object(githubFields).parse(req.body);
   const github = await taskService.saveGithub(req, req.params.id, payload);
-  await recordAudit({ req, operation: 'TASK_GITHUB_SAVED', entityType: 'TASK', entityId: req.params.id, newValues: payload });
+  await recordAudit({ req, operation: 'TASK_GITHUB_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null } });
+  res.status(201).json({ github });
+}
+
+async function updateGithub(req, res) {
+  const payload = z.object({ ...githubFields, title: githubFields.title.optional() }).partial()
+    .refine((value) => Object.keys(value).length > 0, { message: 'Informe ao menos um campo.' }).parse(req.body);
+  const github = await taskService.saveGithub(req, req.params.id, payload, req.params.cardId);
+  await recordAudit({ req, operation: 'TASK_GITHUB_UPDATED', entityType: 'TASK', entityId: req.params.id, newValues: { ...payload, notes_code: payload.notes_code ? '[REDACTED_CONTENT]' : null } });
   res.json({ github });
 }
 
@@ -181,6 +193,6 @@ async function deleteAttachment(req, res) {
 
 module.exports = {
   createTask, listTasks, detail, transition, stateAction, updateAdministration,
-  saveSubmission, addTest, addApproval, saveGithub, addComment,
+  saveSubmission, addTest, addApproval, addGithub, updateGithub, addComment,
   uploadAttachment, downloadAttachment, deleteAttachment, timerAction
 };

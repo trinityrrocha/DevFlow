@@ -83,6 +83,13 @@ function requireSuperAdmin(req, _res, next) {
   next();
 }
 
+function requireMfa(req, _res, next) {
+  if (req.user?.mfa_enabled !== true) {
+    return next(new AppError('MFA_REQUIRED', 'Configure e valide o MFA antes desta operacao sensivel.', 403));
+  }
+  next();
+}
+
 function requirePermission(code) {
   return (req, _res, next) => {
     if (!hasPermission(req.user, code)) {
@@ -92,4 +99,4 @@ function requirePermission(code) {
   };
 }
 
-module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requirePermission };
+module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requireMfa, requirePermission };

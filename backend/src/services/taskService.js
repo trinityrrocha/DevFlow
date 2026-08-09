@@ -243,7 +243,15 @@ async function listTasks(user, filters) {
      JOIN users backend ON backend.id=t.backend_assignee_id
      JOIN users frontend ON frontend.id=t.frontend_assignee_id
      WHERE ${conditions.join(' AND ')}
-     ORDER BY p.sort_order DESC,t.created_at DESC
+     ORDER BY CASE
+       WHEN UPPER(p.code) IN ('URGENT_PRODUCTION','URGENTE_PRODUCAO') OR UPPER(p.name) IN ('URGENTE PRODUCAO','URGENTE PRODUÇÃO') THEN 1
+       WHEN t.kind='BUG' OR UPPER(p.code)='BUG' OR UPPER(p.name)='BUG' THEN 2
+       WHEN UPPER(p.code) IN ('CRITICAL','CRITICA') OR UPPER(p.name) IN ('CRITICA','CRÍTICA') THEN 3
+       WHEN UPPER(p.code) IN ('HIGH','ALTA') OR UPPER(p.name)='ALTA' THEN 4
+       WHEN UPPER(p.code) IN ('MEDIUM','MEDIA') OR UPPER(p.name) IN ('MEDIA','MÉDIA') THEN 5
+       WHEN UPPER(p.code) IN ('LOW','BAIXA') OR UPPER(p.name)='BAIXA' THEN 6
+       ELSE 7 END,
+       t.created_at DESC
      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
     [...values, limit, (page - 1) * limit]
   );
@@ -310,7 +318,7 @@ async function getTaskDetail(taskId, user) {
        WHERE approval.task_id=$1 AND approval.company_id=$2 ORDER BY approval.created_at DESC`,
       [taskId, companyId]
     ),
-    db.query('SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2', [taskId, companyId]),
+    db.query('SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2 ORDER BY updated_at DESC,id DESC', [taskId, companyId]),
     db.query(
       `SELECT comment.*,u.name AS created_by_name,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -397,6 +405,7 @@ async function getTaskDetail(taskId, user) {
     tests: tests.rows,
     approvals: approvals.rows,
     github: github.rows[0] || null,
+    github_cards: github.rows,
     comments: comments.rows,
     attachments: attachments.rows,
     events: events.rows,
@@ -425,7 +434,7 @@ async function loadTransitionContext(client, task) {
       [task.id, task.company_id]
     ),
     client.query(
-      'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2',
+      'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2 ORDER BY updated_at DESC,id DESC LIMIT 1',
       [task.id, task.company_id]
     )
   ]);
@@ -811,7 +820,7 @@ async function addApproval(req, taskId, payload) {
   }
 }
 
-async function saveGithub(req, taskId, payload) {
+async function saveGithub(req, taskId, payload, cardId = null) {
   const companyId = req.user.company_id;
   const client = await db.pool.connect();
   try {
@@ -822,27 +831,36 @@ async function saveGithub(req, taskId, payload) {
       [task.current_stage_id, companyId]
     )).rows[0];
     assert(workflow.canOperateStage(req.user, task, stage), 'STAGE_FORBIDDEN', 'Você não é responsável por esta etapa.', 403);
-    const before = (await client.query(
-      'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2',
-      [taskId, companyId]
-    )).rows[0] || {};
-    const github = (await client.query(
-      `INSERT INTO task_github_metadata (
-         company_id,task_id,repository_url,branch,commit_sha,pull_request_url,release,code_reference,updated_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (task_id) DO UPDATE SET
-         repository_url=EXCLUDED.repository_url,branch=EXCLUDED.branch,
-         commit_sha=EXCLUDED.commit_sha,pull_request_url=EXCLUDED.pull_request_url,
-         release=EXCLUDED.release,code_reference=EXCLUDED.code_reference,
-         updated_by=EXCLUDED.updated_by,updated_at=CURRENT_TIMESTAMP
-       RETURNING *`,
-      [
-        companyId, taskId, payload.repository_url || null, payload.branch || null,
-        payload.commit_sha || null, payload.pull_request_url || null,
-        payload.release || null, payload.code_reference || null, req.user.id
-      ]
-    )).rows[0];
-    await addEvent(client, req, taskId, 'TASK_GITHUB_SAVED', 'Metadados do GitHub atualizados.', before, payload);
+    let before = {};
+    let github;
+    if (cardId) {
+      before = (await client.query(
+        'SELECT * FROM task_github_metadata WHERE id=$1 AND task_id=$2 AND company_id=$3 FOR UPDATE',
+        [cardId, taskId, companyId]
+      )).rows[0];
+      assert(before, 'GITHUB_CARD_NOT_FOUND', 'Registro GitHub nao encontrado.', 404);
+      const value = (field) => Object.prototype.hasOwnProperty.call(payload, field) ? payload[field] : before[field];
+      github = (await client.query(
+        `UPDATE task_github_metadata SET
+           title=$4,repository_url=$5,branch=$6,commit_sha=$7,pull_request_url=$8,
+           release=$9,notes_code=$10,updated_by=$11,updated_at=CURRENT_TIMESTAMP
+         WHERE id=$1 AND task_id=$2 AND company_id=$3 RETURNING *`,
+        [cardId, taskId, companyId, value('title'), value('repository_url'), value('branch'),
+          value('commit_sha'), value('pull_request_url'), value('release'), value('notes_code'), req.user.id]
+      )).rows[0];
+    } else {
+      github = (await client.query(
+        `INSERT INTO task_github_metadata (
+           company_id,task_id,title,repository_url,branch,commit_sha,pull_request_url,
+           release,notes_code,created_by,updated_by
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
+        [companyId, taskId, payload.title, payload.repository_url || null, payload.branch || null,
+          payload.commit_sha || null, payload.pull_request_url || null, payload.release || null,
+          payload.notes_code || null, req.user.id]
+      )).rows[0];
+    }
+    await addEvent(client, req, taskId, cardId ? 'TASK_GITHUB_UPDATED' : 'TASK_GITHUB_ADDED',
+      cardId ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.', before, github);
     await client.query('COMMIT');
     return github;
   } catch (error) {

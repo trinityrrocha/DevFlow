@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Clock3, Download, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Play, RotateCcw, Save, Send, ShieldCheck, TestTube2, Upload, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, CheckCircle2, Clock3, Download, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Upload, X, XCircle } from 'lucide-react';
 import { Link, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
@@ -49,8 +49,10 @@ export default function TaskDetail() {
       await operation();
       setMessage(success);
       await load();
+      return true;
     } catch (requestError) {
       setError(errorMessage(requestError));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -278,26 +280,65 @@ function Tests({ data, user, mutate }) {
 
 function Github({ data, user, mutate }) {
   const { task } = data;
-  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', code_reference: '' };
-  const [form, setForm] = useState(data.github || emptyGithub);
+  const emptyGithub = { title: '', repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', notes_code: '' };
+  const [form, setForm] = useState(emptyGithub);
+  const [open, setOpen] = useState(false);
+  const dialogRef = useRef(null);
+  const lastTrigger = useRef(null);
   const canEdit = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER')
       || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
       || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
       || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
-  useEffect(() => setForm(data.github || { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', code_reference: '' }), [data.github]);
+  const cards = data.github_cards || (data.github ? [data.github] : []);
+  const close = () => { setOpen(false); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
+  const show = (event, card = null) => {
+    lastTrigger.current = event.currentTarget;
+    setForm(card ? { ...emptyGithub, ...card } : emptyGithub);
+    setOpen(true);
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    const dialog = dialogRef.current;
+    const focusable = () => [...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled])')];
+    focusable()[0]?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0]; const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    dialog.addEventListener('keydown', onKeyDown);
+    return () => dialog.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+  const save = async (event) => {
+    event.preventDefault();
+    const payload = { title: form.title, repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, notes_code: form.notes_code || null };
+    const saved = await mutate(() => form.id ? api.patch(`/tasks/${task.id}/github/${form.id}`, payload) : api.post(`/tasks/${task.id}/github`, payload), form.id ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.');
+    if (saved) close();
+  };
   return (
-    <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.put(`/tasks/${task.id}/github`, form), 'Metadados GitHub salvos.'); }} className="mx-auto max-w-2xl">
-      <div className="mb-5 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">Integração automática será adicionada futuramente. Nesta fase, os vínculos são registrados manualmente.</div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="Link do repositório" value={form.repository_url || ''} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />
-        <Input label="Branch" value={form.branch || ''} onChange={(value) => setForm({ ...form, branch: value })} />
-        <Input label="Commit" value={form.commit_sha || ''} onChange={(value) => setForm({ ...form, commit_sha: value })} />
-        <Input label="Pull Request" value={form.pull_request_url || ''} onChange={(value) => setForm({ ...form, pull_request_url: value })} />
-        <Input label="Release" value={form.release || ''} onChange={(value) => setForm({ ...form, release: value })} />
-        <label className="text-sm font-medium sm:col-span-2">Codigo em alteracao<input value={form.code_reference || ''} onChange={(event) => setForm({ ...form, code_reference: event.target.value })} className="field mt-1 font-mono text-xs" placeholder="src/modulo/arquivo.js: funcaoOuTrecho" maxLength="20000" /></label>
-      </div>
-      {canEdit && <button className="btn-primary mt-4"><Save className="mr-2 h-4 w-4" />Salvar GitHub</button>}
-    </form>
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800"><span>Os vinculos tecnicos sao registrados manualmente e preservados no dossie da tarefa.</span>{canEdit && <button type="button" onClick={(event) => show(event)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Adicionar Github</button>}</div>
+      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="grid gap-3 md:grid-cols-2">{cards.map((card) => <button key={card.id} type="button" onClick={(event) => show(event, card)} className="rounded-lg border border-slate-200 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"><strong className="block truncate text-sm">{card.title}</strong><p className="mt-2 truncate text-xs text-slate-500">{card.branch || 'Sem branch'}{card.commit_sha ? ` · ${card.commit_sha}` : ''}</p>{card.notes_code && <pre className="mt-3 line-clamp-3 whitespace-pre-wrap break-words font-mono text-xs text-slate-600">{card.notes_code}</pre>}</button>)}</div>}
+      {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
+          <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Registro GitHub' : 'Adicionar Github'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+          <form onSubmit={save} className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Input label="Titulo" value={form.title} onChange={(value) => setForm({ ...form, title: value })} className="sm:col-span-2" required maxLength={160} />
+            <Input label="Link do repositorio" type="url" value={form.repository_url} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />
+            <Input label="Branch" value={form.branch} onChange={(value) => setForm({ ...form, branch: value })} />
+            <Input label="Commit" value={form.commit_sha} onChange={(value) => setForm({ ...form, commit_sha: value })} />
+            <Input label="Pull Request" type="url" value={form.pull_request_url} onChange={(value) => setForm({ ...form, pull_request_url: value })} />
+            <Input label="Release" value={form.release} onChange={(value) => setForm({ ...form, release: value })} />
+            <label className="text-sm font-medium sm:col-span-2">Anotacoes e codigo<textarea rows={14} value={form.notes_code} onChange={(event) => setForm({ ...form, notes_code: event.target.value })} readOnly={!canEdit} className="textarea-field mt-1 font-mono text-xs" maxLength="50000" /></label>
+            <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={close} className="btn-secondary">Fechar</button>{canEdit && <button className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar</button>}</div>
+          </form>
+        </div>
+      </div>}
+    </div>
   );
 }
 
@@ -378,6 +419,6 @@ function History({ events, timerEvents = [] }) {
 function Select({ value, onChange, options }) {
   return <select value={value} onChange={(e) => onChange(e.target.value)} className="field">{options.map(([optionValue, text]) => <option key={optionValue} value={optionValue}>{text}</option>)}</select>;
 }
-function Input({ label: inputLabel, value, onChange, className = '' }) {
-  return <label className={`text-sm font-medium ${className}`}>{inputLabel}<input value={value} onChange={(e) => onChange(e.target.value)} className="field mt-1" /></label>;
+function Input({ label: inputLabel, value, onChange, className = '', ...props }) {
+  return <label className={`text-sm font-medium ${className}`}>{inputLabel}<input value={value} onChange={(e) => onChange(e.target.value)} className="field mt-1" {...props} /></label>;
 }

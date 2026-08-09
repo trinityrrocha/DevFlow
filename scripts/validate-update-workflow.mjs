@@ -37,7 +37,8 @@ check('11 servico invalido falha fechado', engine.includes('Servico de update na
 check('12 health final interno e publico', (engine.match(/scripts\/health\.sh/g) || []).length >= 4);
 check('13 rollback automatico preservado', engine.includes('rollback_update') && engine.includes('ROLLBACK_ARMED=true'));
 check('14 rollback incompleto nao e mascarado', engine.includes('ROLLBACK_RESULT=failed') && engine.includes('rollback_failures'));
-check('15 worker participa e SMTP nao e gate', engine.includes('worker') && worker.includes('readyFile') && emailOutbox.includes('env.SMTP_ENABLED'));
+check('15 worker participa e SMTP nao e gate', engine.includes('worker') && worker.includes('readyFile')
+  && emailOutbox.includes('if (!transport)') && emailOutbox.includes("status='PENDING'"));
 check('16 CLI apresenta menu', cli.includes('1 - ATUALIZAR DEVFLOW') && cli.includes('2 - CANCELAR'));
 check('17 CLI opcao 1 chama motor', cli.includes('1)') && cli.includes('"$ENGINE"'));
 check('18 CLI opcao 2 cancela normalmente', cli.includes('operation_cancelled_by_user=true') && cli.includes('changes_applied=false'));

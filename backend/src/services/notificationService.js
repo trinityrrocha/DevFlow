@@ -51,6 +51,7 @@ async function deliver(queryable, { task, recipientIds, type, title, body, categ
      WHERE u.id=ANY($1::uuid[]) AND u.is_active=TRUE AND u.deleted_at IS NULL AND m.is_active=TRUE`,
     [ids, task.company_id]
   );
+  const emailAvailable = await smtpConfigured();
   const notificationIds = [];
   for (const user of users.rows) {
     if (!user.category_enabled && category !== 'security') continue;
@@ -64,12 +65,12 @@ async function deliver(queryable, { task, recipientIds, type, title, body, categ
          ON CONFLICT (company_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
          RETURNING id`,
         [task.company_id, user.id, task.id || null, type, title, body,
-          smtpConfigured() && emailEnabled ? 'PENDING' : 'SKIPPED', linkPath || null, `${idempotencyBase}:internal:${user.id}`]
+          emailAvailable && emailEnabled ? 'PENDING' : 'SKIPPED', linkPath || null, `${idempotencyBase}:internal:${user.id}`]
       );
       notificationId = inserted.rows[0]?.id || null;
       if (notificationId) notificationIds.push(notificationId);
     }
-    if (emailEnabled && smtpConfigured()) await enqueueEmail(queryable, {
+    if (emailEnabled && emailAvailable) await enqueueEmail(queryable, {
       companyId: task.company_id,
       userId: user.id,
       notificationId,

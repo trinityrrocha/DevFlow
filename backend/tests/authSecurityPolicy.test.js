@@ -12,6 +12,7 @@ const {
   verifyToken
 } = require('../src/services/csrfService');
 const { csrfProtection } = require('../src/middleware/csrfMiddleware');
+const { requireMfa } = require('../src/middleware/authMiddleware');
 
 describe('politica persistente de MFA', () => {
   it('aceita somente optional, admins e all', () => {
@@ -36,6 +37,15 @@ describe('politica persistente de MFA', () => {
   it('all exige todos os usuarios sem MFA', () => {
     expect(requiresMfaSetup({ mfa_enabled: false, roles: ['USER'] }, 'all')).toBe(true);
     expect(isMfaRequiredForUser({ mfa_enabled: true, roles: ['USER'] }, 'all')).toBe(true);
+  });
+
+  it('protege operacoes sensiveis mesmo quando a politica global e opcional', () => {
+    let denied;
+    requireMfa({ user: { mfa_enabled: false } }, {}, (error) => { denied = error; });
+    expect(denied).toMatchObject({ code: 'MFA_REQUIRED', status: 403 });
+    let allowed = false;
+    requireMfa({ user: { mfa_enabled: true } }, {}, () => { allowed = true; });
+    expect(allowed).toBe(true);
   });
 });
 
