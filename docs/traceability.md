@@ -1,6 +1,15 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.8-alpha`
+## Instalacao isolada `0.6.9-alpha`
+
+| Revisao 0.6.9 | Evidencia |
+|---|---|
+| Monaco reutilizavel | `CodeEditor.jsx`, workers locais, configuracao comum e tema observado no documento |
+| Linguagens | `codeLanguages.js` cobre Pascal/Delphi, PowerShell, modo automatico e escolha manual persistente |
+| Validacao | `githubCard.js` exige codigo, allowlist normalizada e maximo de 200000 bytes UTF-8 |
+| Historico | autor vem da sessao, etapa vem da tarefa e edicoes nao substituem esses campos |
+| Exclusao protegida | migration `010_github_card_soft_deletion.sql`, `tasks.manage`, evento e auditoria sem hard delete |
+| Desempenho | import lazy e Monaco somente no formulario ou card explicitamente expandido |
 
 | Revisao 0.6.8 | Evidencia |
 |---|---|

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.9-alpha] - 2026-08-09
+
+### Adicionado
+
+- Pascal/Delphi, PowerShell e SCSS ao seletor e a deteccao por extensao do editor de codigo;
+- modo automatico reversivel, tema reativo e componente Monaco reutilizavel com configuracao acessivel;
+- migration 010 para exclusao logica e auditavel dos cards GitHub, protegida por `tasks.manage`.
+
+### Corrigido
+
+- escolha manual de linguagem deixa de ser sobrescrita quando o nome do arquivo muda;
+- codigo passa a ser obrigatorio, com limite real de 200 KB medido em UTF-8 no frontend e backend;
+- cards exibem linguagem, autor, data, etapa historica e etapa atual, preservando registros legados.
+
+### Desempenho e seguranca
+
+- Monaco continua carregado sob demanda e previews somente leitura sao montados apenas quando expandidos;
+- payload rejeita `author_id` e `stage_id`; ambos continuam derivados da sessao e da tarefa no backend;
+- exclusao nao apaga dados, codigo nunca e executado e nenhum recurso depende de CDN.
+
 ## [0.6.8-alpha] - 2026-08-09
 
 ### Adicionado

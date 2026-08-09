@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.8-alpha**. Esta revisao simplifica o controle do cronometro, estrutura anotacoes GitHub com Monaco Editor local e torna explicita a gravacao atomica dos pedidos assinados do updater. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.9-alpha**. Esta revisao conclui a integracao do Monaco nos cards GitHub com Pascal/Delphi, deteccao automatica ou manual, tema reativo, limite de 200 KB e exclusao logica auditada. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

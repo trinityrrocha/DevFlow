@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Clock3, Copy, Download, FileCode2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Upload, X, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, FileCode2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
 import { Link, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
@@ -7,7 +7,8 @@ import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
 import { formatDate, formatDuration, label } from '../utils/formatters';
 import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
-import { CODE_LANGUAGES, detectCodeLanguage } from '../utils/codeLanguages';
+import { CODE_LANGUAGES, codeLanguageLabel, resolveCodeLanguage } from '../utils/codeLanguages';
+import useEditorTheme from '../hooks/useEditorTheme';
 
 const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
@@ -127,7 +128,7 @@ export default function TaskDetail() {
         <div className="p-5 md:p-6">
           {tab === 'summary' && <Summary data={data} user={user} mutate={mutate} />}
           {tab === 'tests' && <Tests data={data} user={user} mutate={mutate} />}
-          {tab === 'github' && <Github data={data} user={user} mutate={mutate} />}
+          {tab === 'github' && <Github data={data} user={user} mutate={mutate} saving={saving} />}
           {tab === 'attachments' && <Attachments data={data} user={user} mutate={mutate} />}
           {tab === 'comments' && <Comments data={data} mutate={mutate} />}
           {tab === 'history' && <History events={data.events} timerEvents={data.timer_events} />}
@@ -279,24 +280,30 @@ function Tests({ data, user, mutate }) {
   );
 }
 
-function Github({ data, user, mutate }) {
+function Github({ data, user, mutate, saving }) {
   const { task } = data;
-  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', file_name: '', language: 'plaintext', code_content: '', explanation: '' };
+  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', file_name: '', language: 'auto', code_content: '', explanation: '' };
   const [form, setForm] = useState(emptyGithub);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState('');
+  const [expanded, setExpanded] = useState('');
+  const [formError, setFormError] = useState('');
   const dialogRef = useRef(null);
   const lastTrigger = useRef(null);
+  const editorTheme = useEditorTheme();
   const canEdit = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER')
       || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
       || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
       || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
+  const canDelete = user.permissions?.includes('tasks.manage');
   const cards = data.github_cards || (data.github ? [data.github] : []);
-  const normalizeCard = (card) => ({ ...emptyGithub, ...card, repository_url: card.repository_url || '', branch: card.branch || '', commit_sha: card.commit_sha || '', pull_request_url: card.pull_request_url || '', release: card.release || '', file_name: card.file_name || '', code_content: card.code_content || '', explanation: card.explanation || card.notes_code || '' });
-  const close = () => { setOpen(false); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
+  const normalizeCard = (card) => ({ ...emptyGithub, ...card, language: card.language || 'plaintext', repository_url: card.repository_url || '', branch: card.branch || '', commit_sha: card.commit_sha || '', pull_request_url: card.pull_request_url || '', release: card.release || '', file_name: card.file_name || '', code_content: card.code_content || '', explanation: card.explanation || card.notes_code || '' });
+  const effectiveLanguage = resolveCodeLanguage(form.file_name, form.language);
+  const close = () => { setOpen(false); setFormError(''); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
   const show = (event, card = null) => {
     lastTrigger.current = event.currentTarget;
     setForm(card ? normalizeCard(card) : emptyGithub);
+    setFormError('');
     setOpen(true);
   };
   useEffect(() => {
@@ -318,11 +325,13 @@ function Github({ data, user, mutate }) {
   }, [open]);
   const save = async (event) => {
     event.preventDefault();
-    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: form.language, code_content: form.code_content || null, explanation: form.explanation || null };
+    if (!form.code_content.trim()) { setFormError('Informe o codigo da anotacao.'); return; }
+    if (new TextEncoder().encode(form.code_content).byteLength > 200000) { setFormError('O codigo excede o limite de 200 KB.'); return; }
+    setFormError('');
+    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: effectiveLanguage, code_content: form.code_content, explanation: form.explanation || null };
     const saved = await mutate(() => form.id ? api.patch(`/tasks/${task.id}/github/${form.id}`, payload) : api.post(`/tasks/${task.id}/github`, payload), form.id ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.');
     if (saved) close();
   };
-  const updateFileName = (fileName) => setForm((current) => ({ ...current, file_name: fileName, language: detectCodeLanguage(fileName) || current.language }));
   const copyCode = async (event, card) => {
     event.stopPropagation();
     try {
@@ -333,30 +342,36 @@ function Github({ data, user, mutate }) {
     }
     window.setTimeout(() => setCopied(''), 1800);
   };
+  const remove = async (event, card) => {
+    event.stopPropagation();
+    if (!window.confirm(`Remover logicamente a anotacao ${card.file_name || card.title || ''}?`)) return;
+    await mutate(() => api.delete(`/tasks/${task.id}/github/${card.id}`), 'Registro GitHub removido.');
+  };
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800"><span>Os vinculos tecnicos sao registrados manualmente e preservados no dossie da tarefa.</span>{canEdit && <button type="button" onClick={(event) => show(event)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Adicionar Github</button>}</div>
-      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="space-y-4">{cards.map((card) => <article key={card.id} role="button" tabIndex={0} onClick={(event) => show(event, card)} onKeyDown={(event) => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); show(event, card); } }} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"><div className="min-w-0"><p className="flex items-center gap-2 truncate text-sm font-semibold"><FileCode2 className="h-4 w-4 text-indigo-600" />{card.file_name || card.title || 'Trecho sem arquivo'}</p><p className="mt-1 text-xs text-slate-500">{card.author_name || 'Autor nao identificado'} · {formatDate(card.created_at || card.updated_at)} · {card.stage_name || 'Etapa nao registrada'}</p></div><div className="flex items-center gap-2">{card.code_content && <button type="button" onClick={(event) => copyCode(event, card)} className="btn-secondary h-8 px-3 text-xs"><Copy className="mr-1.5 h-3.5 w-3.5" />{copied === card.id ? 'Copiado' : copied === `error:${card.id}` ? 'Falha ao copiar' : 'Copiar codigo'}</button>}{canEdit && <span className="inline-flex items-center text-xs font-medium text-indigo-600"><Pencil className="mr-1 h-3.5 w-3.5" />Editar</span>}</div></header>
-        {card.code_content && <div className="border-b border-slate-200" onClick={(event) => event.stopPropagation()}><MonacoEditor height="190px" language={card.language || 'plaintext'} value={card.code_content} theme="vs" options={{ readOnly: true, domReadOnly: true, minimap: { enabled: false }, lineNumbers: 'on', folding: false, scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, renderLineHighlight: 'none', overviewRulerLanes: 0 }} /></div>}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800"><span>Os vinculos tecnicos sao registrados manualmente e preservados no dossie da tarefa.</span>{canEdit && <button type="button" onClick={(event) => show(event)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Adicionar anotacao</button>}</div>
+      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="space-y-4">{cards.map((card) => <article key={card.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"><div className="min-w-0"><p className="flex items-center gap-2 truncate text-sm font-semibold"><FileCode2 className="h-4 w-4 text-indigo-600" />{card.file_name || card.title || 'Trecho sem arquivo'}</p><p className="mt-1 text-xs text-slate-500">{codeLanguageLabel(card.language)} · {card.author_name || 'Autor nao identificado'} · {formatDate(card.created_at || card.updated_at)}</p><p className="mt-1 text-xs text-slate-500">Etapa na criacao: {card.stage_name || 'Nao registrada'} · Etapa atual: {task.stage_name}</p></div><div className="flex flex-wrap items-center gap-2">{card.code_content && <button type="button" onClick={(event) => copyCode(event, card)} className="btn-secondary h-8 px-3 text-xs"><Copy className="mr-1.5 h-3.5 w-3.5" />{copied === card.id ? 'Codigo copiado' : copied === `error:${card.id}` ? 'Falha ao copiar' : 'Copiar codigo'}</button>}{card.code_content && <button type="button" aria-expanded={expanded === card.id} onClick={() => setExpanded(expanded === card.id ? '' : card.id)} className="btn-secondary h-8 px-3 text-xs">{expanded === card.id ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}{expanded === card.id ? 'Recolher' : 'Visualizar codigo'}</button>}{canEdit && <button type="button" onClick={(event) => show(event, card)} className="btn-secondary h-8 px-3 text-xs"><Pencil className="mr-1 h-3.5 w-3.5" />Editar</button>}{canDelete && <button type="button" disabled={saving} onClick={(event) => remove(event, card)} className="btn-danger h-8 px-3 text-xs"><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</button>}</div></header>
+        {card.code_content && expanded === card.id && <div className="border-b border-slate-200"><MonacoEditor height="240px" language={card.language || 'plaintext'} value={card.code_content} readOnly theme={editorTheme} options={{ overviewRulerLanes: 0 }} /></div>}
         {card.explanation && <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-6 text-slate-700">{card.explanation}</p>}
         {(card.repository_url || card.branch || card.commit_sha) && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{card.repository_url || 'Repositorio nao informado'}{card.branch ? ` · ${card.branch}` : ''}{card.commit_sha ? ` · ${card.commit_sha}` : ''}</p>}
       </article>)}</div>}
       {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
         <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
-          <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Registro GitHub' : 'Adicionar Github'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+          <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Editar anotacao GitHub' : 'Adicionar anotacao GitHub'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
           <form onSubmit={save} className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Input label="Arquivo" value={form.file_name} onChange={updateFileName} placeholder="src/modulo/arquivo.js" maxLength={500} />
-            <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-            <label className="text-sm font-medium sm:col-span-2">Codigo<div className="mt-1 overflow-hidden rounded-md border border-slate-300"><MonacoEditor height="380px" language={form.language} value={form.code_content} onChange={(value) => setForm({ ...form, code_content: value || '' })} theme="vs" options={{ readOnly: !canEdit, minimap: { enabled: true }, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, tabSize: 2 }} /></div></label>
+            <Input label="Nome ou caminho do arquivo" value={form.file_name} onChange={(fileName) => setForm({ ...form, file_name: fileName })} placeholder="backend/services/autenticacao.pas" maxLength={500} />
+            <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{value === 'auto' ? `${text} — ${codeLanguageLabel(effectiveLanguage)} detectado` : text}</option>)}</select></label>
+            <label className="text-sm font-medium sm:col-span-2">Codigo <span className="text-red-600">*</span><div className="mt-1 overflow-hidden rounded-md border border-slate-300"><MonacoEditor height="380px" language={effectiveLanguage} value={form.code_content} onChange={(value) => setForm({ ...form, code_content: value })} readOnly={!canEdit} theme={editorTheme} aria-label="Codigo da anotacao" /></div><span className="mt-1 block text-xs font-normal text-slate-500">Linguagem ativa: {codeLanguageLabel(effectiveLanguage)} · limite de 200 KB.</span></label>
             <label className="text-sm font-medium sm:col-span-2">Explicacao tecnica<textarea rows={6} value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} readOnly={!canEdit} className="textarea-field mt-1" maxLength="50000" placeholder="Contexto, motivo e impacto deste trecho." /></label>
+            {formError && <p role="alert" className="sm:col-span-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
             <div className="sm:col-span-2"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Vinculos opcionais</p><div className="grid gap-4 sm:grid-cols-2"><Input label="Link do repositorio" type="url" value={form.repository_url} onChange={(value) => setForm({ ...form, repository_url: value })} className="sm:col-span-2" />
             <Input label="Branch" value={form.branch} onChange={(value) => setForm({ ...form, branch: value })} />
             <Input label="Commit" value={form.commit_sha} onChange={(value) => setForm({ ...form, commit_sha: value })} />
             <Input label="Pull Request" type="url" value={form.pull_request_url} onChange={(value) => setForm({ ...form, pull_request_url: value })} />
             <Input label="Release" value={form.release} onChange={(value) => setForm({ ...form, release: value })} />
             </div></div>
-            <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={close} className="btn-secondary">Fechar</button>{canEdit && <button className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar</button>}</div>
+            <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={close} className="btn-secondary">Cancelar</button>{canEdit && <button disabled={saving} className="btn-primary">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Salvar anotacao</button>}</div>
           </form>
         </div>
       </div>}

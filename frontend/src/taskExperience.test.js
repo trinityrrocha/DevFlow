@@ -8,12 +8,15 @@ const read = (file) => readFileSync(resolve(frontendRoot, file), 'utf8');
 describe('experiencia de tarefas e anotacoes GitHub', () => {
   const detail = read('src/pages/TaskDetail.jsx');
   const list = read('src/pages/Tasks.jsx');
+  const editor = read('src/components/CodeEditor.jsx');
+  const monaco = read('src/services/monaco.js');
   const frontendPackage = JSON.parse(read('package.json'));
 
   it('usa um unico toggle reativo sem botao Cancelar', () => {
     expect(detail).toContain("task.timer_status === 'running' ? 'pause'");
     expect(detail).toContain("<Pause className=\"mr-2 h-4 w-4\" />Pause");
-    expect(detail).not.toContain('>Cancelar</button>');
+    expect(detail).not.toContain("timerAction('cancel')");
+    expect(detail).not.toContain("stateAction('cancel')");
   });
 
   it('mantem o cabecalho da lista destacado e sem subtitulo redundante', () => {
@@ -24,5 +27,14 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
   it('declara Monaco e os campos estruturados do editor', () => {
     expect(frontendPackage.dependencies['@monaco-editor/react']).toBeTruthy();
     for (const field of ['file_name', 'language', 'code_content', 'explanation']) expect(detail).toContain(field);
+    expect(detail).toContain("language: 'auto'");
+    expect(detail).toContain('resolveCodeLanguage(form.file_name, form.language)');
+    expect(detail).toContain('expanded === card.id');
+    expect(detail).toContain('navigator.clipboard.writeText(card.code_content');
+    expect(detail).toContain('api.delete(`/tasks/${task.id}/github/${card.id}`)');
+    expect(editor).toContain("lineNumbers: 'on'");
+    expect(editor).toContain('readOnly');
+    expect(editor).toContain('minimap: { enabled: false }');
+    expect(monaco).not.toContain('http');
   });
 });

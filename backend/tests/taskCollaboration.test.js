@@ -10,7 +10,7 @@ describe('cadastros e dossie tecnico da tarefa', () => {
   const taskService = read('src/services/taskService.js');
   const timingService = read('src/services/taskTimingService.js');
   const attachmentService = read('src/services/attachmentService.js');
-  const migration = `${read('../database/migrations/007_task_collaboration_and_generated_codes.sql')}\n${read('../database/migrations/008_smtp_settings_and_github_cards.sql')}\n${read('../database/migrations/009_github_code_annotations.sql')}`;
+  const migration = `${read('../database/migrations/007_task_collaboration_and_generated_codes.sql')}\n${read('../database/migrations/008_smtp_settings_and_github_cards.sql')}\n${read('../database/migrations/009_github_code_annotations.sql')}\n${read('../database/migrations/010_github_card_soft_deletion.sql')}`;
 
   it('aceita filtro de cliente vazio sem tentar validar UUID vazio', () => {
     expect(catalogController).toContain("value === '' ? undefined : value");

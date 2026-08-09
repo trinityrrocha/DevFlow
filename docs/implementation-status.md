@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.8-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.9-alpha`.
+
+Revisao 0.6.9 implementada localmente: Monaco reutilizavel com configuracao segura, Pascal/Delphi e PowerShell, deteccao automatica reversivel sem sobrescrever escolha manual, tema observado no documento, previews expansivos sob demanda, validacao de codigo obrigatorio e limite UTF-8 de 200 KB. A migration 010 acrescenta exclusao logica auditavel aos cards sem alterar as migrations 008/009 publicadas. PostgreSQL, Docker, console do navegador e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.8 implementada localmente: lista de tarefas sem subtitulo redundante e com cabecalho de maior contraste; controle unico e reativo do cronometro; erros de transicao conhecidos em JSON 400/404/409; anotacoes GitHub estruturadas com arquivo, linguagem, codigo, explicacao, autor e etapa; Monaco Editor e workers empacotados localmente; pedido fisico do updater gravado atomicamente na fila HMAC e monitoramento de indisponibilidade/retorno pelo health. A migration 009, o updater em container e os fluxos contra PostgreSQL/Docker/VPS reais ainda dependem de homologacao.
 

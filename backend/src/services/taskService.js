@@ -322,7 +322,7 @@ async function getTaskDetail(taskId, user) {
       FROM task_github_metadata github
       JOIN users author ON author.id=github.author_id
       LEFT JOIN workflow_stages stage ON stage.id=github.stage_id
-      WHERE github.task_id=$1 AND github.company_id=$2
+      WHERE github.task_id=$1 AND github.company_id=$2 AND github.deleted_at IS NULL
       ORDER BY github.created_at DESC,github.id DESC`, [taskId, companyId]),
     db.query(
       `SELECT comment.*,u.name AS created_by_name,
@@ -439,7 +439,7 @@ async function loadTransitionContext(client, task) {
       [task.id, task.company_id]
     ),
     client.query(
-      'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2 ORDER BY updated_at DESC,id DESC LIMIT 1',
+      'SELECT * FROM task_github_metadata WHERE task_id=$1 AND company_id=$2 AND deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1',
       [task.id, task.company_id]
     )
   ]);
@@ -853,7 +853,7 @@ async function saveGithub(req, taskId, payload, cardId = null) {
     let github;
     if (cardId) {
       before = (await client.query(
-        'SELECT * FROM task_github_metadata WHERE id=$1 AND task_id=$2 AND company_id=$3 FOR UPDATE',
+        'SELECT * FROM task_github_metadata WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL FOR UPDATE',
         [cardId, taskId, companyId]
       )).rows[0];
       assert(before, 'GITHUB_CARD_NOT_FOUND', 'Registro GitHub nao encontrado.', 404);
@@ -863,7 +863,7 @@ async function saveGithub(req, taskId, payload, cardId = null) {
            title=$4,repository_url=$5,branch=$6,commit_sha=$7,pull_request_url=$8,
            release=$9,notes_code=$10,file_name=$11,language=$12,code_content=$13,
            explanation=$14,updated_by=$15,updated_at=CURRENT_TIMESTAMP
-         WHERE id=$1 AND task_id=$2 AND company_id=$3 RETURNING *`,
+         WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL RETURNING *`,
         [cardId, taskId, companyId, value('title'), value('repository_url'), value('branch'),
           value('commit_sha'), value('pull_request_url'), value('release'), value('notes_code'),
           value('file_name'), value('language'), value('code_content'), value('explanation'), req.user.id]
@@ -888,6 +888,32 @@ async function saveGithub(req, taskId, payload, cardId = null) {
       { id: github.id, file_name: github.file_name, language: github.language, stage_id: github.stage_id });
     await client.query('COMMIT');
     return github;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function softDeleteGithub(req, taskId, cardId) {
+  assert(hasPermission(req.user, 'tasks.manage'), 'GITHUB_CARD_DELETE_FORBIDDEN', 'Somente administradores podem excluir anotacoes.', 403);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await getTask(taskId, req.user.company_id, client, req.user);
+    const result = await client.query(
+      `UPDATE task_github_metadata
+       SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$4,updated_by=$4,updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL
+       RETURNING id,file_name,language,stage_id`,
+      [cardId, taskId, req.user.company_id, req.user.id]
+    );
+    assert(result.rowCount, 'GITHUB_CARD_NOT_FOUND', 'Registro GitHub nao encontrado.', 404);
+    const removed = result.rows[0];
+    await addEvent(client, req, taskId, 'TASK_GITHUB_REMOVED', 'Registro GitHub removido logicamente.',
+      { id: removed.id, file_name: removed.file_name, language: removed.language, stage_id: removed.stage_id }, {});
+    await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -933,6 +959,7 @@ module.exports = {
   addTest,
   addApproval,
   saveGithub,
+  softDeleteGithub,
   addComment,
   timerAction: timing.timerAction,
   canViewTask,
