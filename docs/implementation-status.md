@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-10. Versao: `0.6.18-alpha`.
+Data de corte: 2026-08-10. Versao: `0.6.19-alpha`.
+
+Revisao 0.6.19 implementada localmente: a migration 012 remove com `DROP TRIGGER IF EXISTS` o trigger legado que bloqueava o backfill de `task_tests` com SQLSTATE `P0001`; a tabela e a coluna `source_section` usam DDL idempotente, UUIDs compativeis e `VARCHAR` com `CHECK`, sem ENUM. O trigger nao retorna porque QA agora aceita edicao auditada e exclusao logica. PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.18 implementada localmente: a fila assinada usa o bind persistente `/opt/devflow/updater` em backend e updater, com caminhos internos absolutos e mesma raiz obrigatoria. Atualizacoes externas recriam o updater ao final para reconciliar instalacoes anteriores; pedidos internos nunca fazem autorrecriacao. O frontend troca definitivamente o polling do request por `/api/health` depois de 404/502/503/504 ou falha de rede e recarrega no primeiro HTTP 200. Docker, fluxo autenticado e VPS ainda dependem de homologacao.
 

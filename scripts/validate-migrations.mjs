@@ -33,6 +33,7 @@ const install = read('scripts/install.sh');
 const transaction = read('scripts/lib/install-transaction.sh');
 const update = read('scripts/update.sh');
 const migrationSource = read('backend/scripts/migrate.js');
+const qaMigration = read('database/migrations/012_qa_tests_and_attachment_sources.sql');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migrations-'));
 
@@ -126,7 +127,20 @@ try {
     && install.includes('Containers existentes foram preservados'));
   check('migration runtime is non-root', dockerfile.includes('USER devflow') && !common.includes('--user root'));
   check('migration flow is independent from neighboring applications', !install.toLowerCase().includes('fullpassword') && !update.toLowerCase().includes('fullpassword'));
-  if (checks.length !== 20) throw new Error(`Expected 20 checks, got ${checks.length}`);
+  check('QA migration creates table and indexes defensively', qaMigration.includes('CREATE TABLE IF NOT EXISTS task_tests')
+    && qaMigration.includes('CREATE INDEX IF NOT EXISTS idx_task_tests_context')
+    && qaMigration.includes('CREATE INDEX IF NOT EXISTS idx_task_tests_active_timeline'));
+  check('QA migration removes immutable trigger before backfill', qaMigration.includes('DROP TRIGGER IF EXISTS trg_task_tests_immutable ON task_tests')
+    && qaMigration.indexOf('DROP TRIGGER IF EXISTS trg_task_tests_immutable') < qaMigration.indexOf('UPDATE task_tests'));
+  check('QA migration has no forced exception or enum', !qaMigration.includes('RAISE EXCEPTION')
+    && !/CREATE\s+TYPE[\s\S]*ENUM/iu.test(qaMigration));
+  check('attachment source column is repeat-safe varchar', qaMigration.includes('ADD COLUMN IF NOT EXISTS source_section VARCHAR(50)'));
+  check('QA constraints are replaced idempotently', [
+    'task_tests_environment_check', 'task_tests_status_check', 'task_tests_author_membership_fk',
+    'task_tests_deleted_by_membership_fk', 'task_attachments_source_section_check',
+  ].every((constraint) => qaMigration.includes(`DROP CONSTRAINT IF EXISTS ${constraint}`)
+    && qaMigration.includes(`ADD CONSTRAINT ${constraint}`)));
+  if (checks.length !== 25) throw new Error(`Expected 25 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

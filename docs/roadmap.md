@@ -1,5 +1,10 @@
 # Roadmap inicial
 
+## Marco `0.6.19-alpha`
+
+- eliminar o `P0001` da migration 012 e preservar o CRUD auditado de QA;
+- homologar a migration em PostgreSQL real durante a atualizacao transacional da VPS.
+
 ## Marco `0.6.18-alpha`
 
 - fila web do updater em bind persistente compartilhado e auditavel no host;

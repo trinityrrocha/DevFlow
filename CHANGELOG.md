@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.19-alpha] - 2026-08-10
+
+### Corrigido
+
+- migration 012 remove de forma idempotente o trigger legado de imutabilidade antes do backfill de `task_tests`, eliminando o SQLSTATE `P0001`;
+- `task_tests` possui criacao defensiva com `CREATE TABLE IF NOT EXISTS`, preservando UUIDs compativeis com tarefas e usuarios;
+- `source_section` e adicionada com `ADD COLUMN IF NOT EXISTS` e `VARCHAR(50)`, sem ENUM ou bloco de excecao forcada;
+- o trigger nao e recriado porque o modulo de QA exige edicao auditada e exclusao logica.
+
+### Validado
+
+- regressao estatica cobre a ordem entre remocao do trigger e backfill, ausencia de `RAISE EXCEPTION` e DDL idempotente;
+- lint, testes, build e validadores de migrations executados localmente;
+- PostgreSQL e VPS reais permanecem pendentes de homologacao.
+
 ## [0.6.18-alpha] - 2026-08-10
 
 ### Corrigido

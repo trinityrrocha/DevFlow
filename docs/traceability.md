@@ -1,5 +1,16 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.19-alpha`
+
+| Revisao 0.6.19 | Evidencia |
+|---|---|
+| Causa raiz | `trg_task_tests_immutable`, criado na migration 001, chamava `prevent_immutable_mutation()` durante o backfill da migration 012 e gerava `P0001` |
+| Correcao | `DROP TRIGGER IF EXISTS trg_task_tests_immutable ON task_tests` ocorre antes de `UPDATE task_tests` |
+| Modelo atual | o trigger permanece removido porque testes aceitam edicao auditada e exclusao logica por `deleted_at` |
+| DDL defensivo | tabela, colunas e indices usam `IF NOT EXISTS`; constraints usam substituicao transacional idempotente |
+| Tipos | identificadores permanecem UUID e ambiente/status usam `VARCHAR` com `CHECK`, sem ENUM |
+| Regressao | teste garante ordem do drop, ausencia de `RAISE EXCEPTION` e contrato de `source_section VARCHAR(50)` |
+
 ## Instalacao isolada `0.6.18-alpha`
 
 | Revisao 0.6.18 | Evidencia |

@@ -1,6 +1,30 @@
 -- Registros estruturados de QA e rastreabilidade da origem dos anexos.
 
+CREATE TABLE IF NOT EXISTS task_tests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+    task_id UUID NOT NULL,
+    stage_id UUID NOT NULL,
+    description TEXT NOT NULL,
+    result VARCHAR(16) NOT NULL CHECK (result IN ('PASSED', 'FAILED', 'BLOCKED')),
+    evidence TEXT,
+    tested_as_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    tested_as_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    tested_as_user BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id, company_id) REFERENCES tasks(id, company_id) ON DELETE RESTRICT,
+    FOREIGN KEY (stage_id, company_id) REFERENCES workflow_stages(id, company_id) ON DELETE RESTRICT,
+    FOREIGN KEY (company_id, created_by) REFERENCES company_memberships(company_id, user_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_tests_context
+    ON task_tests (company_id, task_id, stage_id, created_at DESC);
+
 ALTER TABLE task_tests
+    ADD COLUMN IF NOT EXISTS tested_as_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS tested_as_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS tested_as_user BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS author_id UUID,
     ADD COLUMN IF NOT EXISTS context TEXT,
     ADD COLUMN IF NOT EXISTS validated_profiles TEXT,
@@ -12,6 +36,10 @@ ALTER TABLE task_tests
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS deleted_by UUID;
+
+-- A partir desta revisao, testes de QA aceitam edicao auditada e exclusao logica.
+-- O trigger legado tambem impedia o backfill abaixo e gerava SQLSTATE P0001.
+DROP TRIGGER IF EXISTS trg_task_tests_immutable ON task_tests;
 
 UPDATE task_tests
 SET author_id = COALESCE(author_id, created_by),
@@ -63,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_task_tests_active_timeline
     WHERE deleted_at IS NULL;
 
 ALTER TABLE task_attachments
-    ADD COLUMN IF NOT EXISTS source_section VARCHAR(32);
+    ADD COLUMN IF NOT EXISTS source_section VARCHAR(50);
 
 UPDATE task_attachments
 SET source_section = CASE
