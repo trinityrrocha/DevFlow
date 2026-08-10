@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.15-alpha`
+## Marco `0.6.16-alpha`
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;
@@ -26,6 +26,7 @@
 - [x] separar lead time e touch time por etapa, sem metricas no Roadmap;
 - [x] encerrar tempos automaticamente na transicao e remover conclusao manual;
 - [x] apresentar previews nativos de imagens e videos anexados;
+- [x] tornar o polling de update resiliente ao retorno da API apos 502/503;
 - [x] corrigir a tipagem SQL, autoria, concorrencia e respostas semanticas da rota de timer;
 - [x] rastrear pedidos de update nos quatro diretorios e tolerar reinicio no polling web;
 - [x] cobrir 30 cenarios de alinhamento e 24 cenarios do ciclo updater/instalacao;

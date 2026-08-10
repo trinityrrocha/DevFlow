@@ -1,6 +1,17 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.15-alpha`
+## Instalacao isolada `0.6.16-alpha`
+
+| Revisao 0.6.16 | Evidencia |
+|---|---|
+| Causa raiz | normalizador priorizava a fase detalhada `state` sobre o ciclo terminal `status` |
+| Precedencia | `completed`/`failed` da fila prevalecem mesmo quando o status detalhado ainda esta em `health`/`rollback` |
+| Polling estavel | `Settings.jsx` mantem um unico intervalo por request e impede chamadas sobrepostas |
+| Recuperacao | resposta 200 `completed` encerra o intervalo, grava aviso e executa `window.location.reload()` |
+| Indisponibilidade | timeout, Network Error e 502/503/504 conservam loading e novas tentativas |
+| Falha | `failed` encerra o polling sem reload e apresenta mensagem segura de rollback |
+| Regressao | testes cobrem 503 seguido de `completed`, estado detalhado obsoleto e falha terminal |
+
 
 | Revisao 0.6.15 | Evidencia |
 |---|---|

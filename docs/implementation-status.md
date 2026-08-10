@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.15-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.16-alpha`.
+
+Revisao 0.6.16 implementada localmente: o polling da atualizacao usa um unico intervalo por request, timeout explicito, bloqueio de chamadas sobrepostas e estado terminal da fila com precedencia sobre a fase detalhada. A sequencia 503 seguida de resposta 200 `completed` aciona reload imediato; `failed` encerra o polling e apresenta falha segura. Lint, regressao e check integral foram validados localmente; reinicio real de containers e retorno da VPS ainda dependem de homologacao.
 
 Revisao 0.6.15 implementada localmente: lead time usa o intervalo automatico da etapa e touch time usa sessoes manuais vinculadas a tarefa, etapa e usuario. Transicoes encerram ambos os ciclos antigos e reiniciam o controle manual da nova etapa; Roadmap nao gera nem exibe metricas. Imagens e videos possuem preview nativo, demais formatos usam icones por extensao e o backend entrega MIME canonico. Migration, lint, testes e build foram validados localmente; PostgreSQL, navegador autenticado, Docker e VPS reais ainda dependem de homologacao.
 

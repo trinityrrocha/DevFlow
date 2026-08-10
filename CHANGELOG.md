@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.16-alpha] - 2026-08-09
+
+### Corrigido
+
+- status terminal `completed`/`failed` da fila passa a ter precedencia sobre fases detalhadas obsoletas como `health`/`rollback`;
+- polling usa um unico intervalo por request, sem recriacao a cada mudanca de fase e sem requisicoes simultaneas;
+- consulta de status possui timeout de 5 segundos para que conexoes pendentes nao bloqueiem novas tentativas;
+- HTTP 502/503/504, timeout e Network Error mantem o estado "Reiniciando servicos..." sem interromper o polling;
+- primeira resposta 200 com ciclo `completed` encerra o intervalo, grava o aviso de retorno e força `window.location.reload()`;
+- ciclo `failed` encerra o polling sem reload e informa a falha/rollback de forma segura.
+
+### Validado
+
+- regressao reproduz 503 seguido de `{ status: 'completed', state: 'health' }` e comprova a decisao de reload;
+- lint, testes frontend e check integral do repositorio aprovados localmente;
+- reinicio real de containers e retorno da VPS permanecem pendentes de homologacao.
+
 ## [0.6.15-alpha] - 2026-08-09
 
 ### Adicionado

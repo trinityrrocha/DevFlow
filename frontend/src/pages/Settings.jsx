@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Layers3, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import SmtpSettings from '../components/SmtpSettings';
-import { isTransientUpdatePollingError, normalizeUpdateStatus } from '../utils/updatePolling';
+import { isTransientUpdatePollingError, updatePollingOutcome } from '../utils/updatePolling';
 
 const newStage = (index, terminal = false) => ({ code: terminal ? 'DONE' : `STAGE_${index + 1}`, name: terminal ? 'Concluido' : `Etapa ${index + 1}`, responsibility: 'ANY', requirements: '{}', tracks_time: !terminal, completes_task: terminal });
 const emptyWorkflow = { code: '', name: '', task_kind: 'BOTH', is_default: false, stages: [newStage(0), newStage(1, true)] };
@@ -61,34 +61,65 @@ export default function Settings({ section = 'catalogs' }) {
 function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
   const [updateStatus, setUpdateStatus] = useState(null);
   const [connectionInterrupted, setConnectionInterrupted] = useState(false);
+  const intervalRef = useRef(null);
   useEffect(() => {
-    if (!queued?.id || ['completed', 'failed'].includes(updateStatus?.state)) return undefined;
-    let active = true;
-    const poll = async () => {
-      try {
-        const { data } = await api.get(`/operations/update/requests/${queued.id}`);
-        if (!active) return;
-        const nextStatus = normalizeUpdateStatus(data);
-        setConnectionInterrupted(false);
-        setUpdateStatus(nextStatus);
-        if (nextStatus.state === 'completed') {
-          window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
-          window.location.reload();
-        }
-      } catch (requestError) {
-        if (!active || !isTransientUpdatePollingError(requestError)) return;
-        setConnectionInterrupted(true);
-        setUpdateStatus((current) => ['completed', 'failed'].includes(current?.state) ? current : {
-          ...(current || {}),
-          state: current?.state || 'processing',
-          message: 'Reiniciando servicos...'
-        });
+    if (!queued?.id) return undefined;
+    let disposed = false;
+    let requestInFlight = false;
+    let reloadStarted = false;
+    const stopPolling = () => {
+      if (intervalRef.current !== null) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-    poll();
-    const timer = window.setInterval(poll, 2000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [queued?.id, updateStatus?.state]);
+    const checkStatus = async () => {
+      if (disposed || requestInFlight || reloadStarted) return;
+      requestInFlight = true;
+      try {
+        const { data } = await api.get(`/operations/update/requests/${queued.id}`, { timeout: 5000 });
+        if (disposed) return;
+        const outcome = updatePollingOutcome(data);
+        setConnectionInterrupted(false);
+        setUpdateStatus(outcome.status);
+        if (outcome.shouldReload) {
+          reloadStarted = true;
+          stopPolling();
+          window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
+          window.location.reload();
+          return;
+        }
+        if (outcome.shouldStop) {
+          stopPolling();
+          setUpdateStatus({
+            ...outcome.status,
+            state: 'failed',
+            message: outcome.status.error || 'A atualizacao falhou (rollback executado). Verifique os logs.'
+          });
+        }
+      } catch (requestError) {
+        if (disposed) return;
+        if (isTransientUpdatePollingError(requestError)) {
+          setConnectionInterrupted(true);
+          setUpdateStatus((current) => ['completed', 'failed'].includes(current?.state) ? current : {
+            ...(current || {}),
+            state: current?.state || 'processing',
+            message: 'Reiniciando servicos...'
+          });
+        } else {
+          stopPolling();
+          setConnectionInterrupted(false);
+          setUpdateStatus({ state: 'failed', message: 'Nao foi possivel consultar o estado da atualizacao. Verifique os logs.' });
+        }
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    stopPolling();
+    intervalRef.current = window.setInterval(checkStatus, 2000);
+    checkStatus();
+    return () => { disposed = true; stopPolling(); };
+  }, [queued?.id]);
   useEffect(() => {
     if (!queued?.id || !capabilities?.availableVersion || updateStatus?.state === 'failed') return undefined;
     let active = true;

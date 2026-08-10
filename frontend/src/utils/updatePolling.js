@@ -9,6 +9,18 @@ export function isTransientUpdatePollingError(error) {
 }
 
 export function normalizeUpdateStatus(payload) {
-  const state = payload?.state || payload?.status || 'processing';
+  const lifecycle = payload?.status;
+  const state = ['completed', 'failed'].includes(lifecycle)
+    ? lifecycle
+    : payload?.state || lifecycle || 'processing';
   return { ...payload, state };
+}
+
+export function updatePollingOutcome(payload) {
+  const status = normalizeUpdateStatus(payload);
+  return {
+    status,
+    shouldReload: status.state === 'completed',
+    shouldStop: ['completed', 'failed'].includes(status.state)
+  };
 }
