@@ -1,5 +1,10 @@
 # Roadmap inicial
 
+## Marco `0.6.20-alpha`
+
+- reconciliar pela migration 013 ambientes que ja registraram uma versao anterior da 012;
+- homologar a sequencia 012/013 em PostgreSQL real na VPS.
+
 ## Marco `0.6.19-alpha`
 
 - eliminar o `P0001` da migration 012 e preservar o CRUD auditado de QA;

@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.6.19-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.6.20-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   UPDATE_API_ENABLED: z.string().default('false').transform((value) => value === 'true'),
   UPDATE_REQUEST_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow-updater/requests'),

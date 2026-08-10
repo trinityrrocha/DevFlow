@@ -6,6 +6,7 @@ const read = (file) => readFileSync(resolve(__dirname, '..', file), 'utf8');
 describe('modulo estruturado de QA e origem dos anexos', () => {
   const initialMigration = read('../database/migrations/001_initial_schema.sql');
   const migration = read('../database/migrations/012_qa_tests_and_attachment_sources.sql');
+  const repairMigration = read('../database/migrations/013_qa_tests_idempotency_repair.sql');
   const controller = read('src/controllers/taskController.js');
   const service = read('src/services/taskService.js');
   const attachmentService = read('src/services/attachmentService.js');
@@ -25,6 +26,8 @@ describe('modulo estruturado de QA e origem dos anexos', () => {
     expect(migration.indexOf('DROP TRIGGER IF EXISTS trg_task_tests_immutable')).toBeLessThan(migration.indexOf('UPDATE task_tests'));
     expect(migration).not.toContain('RAISE EXCEPTION');
     expect(migration).not.toMatch(/CREATE\s+TYPE[\s\S]*ENUM/iu);
+    expect(repairMigration).toContain('DROP TRIGGER IF EXISTS trg_task_tests_immutable ON task_tests');
+    expect(repairMigration).not.toContain('RAISE EXCEPTION');
     expect(migration).toContain("CHECK (environment IN ('local', 'local_nuvem'))");
     expect(migration).toContain("CHECK (status IN ('APPROVED', 'NOT_APPROVED'))");
     expect(service).toContain('author_id,context,validated_profiles,environment');

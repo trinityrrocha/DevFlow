@@ -1,5 +1,14 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.20-alpha`
+
+| Revisao 0.6.20 | Evidencia |
+|---|---|
+| Compatibilidade | `013_qa_tests_idempotency_repair.sql` atende bancos que ja registraram a 012 anterior com tabela vazia |
+| Reparo | a 013 usa `DROP TRIGGER IF EXISTS` e garante `source_section VARCHAR(50)` sem excecao forcada |
+| VPS com rollback | como a 012 falhou e nao foi registrada, o banco executara primeiro a 012 corrigida e depois a 013 idempotente |
+| Regressao | testes e validador de migrations inspecionam os dois caminhos de upgrade |
+
 ## Instalacao isolada `0.6.19-alpha`
 
 | Revisao 0.6.19 | Evidencia |

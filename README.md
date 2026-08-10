@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.19-alpha**. Esta revisao torna a migration 012 idempotente, remove o trigger legado que causava `P0001` durante o backfill de QA e preserva edicao auditada e exclusao logica dos testes. A instalacao isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.20-alpha**. Esta revisao torna a migration 012 idempotente, remove o trigger legado que causava `P0001` e adiciona a migration 013 para reconciliar ambientes que eventualmente ja tenham registrado a 012 anterior. A instalacao isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

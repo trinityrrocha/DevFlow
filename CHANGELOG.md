@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.20-alpha] - 2026-08-10
+
+### Corrigido
+
+- adicionada a migration 013 para remover idempotentemente o trigger legado em ambientes que ja registraram uma versao anterior da migration 012 com `task_tests` vazia;
+- a migration de reconciliacao tambem garante `source_section` e amplia o tipo existente para `VARCHAR(50)` sem perda de dados.
+
+### Validado
+
+- executor detecta 13 migrations e a regressao cobre tanto a 012 corrigida quanto a 013 de compatibilidade;
+- PostgreSQL e VPS reais permanecem pendentes de homologacao.
+
 ## [0.6.19-alpha] - 2026-08-10
 
 ### Corrigido

@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-10. Versao: `0.6.19-alpha`.
+Data de corte: 2026-08-10. Versao: `0.6.20-alpha`.
+
+Revisao 0.6.20 implementada localmente: a migration 013 reconcilia bancos que registraram a 012 anterior quando `task_tests` estava vazia, removendo o trigger legado e garantindo `source_section VARCHAR(50)`. A 012 corrigida continua atendendo diretamente a VPS que sofreu rollback e nao registrou a migration. PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.19 implementada localmente: a migration 012 remove com `DROP TRIGGER IF EXISTS` o trigger legado que bloqueava o backfill de `task_tests` com SQLSTATE `P0001`; a tabela e a coluna `source_section` usam DDL idempotente, UUIDs compativeis e `VARCHAR` com `CHECK`, sem ENUM. O trigger nao retorna porque QA agora aceita edicao auditada e exclusao logica. PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 

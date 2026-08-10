@@ -34,6 +34,7 @@ const transaction = read('scripts/lib/install-transaction.sh');
 const update = read('scripts/update.sh');
 const migrationSource = read('backend/scripts/migrate.js');
 const qaMigration = read('database/migrations/012_qa_tests_and_attachment_sources.sql');
+const qaRepairMigration = read('database/migrations/013_qa_tests_idempotency_repair.sql');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migrations-'));
 
@@ -140,7 +141,12 @@ try {
     'task_tests_deleted_by_membership_fk', 'task_attachments_source_section_check',
   ].every((constraint) => qaMigration.includes(`DROP CONSTRAINT IF EXISTS ${constraint}`)
     && qaMigration.includes(`ADD CONSTRAINT ${constraint}`)));
-  if (checks.length !== 25) throw new Error(`Expected 25 checks, got ${checks.length}`);
+  check('QA repair covers databases that already recorded migration 012',
+    qaRepairMigration.includes('DROP TRIGGER IF EXISTS trg_task_tests_immutable ON task_tests')
+    && qaRepairMigration.includes('ADD COLUMN IF NOT EXISTS source_section VARCHAR(50)')
+    && qaRepairMigration.includes('ALTER COLUMN source_section TYPE VARCHAR(50)')
+    && !qaRepairMigration.includes('RAISE EXCEPTION'));
+  if (checks.length !== 26) throw new Error(`Expected 26 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
