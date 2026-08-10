@@ -53,7 +53,9 @@ check('26 lock atomico', daemon.includes('flock -n 8') && daemon.includes('updat
 check('27 processing e recuperado', daemon.includes('for interrupted in "$PROCESSING_DIR"/*.json') && daemon.includes('pending'));
 check('28 sucesso vai para processed', daemon.includes('PROCESSED_DIR/$name'));
 check('29 falha vai para failed', daemon.includes('FAILED_DIR/$name'));
-check('30 updater nao recria a si proprio', !engine.match(/build[^\n]*updater/u) && !daemon.includes("UPDATE_SERVICES='db backend frontend worker edge updater'"));
+check('30 updater nao recria a si proprio', engine.includes('[[ "$INTERNAL_MODE" == false ]] || return 0')
+  && engine.includes('refresh_updater_runtime_external')
+  && !daemon.includes("UPDATE_SERVICES='db backend frontend worker edge updater'"));
 check('31 bootstrap baixa main atual', bootstrap.includes('git clone') && bootstrap.includes('--branch "$BRANCH"'));
 check('32 bootstrap valida repository', bootstrap.includes('detected_remote') && bootstrap.includes('REPOSITORY'));
 check('33 bootstrap valida commit e versao', bootstrap.includes('detected_commit') && bootstrap.includes('version='));

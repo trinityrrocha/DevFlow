@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.17-alpha`.
+Data de corte: 2026-08-10. Versao: `0.6.18-alpha`.
+
+Revisao 0.6.18 implementada localmente: a fila assinada usa o bind persistente `/opt/devflow/updater` em backend e updater, com caminhos internos absolutos e mesma raiz obrigatoria. Atualizacoes externas recriam o updater ao final para reconciliar instalacoes anteriores; pedidos internos nunca fazem autorrecriacao. O frontend troca definitivamente o polling do request por `/api/health` depois de 404/502/503/504 ou falha de rede e recarrega no primeiro HTTP 200. Docker, fluxo autenticado e VPS ainda dependem de homologacao.
 
 Revisao 0.6.17 implementada localmente: registros de QA usam modelo estruturado, autoria da sessao, cards de 350 px e modal para cadastro, consulta e edicao; exclusao e logica e auditavel. Anexos registram a secao de origem e aparecem em timeline cronologica com autor e preview. Lint, testes e build foram validados localmente; PostgreSQL, navegador autenticado, Docker e VPS reais ainda dependem de homologacao.
 

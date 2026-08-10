@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Layers3, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Workflow } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -60,33 +60,38 @@ export default function Settings({ section = 'catalogs' }) {
 
 function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
   const [updateStatus, setUpdateStatus] = useState(null);
-  const [connectionInterrupted, setConnectionInterrupted] = useState(false);
-  const intervalRef = useRef(null);
+  const [isRebooting, setIsRebooting] = useState(false);
   useEffect(() => {
     if (!queued?.id) return undefined;
     let disposed = false;
     let requestInFlight = false;
     let reloadStarted = false;
+    let interval;
     const stopPolling = () => {
-      if (intervalRef.current !== null) {
-        window.clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (interval) window.clearInterval(interval);
+      interval = undefined;
+    };
+    const reloadApplication = () => {
+      reloadStarted = true;
+      stopPolling();
+      window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
+      window.location.reload();
     };
     const checkStatus = async () => {
       if (disposed || requestInFlight || reloadStarted) return;
       requestInFlight = true;
       try {
+        if (isRebooting) {
+          const response = await api.get('/health', { timeout: 3000 });
+          if (!disposed && response.status === 200) reloadApplication();
+          return;
+        }
         const { data } = await api.get(`/operations/update/requests/${queued.id}`, { timeout: 5000 });
         if (disposed) return;
         const outcome = updatePollingOutcome(data);
-        setConnectionInterrupted(false);
         setUpdateStatus(outcome.status);
         if (outcome.shouldReload) {
-          reloadStarted = true;
-          stopPolling();
-          window.sessionStorage.setItem(UPDATE_NOTICE_KEY, 'true');
-          window.location.reload();
+          reloadApplication();
           return;
         }
         if (outcome.shouldStop) {
@@ -99,16 +104,21 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
         }
       } catch (requestError) {
         if (disposed) return;
-        if (isTransientUpdatePollingError(requestError)) {
-          setConnectionInterrupted(true);
+        if (isRebooting) {
           setUpdateStatus((current) => ['completed', 'failed'].includes(current?.state) ? current : {
             ...(current || {}),
             state: current?.state || 'processing',
             message: 'Reiniciando servicos...'
           });
+        } else if (isTransientUpdatePollingError(requestError)) {
+          setIsRebooting(true);
+          setUpdateStatus((current) => ({
+            ...(current || {}),
+            state: current?.state || 'processing',
+            message: 'Reiniciando servicos...'
+          }));
         } else {
           stopPolling();
-          setConnectionInterrupted(false);
           setUpdateStatus({ state: 'failed', message: 'Nao foi possivel consultar o estado da atualizacao. Verifique os logs.' });
         }
       } finally {
@@ -116,24 +126,10 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
       }
     };
     stopPolling();
-    intervalRef.current = window.setInterval(checkStatus, 2000);
+    interval = window.setInterval(checkStatus, 4000);
     checkStatus();
     return () => { disposed = true; stopPolling(); };
-  }, [queued?.id]);
-  useEffect(() => {
-    if (!queued?.id || !capabilities?.availableVersion || updateStatus?.state === 'failed') return undefined;
-    let active = true;
-    const pollHealth = async () => {
-      try {
-        await api.get('/health', { timeout: 4500 });
-      } catch {
-        if (active) setConnectionInterrupted(true);
-      }
-    };
-    pollHealth();
-    const timer = window.setInterval(pollHealth, 5000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [queued?.id, capabilities?.availableVersion, updateStatus?.state]);
+  }, [queued?.id, isRebooting]);
   if (!capabilities) return <Loading />;
   const requestActive = queued?.id && !['completed', 'failed'].includes(updateStatus?.state);
   const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !requestActive;
@@ -142,10 +138,11 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
     if (!window.confirm(message)) return;
     mutate(async () => {
       const { data } = await api.post('/operations/update/requests');
+      setIsRebooting(false);
       setQueued(data); setUpdateStatus({ state: 'pending', message: 'Atualizacao aguardando processamento.' });
     }, 'Pedido de atualizacao enfileirado.');
   };
-  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{connectionInterrupted && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Reiniciando servicos...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
+  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">Antes de alterar a aplicacao, o DevFlow cria e valida um backup. Durante migrations e troca de containers, o acesso publico exibe manutencao HTTP 503. Uma falha aciona rollback automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{isRebooting && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Reiniciando servicos...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={confirmUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
     </div>;
 }
 

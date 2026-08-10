@@ -11,6 +11,29 @@ const UPDATE_PROCESSING_STATES = Object.freeze(['processing', 'backup', 'mainten
 const REPOSITORY_API = 'https://api.github.com/repos/trinityrrocha/DevFlow';
 const RAW_MAIN = 'https://raw.githubusercontent.com/trinityrrocha/DevFlow/main';
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UPDATER_HEARTBEAT_MAX_AGE_MS = 15000;
+
+function updaterQueueReady({
+  filesystem = fs,
+  requestDirectory = env.UPDATE_REQUEST_DIR,
+  now = Date.now()
+} = {}) {
+  try {
+    const marker = path.join(path.dirname(requestDirectory), 'daemon.ready');
+    const stat = filesystem.lstatSync(marker);
+    return stat.isFile() && !stat.isSymbolicLink()
+      && now - stat.mtimeMs >= 0
+      && now - stat.mtimeMs <= UPDATER_HEARTBEAT_MAX_AGE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function assertUpdaterQueueReady() {
+  if (!updaterQueueReady()) {
+    throw new AppError('UPDATE_DAEMON_UNAVAILABLE', 'O mecanismo autonomo de atualizacao nao esta pronto.', 503);
+  }
+}
 
 function changelogSection(content, version) {
   const lines = content.split(/\r?\n/);
@@ -52,9 +75,11 @@ async function getUpdateCapabilities() {
       checkAvailable = false;
     }
   }
+  const queueReady = updaterQueueReady();
   return Object.freeze({
     enabled: env.UPDATE_API_ENABLED,
-    executionAvailable: env.UPDATE_API_ENABLED && checkAvailable,
+    executionAvailable: env.UPDATE_API_ENABLED && checkAvailable && queueReady,
+    queueReady,
     engine: UPDATE_ENGINE,
     installedVersion: env.DEVFLOW_VERSION,
     installedCommit: env.DEVFLOW_RELEASE_COMMIT,
@@ -186,6 +211,8 @@ function getRequestStatus(id, {
 
 module.exports = {
   getUpdateCapabilities,
+  updaterQueueReady,
+  assertUpdaterQueueReady,
   createSignedRequest,
   writeStatus,
   getRequestStatus,

@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createSignedRequest, getRequestStatus } = require('../src/services/updateOperationService');
+const { createSignedRequest, getRequestStatus, updaterQueueReady } = require('../src/services/updateOperationService');
 const { csrfProtection } = require('../src/middleware/csrfMiddleware');
 const { isMfaSetupAllowed } = require('../src/middleware/authMiddleware');
 
@@ -47,9 +47,34 @@ describe('fila privada de atualizacao', () => {
 
   it('mantem a gravacao atomica do arquivo fisico no controller', () => {
     const controller = fs.readFileSync(path.resolve(__dirname, '../src/controllers/updateOperationController.js'), 'utf8');
+    const environment = fs.readFileSync(path.resolve(__dirname, '../src/config/env.js'), 'utf8');
+    const compose = fs.readFileSync(path.resolve(__dirname, '../../docker-compose.yml'), 'utf8');
+    expect(controller).toContain('fs.mkdirSync(env.UPDATE_REQUEST_DIR, { recursive: true');
+    expect(controller.indexOf('assertUpdaterQueueReady()')).toBeLessThan(controller.indexOf('createSignedRequest('));
     expect(controller).toContain('fs.writeFileSync(temporary');
     expect(controller).toContain('fs.renameSync(temporary, destination)');
     expect(controller.indexOf('writeStatus(')).toBeLessThan(controller.indexOf('fs.renameSync'));
+    expect(environment).toContain("UPDATE_REQUEST_DIR: z.string().refine(path.isAbsolute");
+    expect(environment).toContain("UPDATE_STATUS_DIR: z.string().refine(path.isAbsolute");
+    expect(environment).toContain('path.dirname(value.UPDATE_REQUEST_DIR) !== path.dirname(value.UPDATE_STATUS_DIR)');
+    expect(compose.match(/\$\{DEVFLOW_UPDATER_ROOT:-\/opt\/devflow\/updater\}:\/var\/lib\/devflow-updater/g)).toHaveLength(2);
+    expect(compose).not.toContain('devflow_updater_requests:');
+  });
+
+  it('somente aceita a fila quando o heartbeat compartilhado esta recente', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-updater-heartbeat-'));
+    const requestDirectory = path.join(root, 'requests');
+    const marker = path.join(root, 'daemon.ready');
+    fs.mkdirSync(requestDirectory, { recursive: true });
+    try {
+      expect(updaterQueueReady({ requestDirectory })).toBe(false);
+      fs.writeFileSync(marker, '');
+      const now = fs.statSync(marker).mtimeMs;
+      expect(updaterQueueReady({ requestDirectory, now })).toBe(true);
+      expect(updaterQueueReady({ requestDirectory, now: now + 16000 })).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('rastreia o request nos quatro diretorios do ciclo de vida', () => {

@@ -1,4 +1,4 @@
-const TRANSIENT_HTTP_STATUSES = new Set([502, 503, 504]);
+const TRANSIENT_HTTP_STATUSES = new Set([404, 502, 503, 504]);
 const TRANSIENT_ERROR_CODES = new Set(['ECONNABORTED', 'ERR_NETWORK', 'ETIMEDOUT']);
 
 export function isTransientUpdatePollingError(error) {

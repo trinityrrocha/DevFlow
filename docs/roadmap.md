@@ -1,5 +1,11 @@
 # Roadmap inicial
 
+## Marco `0.6.18-alpha`
+
+- fila web do updater em bind persistente compartilhado e auditavel no host;
+- polling em duas fases com recuperacao automatica pelo health check;
+- homologar na VPS o primeiro update externo de reconciliacao e o update web subsequente.
+
 ## Marco `0.6.17-alpha`
 
 - modulo estruturado de QA com cards, modal, anexos por teste e exclusao logica;

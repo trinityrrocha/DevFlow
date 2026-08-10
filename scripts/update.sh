@@ -159,6 +159,13 @@ up_runtime_services() {
   compose_has_worker && services=(db backend worker frontend)
   "${DEVFLOW_COMPOSE[@]}" up -d --wait "$@" "${services[@]}"
 }
+
+refresh_updater_runtime_external() {
+  [[ "$INTERNAL_MODE" == false ]] || return 0
+  set_compose_for "$CANDIDATE_DIR"
+  "${DEVFLOW_COMPOSE[@]}" up -d --wait --no-deps --force-recreate updater
+  docker exec devflow-updater test -f /var/lib/devflow-updater/daemon.ready
+}
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
 "$OLD_RELEASE_DIR/scripts/health.sh" \
@@ -828,7 +835,9 @@ export DEVFLOW_IMAGE_TAG
 set_compose_for "$CANDIDATE_DIR"
 "${DEVFLOW_COMPOSE[@]}" config --quiet
 render_runtime_nginx_config "$CANDIDATE_DIR" "$DEVFLOW_NGINX_CONFIG_PATH"
-"${DEVFLOW_COMPOSE[@]}" build backend frontend
+declare -a CANDIDATE_BUILD_SERVICES=(backend frontend)
+[[ "$INTERNAL_MODE" == true ]] || CANDIDATE_BUILD_SERVICES+=(updater)
+"${DEVFLOW_COMPOSE[@]}" build "${CANDIDATE_BUILD_SERVICES[@]}"
 candidate_backend_image="$(resolve_compose_service_image backend)" \
   || die 'A imagem candidata do backend não pôde ser resolvida após a build.'
 candidate_backend_image_id="$(docker image inspect --format '{{.Id}}' "$candidate_backend_image")"
@@ -890,6 +899,9 @@ write_update_transaction candidate-healthy \
 UPDATE_PHASE=promotion
 docker tag "devflow-backend:$CANDIDATE_IMAGE_TAG" "devflow-backend:$FINAL_IMAGE_TAG"
 docker tag "devflow-frontend:$CANDIDATE_IMAGE_TAG" "devflow-frontend:$FINAL_IMAGE_TAG"
+if [[ "$INTERNAL_MODE" == false ]]; then
+  docker tag "devflow-updater:$CANDIDATE_IMAGE_TAG" "devflow-updater:$FINAL_IMAGE_TAG"
+fi
 set_managed_env_value DEVFLOW_VERSION "$NEW_VERSION"
 set_managed_env_value DEVFLOW_RELEASE_COMMIT "$NEW_SHA"
 set_managed_env_value DEVFLOW_IMAGE_TAG "$FINAL_IMAGE_TAG"
@@ -925,6 +937,9 @@ MAINTENANCE_ACTIVE=false
 UPDATE_PHASE=health-public
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" \
   "$CANDIDATE_DIR/scripts/health.sh"
+
+UPDATE_PHASE=updater-runtime
+refresh_updater_runtime_external
 
 UPDATE_PHASE=finalize
 rm -f -- "$DEVFLOW_INSTALL_ROOT/app.candidate"

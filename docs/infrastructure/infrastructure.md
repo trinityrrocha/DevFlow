@@ -12,7 +12,7 @@ Internet 80/443 -> devflow-nginx -> devflow-frontend
 Host Certbot standalone -> /etc/letsencrypt (read-only no Nginx)
 ```
 
-Somente `devflow-nginx` publica portas. PostgreSQL usa `devflow_internal`, sem porta do host, e o volume nomeado `devflow_postgres_data` aponta para `/opt/devflow/storage/postgres`. O `devflow-worker` compartilha a imagem do backend, conecta apenas a rede interna e processa exclusivamente registros tipados da outbox. Backend e updater compartilham apenas a fila nomeada `devflow_updater_requests`.
+Somente `devflow-nginx` publica portas. PostgreSQL usa `devflow_internal`, sem porta do host, e o volume nomeado `devflow_postgres_data` aponta para `/opt/devflow/storage/postgres`. O `devflow-worker` compartilha a imagem do backend, conecta apenas a rede interna e processa exclusivamente registros tipados da outbox. Backend e updater montam a mesma fila persistente do host, definida por `DEVFLOW_UPDATER_ROOT` e instalada em `/opt/devflow/updater`; nenhum outro dado e compartilhado entre esses servicos.
 
 O Certbot e um pacote do host e nao um servico permanente do Compose. A configuracao Nginx runtime e gerada atomicamente apos validacao criptografica e montada em `/etc/nginx/conf.d/default.conf:ro`; `/etc/letsencrypt` e montado `:ro`.
 

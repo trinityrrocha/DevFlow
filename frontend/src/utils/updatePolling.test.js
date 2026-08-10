@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { isTransientUpdatePollingError, normalizeUpdateStatus, updatePollingOutcome } from './updatePolling';
 
 describe('polling resiliente do updater', () => {
-  it.each([502, 503, 504])('trata HTTP %s como reinicio temporario', (status) => {
+  it.each([404, 502, 503, 504])('trata HTTP %s como transicao para health polling', (status) => {
     expect(isTransientUpdatePollingError({ response: { status } })).toBe(true);
   });
 
@@ -11,7 +11,7 @@ describe('polling resiliente do updater', () => {
     expect(isTransientUpdatePollingError({ code: 'ECONNABORTED' })).toBe(true);
     expect(isTransientUpdatePollingError({ code: 'ERR_NETWORK', message: 'Network Error' })).toBe(true);
     expect(isTransientUpdatePollingError({ name: 'FetchError' })).toBe(true);
-    expect(isTransientUpdatePollingError({ response: { status: 404 } })).toBe(false);
+    expect(isTransientUpdatePollingError({ response: { status: 400 } })).toBe(false);
   });
 
   it('normaliza status de ciclo de vida sem perder a fase detalhada', () => {
@@ -37,15 +37,19 @@ describe('polling resiliente do updater', () => {
     });
   });
 
-  it('mantem loading no reinicio e recarrega somente quando completed volta pela API', () => {
+  it('troca definitivamente a fila pelo health e recarrega quando a API renasce', () => {
     const settings = readFileSync(new URL('../pages/Settings.jsx', import.meta.url), 'utf8');
+    const updateSettings = settings.split('function UpdateSettings')[1].split('function MfaSettings')[0];
     expect(settings).toContain("message: 'Reiniciando servicos...'");
     expect(settings).toContain('if (outcome.shouldReload)');
     expect(settings).toContain('window.location.reload()');
     expect(settings).toContain('isTransientUpdatePollingError(requestError)');
-    expect(settings).toContain('requestInFlight');
-    expect(settings).toContain('{ timeout: 5000 }');
-    expect(settings).toContain('stopPolling()');
-    expect(settings).toContain('}, [queued?.id]);');
+    expect(updateSettings).toContain('if (isRebooting)');
+    expect(updateSettings).toContain("api.get('/health', { timeout: 3000 })");
+    expect(updateSettings).toContain('response.status === 200');
+    expect(updateSettings).toContain('setIsRebooting(true)');
+    expect(updateSettings).toContain('window.setInterval(checkStatus, 4000)');
+    expect(updateSettings).toContain('}, [queued?.id, isRebooting]);');
+    expect(updateSettings).not.toContain('pollHealth');
   });
 });

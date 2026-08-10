@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const env = require('../config/env');
 const { AppError } = require('../utils/errors');
-const { getUpdateCapabilities, createSignedRequest, writeStatus, getRequestStatus } = require('../services/updateOperationService');
+const { getUpdateCapabilities, createSignedRequest, writeStatus, getRequestStatus, assertUpdaterQueueReady } = require('../services/updateOperationService');
 const { recordAudit } = require('../services/auditService');
 
 async function getCapabilities(_req, res, next) {
@@ -10,6 +10,7 @@ async function getCapabilities(_req, res, next) {
 }
 
 async function createRequest(req, res) {
+  assertUpdaterQueueReady();
   const request = createSignedRequest(req.user.email);
   const destination = path.join(env.UPDATE_REQUEST_DIR, `${request.id}.json`);
   const temporary = path.join(env.UPDATE_REQUEST_DIR, `.${request.id}.${process.pid}.tmp`);

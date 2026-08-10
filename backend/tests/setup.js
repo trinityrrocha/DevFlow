@@ -11,3 +11,4 @@ process.env.SUPER_ADMIN_EMAIL = 'admin@example.com';
 process.env.UPDATE_REQUEST_SECRET = 'u'.repeat(64);
 process.env.UPDATE_API_ENABLED = 'true';
 process.env.UPDATE_REQUEST_DIR = '/tmp/devflow-updater-test-requests';
+process.env.UPDATE_STATUS_DIR = '/tmp/devflow-updater-test-status';

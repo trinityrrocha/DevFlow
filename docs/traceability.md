@@ -1,16 +1,17 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.17-alpha`
+## Instalacao isolada `0.6.18-alpha`
 
-| Revisao 0.6.17 | Evidencia |
+| Revisao 0.6.18 | Evidencia |
 |---|---|
-| Causa raiz | normalizador priorizava a fase detalhada `state` sobre o ciclo terminal `status` |
-| Precedencia | `completed`/`failed` da fila prevalecem mesmo quando o status detalhado ainda esta em `health`/`rollback` |
-| Polling estavel | `Settings.jsx` mantem um unico intervalo por request e impede chamadas sobrepostas |
-| Recuperacao | resposta 200 `completed` encerra o intervalo, grava aviso e executa `window.location.reload()` |
-| Indisponibilidade | timeout, Network Error e 502/503/504 conservam loading e novas tentativas |
-| Falha | `failed` encerra o polling sem reload e apresenta mensagem segura de rollback |
-| Regressao | testes cobrem 503 seguido de `completed`, estado detalhado obsoleto e falha terminal |
+| Causa raiz da fila | Compose usava um volume Docker opaco enquanto o instalador mantinha a fila persistente em `/opt/devflow/updater` |
+| Persistencia | backend e updater montam o mesmo `DEVFLOW_UPDATER_ROOT` em `/var/lib/devflow-updater` |
+| Gate do daemon | backend somente aceita o POST quando `daemon.ready` e um arquivo regular, nao e symlink e possui heartbeat recente |
+| Atualizacao externa | `update.sh` recria o updater ao final apenas no fluxo SSH; o daemon nunca tenta recriar a si proprio |
+| Fase 1 | `Settings.jsx` consulta exclusivamente o ciclo de vida do request enquanto a API permanece disponivel |
+| Handoff | 404/502/503/504, timeout ou erro de rede ativa `isRebooting` e encerra consultas ao request |
+| Fase 2 | durante o reinicio, somente `/api/health` e consultado; o primeiro HTTP 200 executa `window.location.reload()` |
+| Regressao | testes cobrem bind compartilhado, heartbeat recente/expirado, handoff e polling exclusivo de health |
 
 
 | Revisao 0.6.15 | Evidencia |

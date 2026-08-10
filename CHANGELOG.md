@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.18-alpha] - 2026-08-10
+
+### Corrigido
+
+- backend e updater passam a montar a mesma fila persistente do host em `DEVFLOW_UPDATER_ROOT`, eliminando dependencia de volume Docker opaco;
+- caminhos internos de requests e status devem ser absolutos e compartilhar a mesma raiz, com criacao atomica do diretorio preservada;
+- atualizacao externa por SSH recria o updater somente depois da promocao e do health publico, aplicando o bind persistente sem permitir autorrecriacao durante pedidos web;
+- polling da interface entra em fase de reinicio para HTTP 404/502/503/504, timeout ou erro de rede e para de consultar o request consumido;
+- durante o reinicio, somente `/api/health` e consultado; o primeiro HTTP 200 recarrega imediatamente a interface.
+
+### Validado
+
+- regressao cobre o contrato do bind compartilhado, caminhos absolutos, handoff por 404 e a maquina de estado fila/health;
+- lint, testes, build e check integral executados localmente;
+- Docker e VPS reais permanecem pendentes de homologacao.
+
 ## [0.6.17-alpha] - 2026-08-09
 
 ### Adicionado

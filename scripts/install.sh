@@ -755,8 +755,9 @@ trap installation_failed ERR EXIT INT TERM
 ensure_docker
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONFIG_ROOT/nginx" \
   "$DEVFLOW_STATE_ROOT" "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" "$DEVFLOW_INSTALL_ROOT/releases" \
-  "$DEVFLOW_INSTALL_ROOT/storage/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads" "$DEVFLOW_INSTALL_ROOT/updater" \
+  "$DEVFLOW_INSTALL_ROOT/storage/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads" \
   /run/lock/devflow
+install -d -m 0700 "$DEVFLOW_INSTALL_ROOT/updater"
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 if [[ -t 1 && -w /dev/tty ]]; then exec 3>/dev/tty; CREDENTIAL_TTY_AVAILABLE=true; fi
 touch "$INSTALL_LOG"; chmod 0640 "$INSTALL_LOG"; exec > >(redact_stream | tee -a "$INSTALL_LOG") 2>&1
