@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.17-alpha] - 2026-08-09
+
+### Adicionado
+
+- migration 012 evolui `task_tests` com autoria da sessao, contexto, perfis, ambiente, informacoes de backend/frontend, notas de teste, status e exclusao logica auditavel;
+- origem validada dos anexos por secao (`geral`, `backend`, `frontend`, `testes`, `github` ou `comentarios`);
+- cards de QA com 350 px, modal de cadastro/consulta/edicao e upload isolado por teste;
+- linha do tempo vertical de anexos com data, autor, origem e preview.
+
+### Seguranca e compatibilidade
+
+- autoria de QA permanece exclusivamente derivada da sessao autenticada;
+- registros legados recebem backfill e continuam compativeis com as regras de transicao existentes;
+- exclusao de QA e anexos permanece logica; nenhum dado de dossie e removido fisicamente.
+
+### Validacao
+
+- lint, testes, build e check integral executados localmente;
+- migration em PostgreSQL, navegador autenticado, Docker e VPS permanecem pendentes de homologacao.
+
 ## [0.6.16-alpha] - 2026-08-09
 
 ### Corrigido

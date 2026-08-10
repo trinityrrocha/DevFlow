@@ -34,6 +34,16 @@ const taskSchema = z.object({
   }
 });
 
+const taskTestSchema = z.object({
+  status: z.enum(['APPROVED', 'NOT_APPROVED']),
+  environment: z.enum(['local', 'local_nuvem']),
+  context: z.string().trim().min(3).max(50000),
+  validated_profiles: z.string().trim().min(1).max(4000),
+  backend_info: z.string().trim().max(10000).default(''),
+  frontend_info: z.string().trim().max(10000).default(''),
+  testing_notes: z.string().trim().max(50000).default('')
+}).strict();
+
 async function createTask(req, res) {
   const task = await taskService.createTask(req, taskSchema.parse(req.body));
   await recordAudit({ req, operation: 'TASK_CREATED', entityType: 'TASK', entityId: task.id, newValues: task });
@@ -144,17 +154,23 @@ async function saveSubmission(req, res) {
 }
 
 async function addTest(req, res) {
-  const payload = z.object({
-    description: z.string().trim().min(3).max(50000),
-    result: z.enum(['PASSED', 'FAILED', 'BLOCKED']),
-    evidence: z.string().trim().max(50000).optional(),
-    tested_as_super_admin: z.boolean().default(false),
-    tested_as_admin: z.boolean().default(false),
-    tested_as_user: z.boolean().default(false)
-  }).parse(req.body);
+  const payload = taskTestSchema.parse(req.body);
   const test = await taskService.addTest(req, req.params.id, payload);
-  await recordAudit({ req, operation: 'TASK_TEST_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { test_id: test.id, stage_id: test.stage_id, result: test.result } });
+  await recordAudit({ req, operation: 'TASK_TEST_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { test_id: test.id, stage_id: test.stage_id, status: test.status } });
   res.status(201).json({ test });
+}
+
+async function updateTest(req, res) {
+  const payload = taskTestSchema.parse(req.body);
+  const test = await taskService.updateTest(req, req.params.id, req.params.testId, payload);
+  await recordAudit({ req, operation: 'TASK_TEST_UPDATED', entityType: 'TASK', entityId: req.params.id, newValues: { test_id: test.id, status: test.status } });
+  res.json({ test });
+}
+
+async function deleteTest(req, res) {
+  await taskService.softDeleteTest(req, req.params.id, req.params.testId);
+  await recordAudit({ req, operation: 'TASK_TEST_REMOVED', entityType: 'TASK', entityId: req.params.id, newValues: { test_id: req.params.testId } });
+  res.status(204).end();
 }
 
 async function addApproval(req, res) {
@@ -198,10 +214,11 @@ async function uploadAttachment(req, res) {
   try {
     const context = z.object({
       test_id: z.preprocess((value) => value || undefined, z.string().uuid().optional()),
-      comment_id: z.preprocess((value) => value || undefined, z.string().uuid().optional())
+      comment_id: z.preprocess((value) => value || undefined, z.string().uuid().optional()),
+      sourceSection: z.enum(['geral', 'backend', 'frontend', 'testes', 'github', 'comentarios']).default('geral')
     }).refine((value) => !(value.test_id && value.comment_id), { message: 'Informe apenas um contexto de anexo.' }).parse(req.body || {});
     const attachment = await attachmentService.createAttachment(req, req.params.id, req.file, req.body?.description, context);
-    await recordAudit({ req, operation: 'TASK_ATTACHMENT_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { attachment_id: attachment.id } });
+    await recordAudit({ req, operation: 'TASK_ATTACHMENT_ADDED', entityType: 'TASK', entityId: req.params.id, newValues: { attachment_id: attachment.id, source_section: attachment.source_section } });
     res.status(201).json({ attachment });
   } catch (error) {
     if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
@@ -228,6 +245,6 @@ async function deleteAttachment(req, res) {
 
 module.exports = {
   createTask, listTasks, detail, transition, stateAction, updateAdministration,
-  saveSubmission, addTest, addApproval, addGithub, updateGithub, deleteGithub, addComment,
+  saveSubmission, addTest, updateTest, deleteTest, addApproval, addGithub, updateGithub, deleteGithub, addComment,
   uploadAttachment, downloadAttachment, deleteAttachment, timerAction
 };

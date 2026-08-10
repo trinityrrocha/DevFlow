@@ -36,6 +36,20 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(detail).not.toContain('autoPlay');
   });
 
+  it('renderiza QA em cards de 350px, modal estruturado e anexos em timeline', () => {
+    expect(detail).toContain('Registrar Novo Teste');
+    expect(detail).toContain('max-w-[350px]');
+    expect(detail).toContain('sm:w-[350px]');
+    expect(detail).toContain('aria-labelledby="task-test-title"');
+    for (const field of ['validated_profiles', 'environment', 'backend_info', 'frontend_info', 'testing_notes']) expect(detail).toContain(field);
+    expect(detail).toContain("body.append('sourceSection', 'testes')");
+    expect(detail).toContain("body.append('sourceSection', 'comentarios')");
+    expect(detail).toContain("body.append('sourceSection', 'geral')");
+    expect(detail).toContain('attachmentSourceLabel(item.source_section)');
+    expect(detail).toContain('relative ml-3 border-l border-slate-200');
+    expect(detail).toContain('new Date(b.created_at) - new Date(a.created_at)');
+  });
+
   it('mantem o cabecalho da lista destacado e sem subtitulo redundante', () => {
     expect(list).toContain('border-slate-300 bg-slate-200/80');
     expect(list).not.toContain('Ciclo de desenvolvimento e prioridades da equipe.');

@@ -32,11 +32,13 @@ describe('cadastros e dossie tecnico da tarefa', () => {
   });
 
   it('persiste perfis testados, registros GitHub 1:N e anexos contextualizados', () => {
-    for (const field of ['tested_as_super_admin', 'tested_as_admin', 'tested_as_user', 'notes_code']) {
-      expect(taskController).toContain(field);
+    for (const field of ['tested_as_super_admin', 'tested_as_admin', 'tested_as_user']) {
       expect(taskService).toContain(field);
       expect(migration).toContain(field);
     }
+    expect(taskController).toContain('validated_profiles');
+    expect(taskService).toContain('validated_profiles');
+    expect(migration).toContain('notes_code');
     expect(attachmentService).toContain('context.test_id');
     expect(attachmentService).toContain('context.comment_id');
     expect(taskService).toContain('AS attachments');

@@ -315,12 +315,14 @@ async function getTaskDetail(taskId, user) {
     db.query(
       `SELECT test.*,stage.code AS stage,stage.name AS stage_name,u.name AS created_by_name,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
-                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes
+                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes,
+                'description',a.description,'source_section',a.source_section,'created_at',a.created_at
               ) ORDER BY a.created_at) FROM task_attachments a
               WHERE a.test_id=test.id AND a.deleted_at IS NULL),'[]'::jsonb) AS attachments
        FROM task_tests test JOIN workflow_stages stage ON stage.id=test.stage_id
-       JOIN users u ON u.id=test.created_by
-       WHERE test.task_id=$1 AND test.company_id=$2 ORDER BY test.created_at DESC`,
+       JOIN users u ON u.id=test.author_id
+       WHERE test.task_id=$1 AND test.company_id=$2 AND test.deleted_at IS NULL
+       ORDER BY test.created_at DESC`,
       [taskId, companyId]
     ),
     db.query(
@@ -339,7 +341,8 @@ async function getTaskDetail(taskId, user) {
     db.query(
       `SELECT comment.*,u.name AS created_by_name,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
-                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes
+                'id',a.id,'original_name',a.original_name,'mime_type',a.mime_type,'size_bytes',a.size_bytes,
+                'description',a.description,'source_section',a.source_section,'created_at',a.created_at
               ) ORDER BY a.created_at) FROM task_attachments a
               WHERE a.comment_id=comment.id AND a.deleted_at IS NULL),'[]'::jsonb) AS attachments
        FROM task_comments comment JOIN users u ON u.id=comment.created_by
@@ -348,7 +351,7 @@ async function getTaskDetail(taskId, user) {
     ),
     db.query(
       `SELECT attachment.id,attachment.original_name,attachment.mime_type,attachment.size_bytes,
-              attachment.description,attachment.created_at,u.name AS created_by_name
+              attachment.description,attachment.source_section,attachment.created_at,u.name AS created_by_name
        FROM task_attachments attachment JOIN users u ON u.id=attachment.created_by
        WHERE attachment.task_id=$1 AND attachment.company_id=$2 AND attachment.deleted_at IS NULL
        ORDER BY attachment.created_at DESC`,
@@ -469,7 +472,7 @@ async function loadTransitionContext(client, task) {
       [task.id, task.company_id, task.current_stage_id]
     ),
     client.query(
-      'SELECT * FROM task_tests WHERE task_id=$1 AND company_id=$2 ORDER BY created_at DESC',
+      'SELECT * FROM task_tests WHERE task_id=$1 AND company_id=$2 AND deleted_at IS NULL ORDER BY created_at DESC',
       [task.id, task.company_id]
     ),
     client.query(
@@ -851,21 +854,99 @@ async function addTest(req, taskId, payload) {
     const test = (await client.query(
       `INSERT INTO task_tests (
          company_id,task_id,stage_id,description,result,evidence,
-         tested_as_super_admin,tested_as_admin,tested_as_user,created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+         tested_as_super_admin,tested_as_admin,tested_as_user,created_by,
+         author_id,context,validated_profiles,environment,backend_info,frontend_info,testing_notes,status
+       ) VALUES ($1,$2,$3,$4,$5,$6,FALSE,FALSE,FALSE,$7,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [
-        companyId, taskId, stage.id, payload.description,
-        payload.result, payload.evidence || null,
-        payload.tested_as_super_admin, payload.tested_as_admin, payload.tested_as_user, req.user.id
+        companyId, taskId, stage.id, payload.context,
+        payload.status === 'APPROVED' ? 'PASSED' : 'FAILED', payload.testing_notes || null,
+        req.user.id, payload.context, payload.validated_profiles, payload.environment,
+        payload.backend_info, payload.frontend_info, payload.testing_notes, payload.status
       ]
     )).rows[0];
-    await addEvent(client, req, taskId, 'TASK_TEST_ADDED', `Teste ${stage.name}: ${payload.result}.`, {}, {
+    await addEvent(client, req, taskId, 'TASK_TEST_ADDED', `Teste ${stage.name}: ${payload.status}.`, {}, {
       test_id: test.id,
       stage_id: stage.id,
-      result: test.result
+      status: test.status
     });
     await client.query('COMMIT');
     return { ...test, stage: stage.code, stage_name: stage.name };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function canChangeTest(user, test) {
+  return isAdmin(user) || user?.profiles?.includes('MANAGER') || test.author_id === user?.id;
+}
+
+async function updateTest(req, taskId, testId, payload) {
+  const companyId = req.user.company_id;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await getTask(taskId, companyId, client, req.user);
+    const current = (await client.query(
+      `SELECT * FROM task_tests
+       WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL
+       FOR UPDATE`,
+      [testId, taskId, companyId]
+    )).rows[0];
+    assert(current, 'TEST_NOT_FOUND', 'Teste nao encontrado.', 404);
+    assert(canChangeTest(req.user, current), 'TEST_UPDATE_FORBIDDEN', 'Voce nao pode editar este teste.', 403);
+    const updated = (await client.query(
+      `UPDATE task_tests SET
+         description=$4,result=$5,evidence=$6,context=$4,validated_profiles=$7,
+         environment=$8,backend_info=$9,frontend_info=$10,testing_notes=$11,status=$12,
+         updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1 AND task_id=$2 AND company_id=$3
+       RETURNING *`,
+      [testId, taskId, companyId, payload.context,
+        payload.status === 'APPROVED' ? 'PASSED' : 'FAILED', payload.testing_notes || null,
+        payload.validated_profiles, payload.environment, payload.backend_info,
+        payload.frontend_info, payload.testing_notes, payload.status]
+    )).rows[0];
+    await addEvent(client, req, taskId, 'TASK_TEST_UPDATED', 'Registro de teste atualizado.', {
+      test_id: current.id,
+      status: current.status
+    }, { test_id: updated.id, status: updated.status });
+    await client.query('COMMIT');
+    return updated;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function softDeleteTest(req, taskId, testId) {
+  const companyId = req.user.company_id;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await getTask(taskId, companyId, client, req.user);
+    const current = (await client.query(
+      `SELECT * FROM task_tests
+       WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL
+       FOR UPDATE`,
+      [testId, taskId, companyId]
+    )).rows[0];
+    assert(current, 'TEST_NOT_FOUND', 'Teste nao encontrado.', 404);
+    assert(canChangeTest(req.user, current), 'TEST_DELETE_FORBIDDEN', 'Voce nao pode excluir este teste.', 403);
+    await client.query(
+      `UPDATE task_tests SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$4,updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1 AND task_id=$2 AND company_id=$3`,
+      [testId, taskId, companyId, req.user.id]
+    );
+    await addEvent(client, req, taskId, 'TASK_TEST_REMOVED', 'Registro de teste removido logicamente.', {
+      test_id: current.id,
+      status: current.status
+    }, {});
+    await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -1031,6 +1112,8 @@ module.exports = {
   updateAdministration,
   saveSubmission,
   addTest,
+  updateTest,
+  softDeleteTest,
   addApproval,
   saveGithub,
   softDeleteGithub,

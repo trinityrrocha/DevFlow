@@ -71,28 +71,31 @@ async function createAttachment(req, taskId, file, description, context = {}) {
     await client.query('BEGIN');
     await taskService.getTask(taskId, companyId, client, req.user);
     if (context.test_id) {
-      const test = await client.query('SELECT 1 FROM task_tests WHERE id=$1 AND task_id=$2 AND company_id=$3', [context.test_id, taskId, companyId]);
+      const test = await client.query('SELECT 1 FROM task_tests WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL', [context.test_id, taskId, companyId]);
       assert(test.rowCount, 'TEST_NOT_FOUND', 'Teste nao encontrado.', 404);
+      assert(context.sourceSection === 'testes', 'ATTACHMENT_SOURCE_INVALID', 'A origem do anexo nao corresponde ao teste.', 400);
     }
     if (context.comment_id) {
       const comment = await client.query('SELECT 1 FROM task_comments WHERE id=$1 AND task_id=$2 AND company_id=$3', [context.comment_id, taskId, companyId]);
       assert(comment.rowCount, 'COMMENT_NOT_FOUND', 'Comentario nao encontrado.', 404);
+      assert(context.sourceSection === 'comentarios', 'ATTACHMENT_SOURCE_INVALID', 'A origem do anexo nao corresponde ao comentario.', 400);
     }
     const attachment = (await client.query(
       `INSERT INTO task_attachments (
-         company_id,task_id,original_name,storage_key,mime_type,size_bytes,sha256,description,created_by,test_id,comment_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING id,original_name,mime_type,size_bytes,description,test_id,comment_id,created_at`,
+         company_id,task_id,original_name,storage_key,mime_type,size_bytes,sha256,description,created_by,test_id,comment_id,source_section
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING id,original_name,mime_type,size_bytes,description,test_id,comment_id,source_section,created_at`,
       [
         companyId, taskId, path.basename(file.originalname).slice(0, 255), storageKey,
         mimeByExtension.get(path.extname(file.originalname).toLowerCase()) || 'application/octet-stream', stat.size,
         await sha256File(finalPath), String(description || '').trim().slice(0, 1000) || null,
-        req.user.id, context.test_id || null, context.comment_id || null
+        req.user.id, context.test_id || null, context.comment_id || null, context.sourceSection || 'geral'
       ]
     )).rows[0];
     await taskService.addEvent(client, req, taskId, 'ATTACHMENT_ADDED', `Anexo ${file.originalname} incluído.`, {}, {
       attachment_id: attachment.id,
-      original_name: attachment.original_name
+      original_name: attachment.original_name,
+      source_section: attachment.source_section
     });
     await client.query('COMMIT');
     return attachment;

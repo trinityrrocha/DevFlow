@@ -1,8 +1,8 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.16-alpha`
+## Instalacao isolada `0.6.17-alpha`
 
-| Revisao 0.6.16 | Evidencia |
+| Revisao 0.6.17 | Evidencia |
 |---|---|
 | Causa raiz | normalizador priorizava a fase detalhada `state` sobre o ciclo terminal `status` |
 | Precedencia | `completed`/`failed` da fila prevalecem mesmo quando o status detalhado ainda esta em `health`/`rollback` |

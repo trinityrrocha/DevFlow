@@ -109,6 +109,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
       for (const file of files) {
         const body = new FormData();
         body.append('file', file);
+        body.append('sourceSection', 'geral');
         await api.post(`/tasks/${response.data.task.id}/attachments`, body);
       }
       setForm(emptyForm);

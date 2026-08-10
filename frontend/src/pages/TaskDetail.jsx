@@ -236,50 +236,84 @@ function Summary({ data, user, mutate }) {
 
 function Tests({ data, user, mutate }) {
   const { task } = data;
-  const emptyTest = { description: '', result: 'PASSED', evidence: '', tested_as_super_admin: false, tested_as_admin: false, tested_as_user: false };
+  const emptyTest = { status: 'APPROVED', environment: 'local', context: '', validated_profiles: '', backend_info: '', frontend_info: '', testing_notes: '' };
   const [form, setForm] = useState(emptyTest);
-  const [evidenceFile, setEvidenceFile] = useState(null);
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [modal, setModal] = useState({ open: false, mode: 'view', test: null });
   const [approval, setApproval] = useState({ decision: 'APPROVED', notes: '' });
   const canApprove = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER');
   const canOperate = canApprove
     || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
     || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
-  const canRegisterTest = canOperate && task.requirements?.passing_test;
-  const registerTest = async () => {
-    const response = await api.post(`/tasks/${task.id}/tests`, form);
-    if (evidenceFile) {
+  const canRegisterTest = canOperate;
+  const canChangeTest = (test) => canApprove || test.author_id === user.id;
+  const openTest = (mode, test = null) => {
+    setForm(test ? {
+      status: test.status,
+      environment: test.environment,
+      context: test.context,
+      validated_profiles: test.validated_profiles,
+      backend_info: test.backend_info,
+      frontend_info: test.frontend_info,
+      testing_notes: test.testing_notes
+    } : emptyTest);
+    setAttachmentFile(null);
+    setModal({ open: true, mode, test });
+  };
+  const closeTest = () => {
+    setModal({ open: false, mode: 'view', test: null });
+    setAttachmentFile(null);
+  };
+  const saveTest = async () => {
+    let testId = modal.test?.id;
+    if (modal.mode === 'create') {
+      const response = await api.post(`/tasks/${task.id}/tests`, form);
+      testId = response.data.test.id;
+    } else {
+      await api.patch(`/tasks/${task.id}/tests/${testId}`, form);
+    }
+    if (attachmentFile) {
       const body = new FormData();
-      body.append('file', evidenceFile);
-      body.append('test_id', response.data.test.id);
+      body.append('file', attachmentFile);
+      body.append('test_id', testId);
+      body.append('sourceSection', 'testes');
       await api.post(`/tasks/${task.id}/attachments`, body);
     }
   };
+  const submitTest = async (event) => {
+    event.preventDefault();
+    const changed = await mutate(saveTest, modal.mode === 'create' ? 'Teste registrado.' : 'Teste atualizado.');
+    if (changed) closeTest();
+  };
+  const removeTest = async (event, test) => {
+    event.stopPropagation();
+    if (!window.confirm('Remover logicamente este registro de teste?')) return;
+    await mutate(() => api.delete(`/tasks/${task.id}/tests/${test.id}`), 'Teste removido logicamente.');
+  };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <div>
-        <h3 className="font-semibold">Registros de teste</h3>
-        <div className="mt-3 space-y-3">
-          {data.tests.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">Nenhum teste registrado.</p>}
-          {data.tests.map((test) => <div key={test.id} className="rounded-md border border-slate-200 p-4"><div className="flex justify-between gap-3"><div><StatusBadge value={test.result} /><span className="ml-2 text-xs font-medium text-slate-500">{test.stage_name}</span></div><span className="text-xs text-slate-400">{formatDate(test.created_at)}</span></div><p className="mt-2 text-sm font-medium">{test.description}</p>{test.evidence && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{test.evidence}</p>}{test.attachments?.map((attachment) => <AttachmentLink key={attachment.id} taskId={task.id} item={attachment} />)}<p className="mt-2 text-xs text-slate-400">por {test.created_by_name}</p></div>)}
+    <div className="space-y-6">
+      <section>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold">Registros de teste</h3>
+          {canRegisterTest && <button type="button" onClick={() => openTest('create')} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Registrar Novo Teste</button>}
         </div>
-        {data.tests.some((test) => test.tested_as_super_admin || test.tested_as_admin || test.tested_as_user) && <div className="mt-3 rounded-md bg-indigo-50 p-3 text-xs text-indigo-800">Perfis cobertos nos testes: {[['tested_as_super_admin', 'Super Admin'], ['tested_as_admin', 'Admin'], ['tested_as_user', 'Usuario']].filter(([key]) => data.tests.some((test) => test[key])).map(([, text]) => text).join(', ')}.</div>}
-        {data.approvals.length > 0 && <><h3 className="mt-6 font-semibold">Aprovações</h3><div className="mt-3 space-y-2">{data.approvals.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-3 text-sm"><StatusBadge value={item.decision} /><strong className="ml-2">{item.stage_name}</strong><p className="mt-1 text-slate-600">{item.notes}</p><p className="mt-1 text-xs text-slate-400">{item.created_by_name} · {formatDate(item.created_at)}</p></div>)}</div></>}
-      </div>
-      <div className="space-y-4">
-        {canRegisterTest && <form onSubmit={(event) => { event.preventDefault(); mutate(registerTest, 'Teste registrado.'); setForm(emptyTest); setEvidenceFile(null); }} className="rounded-lg border border-slate-200 p-4">
-          <h3 className="font-semibold">Registrar teste</h3>
-          <div className="mt-3 space-y-3">
-            <p className="text-sm font-medium text-slate-600">Contexto: {label(task.stage)}</p>
-            <textarea required rows={3} className="textarea-field" placeholder="Teste realizado" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <Select value={form.result} onChange={(value) => setForm({ ...form, result: value })} options={['PASSED', 'FAILED', 'BLOCKED'].map((value) => [value, label(value)])} />
-            <fieldset className="rounded-md border border-slate-200 p-3"><legend className="px-1 text-xs font-medium text-slate-600">Perfis validados</legend>{[['tested_as_super_admin', 'Super Admin'], ['tested_as_admin', 'Admin'], ['tested_as_user', 'Usuario']].map(([key, text]) => <label key={key} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.checked })} />{text}</label>)}</fieldset>
-            <label className="block text-sm font-medium">Anexar evidencia<input type="file" onChange={(event) => setEvidenceFile(event.target.files[0] || null)} className="mt-1 block w-full text-xs" /></label>
-            <textarea rows={3} className="textarea-field" placeholder="Evidências" value={form.evidence} onChange={(e) => setForm({ ...form, evidence: e.target.value })} />
-            <button className="btn-primary w-full"><TestTube2 className="mr-2 h-4 w-4" />Registrar</button>
-          </div>
-        </form>}
+        <div className="mt-4 flex flex-wrap gap-4">
+          {data.tests.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">Nenhum teste registrado.</p>}
+          {data.tests.map((test) => (
+            <article key={test.id} onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-full max-w-[350px] cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md sm:w-[350px]">
+              <div className="flex items-start justify-between gap-3">
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${test.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{test.status === 'APPROVED' ? 'Aprovado' : 'Não Aprovado'}</span>
+                {canChangeTest(test) && <div className="flex gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); openTest('edit', test); }} className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50" aria-label="Editar teste"><Pencil className="h-4 w-4" /></button><button type="button" onClick={(event) => removeTest(event, test)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" aria-label="Excluir teste"><Trash2 className="h-4 w-4" /></button></div>}
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">{formatShortDateTime(test.created_at)}</p>
+              <p className="mt-1 text-sm text-slate-500">{test.created_by_name}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="max-w-xl">
         {canApprove && task.requirements?.approval && (
           <form onSubmit={(event) => { event.preventDefault(); mutate(() => api.post(`/tasks/${task.id}/approvals`, approval), 'Decisão registrada.'); setApproval({ ...approval, notes: '' }); }} className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
             <h3 className="font-semibold">Aprovar ou reprovar</h3>
@@ -291,7 +325,23 @@ function Tests({ data, user, mutate }) {
             </div>
           </form>
         )}
-      </div>
+        {data.approvals.length > 0 && <><h3 className="mt-6 font-semibold">Aprovações</h3><div className="mt-3 space-y-2">{data.approvals.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-3 text-sm"><StatusBadge value={item.decision} /><strong className="ml-2">{item.stage_name}</strong><p className="mt-1 text-slate-600">{item.notes}</p><p className="mt-1 text-xs text-slate-400">{item.created_by_name} · {formatDate(item.created_at)}</p></div>)}</div></>}
+      </section>
+      {modal.open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeTest(); }}>
+        <div role="dialog" aria-modal="true" aria-labelledby="task-test-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-4"><h2 id="task-test-title" className="text-lg font-semibold">{modal.mode === 'create' ? 'Registrar Novo Teste' : modal.mode === 'edit' ? 'Editar Teste' : 'Detalhes do Teste'}</h2><button type="button" onClick={closeTest} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X className="h-5 w-5" /></button></div>
+          <form onSubmit={submitTest} className="mt-5 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Status<Select value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={[["APPROVED", "Aprovado"], ["NOT_APPROVED", "Não Aprovado"]]} disabled={modal.mode === 'view'} /></label><label className="text-sm font-medium">Ambiente<Select value={form.environment} onChange={(value) => setForm({ ...form, environment: value })} options={[["local", "Local"], ["local_nuvem", "Local e Nuvem"]]} disabled={modal.mode === 'view'} /></label></div>
+            <label className="block text-sm font-medium">Contexto<textarea required disabled={modal.mode === 'view'} rows={4} className="textarea-field mt-1 disabled:bg-slate-50" value={form.context} onChange={(event) => setForm({ ...form, context: event.target.value })} /></label>
+            <label className="block text-sm font-medium">Perfis Validados<input required disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" placeholder="Ex.: Super Admin, Admin, Usuário" value={form.validated_profiles} onChange={(event) => setForm({ ...form, validated_profiles: event.target.value })} /></label>
+            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Backend<input disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" value={form.backend_info} onChange={(event) => setForm({ ...form, backend_info: event.target.value })} /></label><label className="text-sm font-medium">Frontend<input disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" value={form.frontend_info} onChange={(event) => setForm({ ...form, frontend_info: event.target.value })} /></label></div>
+            <label className="block text-sm font-medium">Testando<textarea disabled={modal.mode === 'view'} rows={5} className="textarea-field mt-1 disabled:bg-slate-50" value={form.testing_notes} onChange={(event) => setForm({ ...form, testing_notes: event.target.value })} /></label>
+            {modal.test?.attachments?.length > 0 && <div><p className="text-sm font-medium">Anexos deste teste</p><div className="mt-2 space-y-2">{modal.test.attachments.map((attachment) => <AttachmentLink key={attachment.id} taskId={task.id} item={attachment} />)}</div></div>}
+            {modal.mode !== 'view' && <label className="block rounded-lg border-2 border-dashed border-slate-300 p-4 text-sm font-medium">Anexo do teste<input type="file" onChange={(event) => setAttachmentFile(event.target.files[0] || null)} className="mt-2 block w-full text-xs" /></label>}
+            <div className="flex justify-end gap-2"><button type="button" onClick={closeTest} className="btn-secondary">{modal.mode === 'view' ? 'Fechar' : 'Cancelar'}</button>{modal.mode !== 'view' && <button className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar teste</button>}</div>
+          </form>
+        </div>
+      </div>}
     </div>
   );
 }
@@ -408,6 +458,7 @@ function Attachments({ data, user, mutate }) {
     const body = new FormData();
     body.append('file', file);
     body.append('description', description);
+    body.append('sourceSection', 'geral');
     mutate(() => api.post(`/tasks/${data.task.id}/attachments`, body), 'Anexo incluído.');
     setFile(null);
     setDescription('');
@@ -420,20 +471,24 @@ function Attachments({ data, user, mutate }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field mt-3 max-w-md" />
         <div><button type="button" disabled={!file} onClick={upload} className="btn-primary mt-3">Enviar anexo</button></div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {data.attachments.map((item) => (
-          <div key={item.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <ol className="relative ml-3 border-l border-slate-200">
+        {[...data.attachments].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((item) => (
+          <li key={item.id} className="mb-6 ml-6">
+          <span className="absolute -left-2 mt-5 h-4 w-4 rounded-full border-2 border-white bg-indigo-500" />
+          <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-3"><div><p className="text-sm font-medium">{formatShortDateTime(item.created_at)}</p><p className="text-xs text-slate-500">{item.created_by_name}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Anexado em: {attachmentSourceLabel(item.source_section)}</span></header>
             <AttachmentPreview taskId={data.task.id} item={item} />
             <div className="flex items-center justify-between gap-3 p-3">
-            <div className="min-w-0"><p className="truncate text-sm font-medium">{item.original_name}</p><p className="text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB · {item.created_by_name}</p></div>
+            <div className="min-w-0"><p className="truncate text-sm font-medium">{item.original_name}</p><p className="text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB</p>{item.description && <p className="mt-1 text-xs text-slate-600">{item.description}</p>}</div>
             <div className="flex shrink-0 gap-1">
               <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} download={item.original_name} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-4 w-4" /></a>
               {user.access_level === 'ADMIN' && <button onClick={() => mutate(() => api.delete(`/tasks/${data.task.id}/attachments/${item.id}`), 'Anexo removido logicamente.')} className="rounded-md p-2 text-red-600 hover:bg-red-50" title="Remover"><XCircle className="h-4 w-4" /></button>}
             </div>
             </div>
-          </div>
+          </article>
+          </li>
         ))}
-      </div>
+      </ol>
     </div>
   );
 }
@@ -447,6 +502,7 @@ function Comments({ data, mutate }) {
       const body = new FormData();
       body.append('file', file);
       body.append('comment_id', response.data.comment.id);
+      body.append('sourceSection', 'comentarios');
       await api.post(`/tasks/${data.task.id}/attachments`, body);
     }
   };
@@ -470,6 +526,14 @@ function AttachmentLink({ taskId, item }) {
   if (isVideoAttachment(item)) return <video src={url} controls preload="metadata" className="mt-2 max-h-48 w-full max-w-sm rounded-md border border-slate-200">Seu navegador nao suporta video.</video>;
   const Icon = attachmentIcon(item);
   return <a href={url} className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"><Icon className="h-3.5 w-3.5" />{item.original_name}</a>;
+}
+
+function formatShortDateTime(value) {
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function attachmentSourceLabel(source) {
+  return ({ geral: 'Geral', backend: 'Backend', frontend: 'Frontend', testes: 'Testes', github: 'GitHub', comentarios: 'Comentários' })[source] || 'Geral';
 }
 
 function attachmentExtension(item) {
@@ -515,8 +579,8 @@ function History({ events, timerEvents = [] }) {
   );
 }
 
-function Select({ value, onChange, options }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} className="field">{options.map(([optionValue, text]) => <option key={optionValue} value={optionValue}>{text}</option>)}</select>;
+function Select({ value, onChange, options, ...props }) {
+  return <select value={value} onChange={(e) => onChange(e.target.value)} className="field" {...props}>{options.map(([optionValue, text]) => <option key={optionValue} value={optionValue}>{text}</option>)}</select>;
 }
 function MonacoEditor(props) {
   return <Suspense fallback={<div className="flex h-full min-h-40 items-center justify-center bg-slate-950 text-sm text-slate-300"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Carregando editor...</div>}><CodeEditor {...props} /></Suspense>;

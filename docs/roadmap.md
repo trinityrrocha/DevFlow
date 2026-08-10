@@ -1,6 +1,10 @@
 # Roadmap inicial
 
-## Marco `0.6.16-alpha`
+## Marco `0.6.17-alpha`
+
+- modulo estruturado de QA com cards, modal, anexos por teste e exclusao logica;
+- rastreabilidade da origem dos anexos e timeline vertical no dossie tecnico;
+- preservar a arquitetura isolada e homologar migration/UI em VPS antes de producao.
 
 - [x] concluir Fase 1: navegacao superior, Clientes, Projetos e configuracoes segmentadas;
 - [x] preservar URLs antigas com redirecionamentos;

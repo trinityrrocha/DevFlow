@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.16-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.17-alpha`.
+
+Revisao 0.6.17 implementada localmente: registros de QA usam modelo estruturado, autoria da sessao, cards de 350 px e modal para cadastro, consulta e edicao; exclusao e logica e auditavel. Anexos registram a secao de origem e aparecem em timeline cronologica com autor e preview. Lint, testes e build foram validados localmente; PostgreSQL, navegador autenticado, Docker e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.16 implementada localmente: o polling da atualizacao usa um unico intervalo por request, timeout explicito, bloqueio de chamadas sobrepostas e estado terminal da fila com precedencia sobre a fase detalhada. A sequencia 503 seguida de resposta 200 `completed` aciona reload imediato; `failed` encerra o polling e apresenta falha segura. Lint, regressao e check integral foram validados localmente; reinicio real de containers e retorno da VPS ainda dependem de homologacao.
 

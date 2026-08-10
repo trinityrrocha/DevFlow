@@ -14,6 +14,8 @@ router.patch('/:id/administration', requirePermission('tasks.manage'), controlle
 router.post('/:id/timer', requirePermission('tasks.operate'), controller.timerAction);
 router.put('/:id/submission', requirePermission('tasks.operate'), controller.saveSubmission);
 router.post('/:id/tests', requirePermission('tasks.operate'), controller.addTest);
+router.patch('/:id/tests/:testId', requirePermission('tasks.operate'), controller.updateTest);
+router.delete('/:id/tests/:testId', requirePermission('tasks.operate'), controller.deleteTest);
 router.post('/:id/approvals', requirePermission('tasks.operate'), controller.addApproval);
 router.post('/:id/github', requirePermission('tasks.operate'), controller.addGithub);
 router.patch('/:id/github/:cardId', requirePermission('tasks.operate'), controller.updateGithub);
