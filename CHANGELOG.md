@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.21-alpha] - 2026-08-10
+
+### Adicionado
+
+- card de checklist junto ao avanço da etapa, com evidências concluídas, pendências obrigatórias e alerta visual no botão bloqueado;
+- perfis técnicos ativos carregados no modal de QA para seleção por checkboxes.
+
+### Alterado
+
+- ambiente e perfis validados usam grupos de checkboxes; Backend e Frontend usam selects de situação predefinida;
+- testes são ordenados do mais recente para o mais antigo em timeline centralizada com cards de 350 px;
+- anexos usam timeline centralizada e cards compactos com dimensões exatas de 350 x 122,15 px.
+
+### Validado
+
+- lint, 35 testes frontend, build Vite e check integral executados localmente;
+- navegador autenticado e VPS permanecem pendentes de homologação.
+
 ## [0.6.20-alpha] - 2026-08-10
 
 ### Corrigido

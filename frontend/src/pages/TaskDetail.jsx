@@ -1,16 +1,31 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, File, FileArchive, FileCode2, FileSpreadsheet, FileText, FileVideo2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, File, FileArchive, FileCode2, FileSpreadsheet, FileText, FileVideo2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
 import { Link, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
+import StagePrerequisiteChecklist from '../components/StagePrerequisiteChecklist';
 import { formatDate, formatDuration, label } from '../utils/formatters';
 import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
 import { CODE_LANGUAGES, codeLanguageLabel, resolveCodeLanguage } from '../utils/codeLanguages';
 import useEditorTheme from '../hooks/useEditorTheme';
 
 const CodeEditor = lazy(() => import('../components/CodeEditor'));
+
+const QA_ACCESS_PROFILES = [
+  ['Super Admin', 'Super Admin'],
+  ['Administrador', 'Administrador'],
+  ['Cliente', 'Cliente']
+];
+const QA_COMPONENT_OPTIONS = [
+  ['', 'Não informado'],
+  ['Não se aplica', 'Não se aplica'],
+  ['Não testado', 'Não testado'],
+  ['Em desenvolvimento', 'Em desenvolvimento'],
+  ['Pronto para teste', 'Pronto para teste'],
+  ['Validado', 'Validado']
+];
 
 const tabs = [
   ['summary', 'Resumo', Clock3],
@@ -75,6 +90,7 @@ export default function TaskDetail() {
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const isRoadmapStage = String(task.stage || '').toUpperCase() === 'ROADMAP'
     || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
+  const advanceBlocked = task.missing_requirements.length > 0;
 
   const transition = (target, backward = false) => {
     const reason = backward ? window.prompt('Informe o motivo do retrocesso:') : undefined;
@@ -148,16 +164,12 @@ export default function TaskDetail() {
       </section>
 
       <section className="card p-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="font-semibold">Controle da etapa</h2>
-            {task.missing_requirements.length > 0
-              ? <div className="mt-2"><p className="text-sm text-amber-800">Pendências para avançar:</p><ul className="mt-1 list-inside list-disc text-sm text-amber-700">{task.missing_requirements.map((item) => <li key={item}>{item}</li>)}</ul></div>
-              : <p className="mt-1 text-sm text-green-700">Todos os requisitos da etapa estão preenchidos.</p>}
-          </div>
-          <div className="flex gap-2">
+        <h2 className="font-semibold">Controle da etapa</h2>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <StagePrerequisiteChecklist task={task} tests={data.tests} githubCards={data.github_cards} attachments={data.attachments} />
+          <div className="flex flex-wrap justify-end gap-2">
             {canManage && previousStage && task.state === 'ACTIVE' && <button disabled={saving} onClick={() => transition(previousStage.id, true)} className="btn-secondary"><RotateCcw className="mr-2 h-4 w-4" />Retroceder</button>}
-            {canOperate && nextStage && task.state === 'ACTIVE' && <button disabled={saving || task.missing_requirements.length > 0} onClick={() => transition(nextStage.id)} className="btn-primary">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Avançar para {nextStage.name}</button>}
+            {canOperate && nextStage && task.state === 'ACTIVE' && <button aria-describedby="stage-prerequisite-checklist" title={advanceBlocked ? 'Conclua as pendências obrigatórias antes de avançar.' : `Avançar para ${nextStage.name}`} disabled={saving || advanceBlocked} onClick={() => transition(nextStage.id)} className={advanceBlocked ? 'inline-flex h-10 items-center justify-center rounded-md border border-amber-400 bg-amber-100 px-4 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-80' : 'btn-primary'}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{advanceBlocked && <AlertTriangle className="mr-2 h-4 w-4" />}Avançar para {nextStage.name}</button>}
           </div>
         </div>
       </section>
@@ -236,11 +248,21 @@ function Summary({ data, user, mutate }) {
 
 function Tests({ data, user, mutate }) {
   const { task } = data;
-  const emptyTest = { status: 'APPROVED', environment: 'local', context: '', validated_profiles: '', backend_info: '', frontend_info: '', testing_notes: '' };
-  const [form, setForm] = useState(emptyTest);
+  const createEmptyTest = () => ({ status: 'APPROVED', environments: ['local'], context: '', validated_profiles: [], backend_info: '', frontend_info: '', testing_notes: '' });
+  const [form, setForm] = useState(createEmptyTest);
+  const [systemProfiles, setSystemProfiles] = useState([]);
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [modal, setModal] = useState({ open: false, mode: 'view', test: null });
   const [approval, setApproval] = useState({ decision: 'APPROVED', notes: '' });
+  useEffect(() => {
+    let active = true;
+    api.get('/users/profiles').then(({ data: response }) => {
+      if (active) setSystemProfiles(response.profiles || []);
+    }).catch(() => {
+      if (active) setSystemProfiles([]);
+    });
+    return () => { active = false; };
+  }, []);
   const canApprove = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER');
   const canOperate = canApprove
     || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
@@ -248,16 +270,23 @@ function Tests({ data, user, mutate }) {
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const canRegisterTest = canOperate;
   const canChangeTest = (test) => canApprove || test.author_id === user.id;
+  const orderedTests = [...data.tests].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const profileOptions = [...QA_ACCESS_PROFILES, ...systemProfiles.map((profile) => [profile.name, profile.name]), ...form.validated_profiles.map((profile) => [profile, profile])]
+    .filter((option, index, options) => options.findIndex(([value]) => value === option[0]) === index);
+  const toggleGroupValue = (field, value, checked) => setForm((current) => ({
+    ...current,
+    [field]: checked ? [...new Set([...current[field], value])] : current[field].filter((item) => item !== value)
+  }));
   const openTest = (mode, test = null) => {
     setForm(test ? {
       status: test.status,
-      environment: test.environment,
+      environments: test.environment === 'local_nuvem' ? ['local', 'cloud'] : ['local'],
       context: test.context,
-      validated_profiles: test.validated_profiles,
+      validated_profiles: String(test.validated_profiles || '').split(',').map((profile) => profile.trim()).filter(Boolean),
       backend_info: test.backend_info,
       frontend_info: test.frontend_info,
       testing_notes: test.testing_notes
-    } : emptyTest);
+    } : createEmptyTest());
     setAttachmentFile(null);
     setModal({ open: true, mode, test });
   };
@@ -267,11 +296,20 @@ function Tests({ data, user, mutate }) {
   };
   const saveTest = async () => {
     let testId = modal.test?.id;
+    const payload = {
+      status: form.status,
+      environment: form.environments.includes('cloud') ? 'local_nuvem' : 'local',
+      context: form.context,
+      validated_profiles: form.validated_profiles.join(', '),
+      backend_info: form.backend_info,
+      frontend_info: form.frontend_info,
+      testing_notes: form.testing_notes
+    };
     if (modal.mode === 'create') {
-      const response = await api.post(`/tasks/${task.id}/tests`, form);
+      const response = await api.post(`/tasks/${task.id}/tests`, payload);
       testId = response.data.test.id;
     } else {
-      await api.patch(`/tasks/${task.id}/tests/${testId}`, form);
+      await api.patch(`/tasks/${task.id}/tests/${testId}`, payload);
     }
     if (attachmentFile) {
       const body = new FormData();
@@ -299,19 +337,22 @@ function Tests({ data, user, mutate }) {
           <h3 className="font-semibold">Registros de teste</h3>
           {canRegisterTest && <button type="button" onClick={() => openTest('create')} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Registrar Novo Teste</button>}
         </div>
-        <div className="mt-4 flex flex-wrap gap-4">
-          {data.tests.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">Nenhum teste registrado.</p>}
-          {data.tests.map((test) => (
-            <article key={test.id} onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-full max-w-[350px] cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md sm:w-[350px]">
+        {orderedTests.length === 0 && <p className="mt-4 rounded-md bg-slate-50 p-4 text-center text-sm text-slate-500">Nenhum teste registrado.</p>}
+        {orderedTests.length > 0 && <div className="mt-4 overflow-x-auto pb-1"><ol className="relative mx-auto w-[398px] border-l border-slate-200" aria-label="Linha do tempo dos testes">
+          {orderedTests.map((test) => (
+            <li key={test.id} className="relative mb-6 ml-6 last:mb-0">
+              <span className={`absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white ${test.status === 'APPROVED' ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+              <article onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-[350px] max-w-[350px] cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md">
               <div className="flex items-start justify-between gap-3">
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${test.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{test.status === 'APPROVED' ? 'Aprovado' : 'Não Aprovado'}</span>
                 {canChangeTest(test) && <div className="flex gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); openTest('edit', test); }} className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50" aria-label="Editar teste"><Pencil className="h-4 w-4" /></button><button type="button" onClick={(event) => removeTest(event, test)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" aria-label="Excluir teste"><Trash2 className="h-4 w-4" /></button></div>}
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">{formatShortDateTime(test.created_at)}</p>
               <p className="mt-1 text-sm text-slate-500">{test.created_by_name}</p>
-            </article>
+              </article>
+            </li>
           ))}
-        </div>
+        </ol></div>}
       </section>
       <section className="max-w-xl">
         {canApprove && task.requirements?.approval && (
@@ -331,14 +372,15 @@ function Tests({ data, user, mutate }) {
         <div role="dialog" aria-modal="true" aria-labelledby="task-test-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
           <div className="flex items-center justify-between gap-4"><h2 id="task-test-title" className="text-lg font-semibold">{modal.mode === 'create' ? 'Registrar Novo Teste' : modal.mode === 'edit' ? 'Editar Teste' : 'Detalhes do Teste'}</h2><button type="button" onClick={closeTest} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X className="h-5 w-5" /></button></div>
           <form onSubmit={submitTest} className="mt-5 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Status<Select value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={[["APPROVED", "Aprovado"], ["NOT_APPROVED", "Não Aprovado"]]} disabled={modal.mode === 'view'} /></label><label className="text-sm font-medium">Ambiente<Select value={form.environment} onChange={(value) => setForm({ ...form, environment: value })} options={[["local", "Local"], ["local_nuvem", "Local e Nuvem"]]} disabled={modal.mode === 'view'} /></label></div>
+            <label className="block text-sm font-medium">Status<Select value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={[["APPROVED", "Aprovado"], ["NOT_APPROVED", "Não Aprovado"]]} disabled={modal.mode === 'view'} /></label>
+            <CheckboxGroup legend="Ambiente" options={[["local", "Local"], ["cloud", "Nuvem"]]} values={form.environments} onChange={(value, checked) => toggleGroupValue('environments', value, checked)} disabled={modal.mode === 'view'} />
             <label className="block text-sm font-medium">Contexto<textarea required disabled={modal.mode === 'view'} rows={4} className="textarea-field mt-1 disabled:bg-slate-50" value={form.context} onChange={(event) => setForm({ ...form, context: event.target.value })} /></label>
-            <label className="block text-sm font-medium">Perfis Validados<input required disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" placeholder="Ex.: Super Admin, Admin, Usuário" value={form.validated_profiles} onChange={(event) => setForm({ ...form, validated_profiles: event.target.value })} /></label>
-            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Backend<input disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" value={form.backend_info} onChange={(event) => setForm({ ...form, backend_info: event.target.value })} /></label><label className="text-sm font-medium">Frontend<input disabled={modal.mode === 'view'} className="field mt-1 disabled:bg-slate-50" value={form.frontend_info} onChange={(event) => setForm({ ...form, frontend_info: event.target.value })} /></label></div>
+            <CheckboxGroup legend="Perfis Validados" options={profileOptions} values={form.validated_profiles} onChange={(value, checked) => toggleGroupValue('validated_profiles', value, checked)} disabled={modal.mode === 'view'} />
+            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Backend<Select disabled={modal.mode === 'view'} value={form.backend_info} onChange={(value) => setForm({ ...form, backend_info: value })} options={qaComponentOptions(form.backend_info)} /></label><label className="text-sm font-medium">Frontend<Select disabled={modal.mode === 'view'} value={form.frontend_info} onChange={(value) => setForm({ ...form, frontend_info: value })} options={qaComponentOptions(form.frontend_info)} /></label></div>
             <label className="block text-sm font-medium">Testando<textarea disabled={modal.mode === 'view'} rows={5} className="textarea-field mt-1 disabled:bg-slate-50" value={form.testing_notes} onChange={(event) => setForm({ ...form, testing_notes: event.target.value })} /></label>
             {modal.test?.attachments?.length > 0 && <div><p className="text-sm font-medium">Anexos deste teste</p><div className="mt-2 space-y-2">{modal.test.attachments.map((attachment) => <AttachmentLink key={attachment.id} taskId={task.id} item={attachment} />)}</div></div>}
             {modal.mode !== 'view' && <label className="block rounded-lg border-2 border-dashed border-slate-300 p-4 text-sm font-medium">Anexo do teste<input type="file" onChange={(event) => setAttachmentFile(event.target.files[0] || null)} className="mt-2 block w-full text-xs" /></label>}
-            <div className="flex justify-end gap-2"><button type="button" onClick={closeTest} className="btn-secondary">{modal.mode === 'view' ? 'Fechar' : 'Cancelar'}</button>{modal.mode !== 'view' && <button className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar teste</button>}</div>
+            <div className="flex justify-end gap-2"><button type="button" onClick={closeTest} className="btn-secondary">{modal.mode === 'view' ? 'Fechar' : 'Cancelar'}</button>{modal.mode !== 'view' && <button disabled={form.environments.length === 0 || form.validated_profiles.length === 0} className="btn-primary"><Save className="mr-2 h-4 w-4" />Salvar teste</button>}</div>
           </form>
         </div>
       </div>}
@@ -471,24 +513,24 @@ function Attachments({ data, user, mutate }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field mt-3 max-w-md" />
         <div><button type="button" disabled={!file} onClick={upload} className="btn-primary mt-3">Enviar anexo</button></div>
       </div>
-      <ol className="relative ml-3 border-l border-slate-200">
+      <div className="overflow-x-auto pb-1"><ol className="relative mx-auto w-[398px] border-l border-slate-200" aria-label="Linha do tempo dos anexos">
         {[...data.attachments].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((item) => (
-          <li key={item.id} className="mb-6 ml-6">
-          <span className="absolute -left-2 mt-5 h-4 w-4 rounded-full border-2 border-white bg-indigo-500" />
-          <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-3"><div><p className="text-sm font-medium">{formatShortDateTime(item.created_at)}</p><p className="text-xs text-slate-500">{item.created_by_name}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Anexado em: {attachmentSourceLabel(item.source_section)}</span></header>
+          <li key={item.id} className="relative mb-6 ml-6 last:mb-0">
+          <span className="absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white bg-indigo-500" aria-hidden="true" />
+          <article className="flex h-[122.15px] w-[350px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <AttachmentPreview taskId={data.task.id} item={item} />
-            <div className="flex items-center justify-between gap-3 p-3">
-            <div className="min-w-0"><p className="truncate text-sm font-medium">{item.original_name}</p><p className="text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB</p>{item.description && <p className="mt-1 text-xs text-slate-600">{item.description}</p>}</div>
-            <div className="flex shrink-0 gap-1">
+            <div className="flex min-w-0 flex-1 flex-col justify-between p-2.5">
+              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="whitespace-nowrap text-xs font-semibold text-slate-700">{formatShortDateTime(item.created_at)}</p><p className="truncate text-[11px] text-slate-500">{item.created_by_name}</p></div><div className="flex shrink-0 gap-0.5">
               <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} download={item.original_name} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-4 w-4" /></a>
               {user.access_level === 'ADMIN' && <button onClick={() => mutate(() => api.delete(`/tasks/${data.task.id}/attachments/${item.id}`), 'Anexo removido logicamente.')} className="rounded-md p-2 text-red-600 hover:bg-red-50" title="Remover"><XCircle className="h-4 w-4" /></button>}
-            </div>
+              </div></div>
+              <span className="w-fit max-w-full truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">Anexado em: {attachmentSourceLabel(item.source_section)}</span>
+              <div className="min-w-0"><p className="truncate text-xs font-medium text-slate-800">{item.original_name}</p><p className="truncate text-[10px] text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB{item.description ? ` · ${item.description}` : ''}</p></div>
             </div>
           </article>
           </li>
         ))}
-      </ol>
+      </ol></div>
     </div>
   );
 }
@@ -561,13 +603,13 @@ function attachmentIcon(item) {
 function AttachmentPreview({ taskId, item }) {
   const url = `${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`;
   if (isImageAttachment(item)) {
-    return <a href={url} target="_blank" rel="noreferrer" title="Abrir imagem em tamanho completo" className="block bg-slate-100"><img src={url} alt={item.original_name} loading="lazy" className="h-44 w-full object-cover" /></a>;
+    return <a href={url} target="_blank" rel="noreferrer" title="Abrir imagem em tamanho completo" className="block h-full w-24 shrink-0 bg-slate-100"><img src={url} alt={item.original_name} loading="lazy" className="h-full w-full object-cover" /></a>;
   }
   if (isVideoAttachment(item)) {
-    return <video src={url} controls preload="metadata" className="aspect-video max-h-64 w-full bg-slate-950 object-contain">Seu navegador nao suporta video.</video>;
+    return <video src={url} controls preload="metadata" className="h-full w-24 shrink-0 bg-slate-950 object-cover">Seu navegador nao suporta video.</video>;
   }
   const Icon = attachmentIcon(item);
-  return <a href={url} target="_blank" rel="noreferrer" className="flex h-44 items-center justify-center bg-slate-50 text-slate-500" title={`Abrir ${item.original_name}`}><Icon className="h-14 w-14" aria-hidden="true" /></a>;
+  return <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-24 shrink-0 items-center justify-center bg-slate-50 text-slate-500" title={`Abrir ${item.original_name}`}><Icon className="h-10 w-10" aria-hidden="true" /></a>;
 }
 
 function History({ events, timerEvents = [] }) {
@@ -577,6 +619,15 @@ function History({ events, timerEvents = [] }) {
       {combined.map((event) => <li key={`${event.event_type}-${event.id}`} className="mb-6 ml-6"><span className="absolute -left-2 flex h-4 w-4 rounded-full border-2 border-white bg-indigo-500" /><div className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{event.event_type}</strong><span className="text-xs text-slate-400">{formatDate(event.created_at)}</span></div><p className="mt-1 text-sm text-slate-600">{event.description}</p><p className="mt-2 text-xs text-slate-400">por {event.actor_name}</p></div></li>)}
     </ol>
   );
+}
+
+function CheckboxGroup({ legend, options, values, onChange, disabled = false }) {
+  return <fieldset><legend className="text-sm font-medium">{legend}</legend><div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">{options.map(([value, text]) => <label key={value} className={`flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm ${disabled ? 'cursor-default text-slate-500' : 'cursor-pointer hover:border-indigo-300'}`}><input type="checkbox" checked={values.includes(value)} disabled={disabled} onChange={(event) => onChange(value, event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />{text}</label>)}</div>{values.length === 0 && !disabled && <p className="mt-1 text-xs text-amber-700">Selecione pelo menos uma opção.</p>}</fieldset>;
+}
+
+function qaComponentOptions(currentValue) {
+  if (!currentValue || QA_COMPONENT_OPTIONS.some(([value]) => value === currentValue)) return QA_COMPONENT_OPTIONS;
+  return [[currentValue, currentValue], ...QA_COMPONENT_OPTIONS];
 }
 
 function Select({ value, onChange, options, ...props }) {

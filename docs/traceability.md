@@ -1,5 +1,16 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.21-alpha`
+
+| Revisao 0.6.21 | Evidencia |
+|---|---|
+| Modal QA | `TaskDetail.jsx` usa `CheckboxGroup` para ambiente/perfis e `Select` para Backend/Frontend |
+| Perfis reais | `/users/profiles` fornece os perfis técnicos ativos, preservando valores legados ao editar |
+| Timeline QA | ordenação decrescente explícita e cards de 350 px em eixo centralizado |
+| Timeline anexos | cards `h-[122.15px] w-[350px]` com preview, data, autor, origem e ações |
+| Checklist | `StagePrerequisiteChecklist.jsx` separa evidências visuais dos bloqueios obrigatórios fornecidos por `missing_requirements` |
+| Avanço | botão mantém o bloqueio do backend e ganha alerta/descrição acessível quando existem pendências |
+
 ## Instalacao isolada `0.6.20-alpha`
 
 | Revisao 0.6.20 | Evidencia |

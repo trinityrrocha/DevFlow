@@ -1,5 +1,12 @@
 # Roadmap inicial
 
+## Marco `0.6.21-alpha`
+
+- refinar modal e timeline de QA;
+- padronizar cards compactos da timeline de anexos;
+- exibir checklist de evidências e bloqueios antes do avanço de etapa;
+- homologar a experiência em navegador autenticado na VPS.
+
 ## Marco `0.6.20-alpha`
 
 - reconciliar pela migration 013 ambientes que ja registraram uma versao anterior da 012;

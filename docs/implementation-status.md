@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-10. Versao: `0.6.20-alpha`.
+Data de corte: 2026-08-10. Versao: `0.6.21-alpha`.
+
+Revisao 0.6.21 implementada localmente: ambiente e perfis do QA usam checkboxes, Backend/Frontend usam selects, testes e anexos seguem timelines centralizadas e os anexos têm cards de 350 x 122,15 px. O checklist próximo ao avanço apresenta evidências e os bloqueios obrigatórios calculados pelo backend, sem criar novas regras de transição. Navegador autenticado e VPS ainda dependem de homologação.
 
 Revisao 0.6.20 implementada localmente: a migration 013 reconcilia bancos que registraram a 012 anterior quando `task_tests` estava vazia, removendo o trigger legado e garantindo `source_section VARCHAR(50)`. A 012 corrigida continua atendendo diretamente a VPS que sofreu rollback e nao registrou a migration. PostgreSQL, Docker e VPS reais ainda dependem de homologacao.
 

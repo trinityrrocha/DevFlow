@@ -7,6 +7,7 @@ const read = (file) => readFileSync(resolve(frontendRoot, file), 'utf8');
 
 describe('experiencia de tarefas e anotacoes GitHub', () => {
   const detail = read('src/pages/TaskDetail.jsx');
+  const checklist = read('src/components/StagePrerequisiteChecklist.jsx');
   const list = read('src/pages/Tasks.jsx');
   const editor = read('src/components/CodeEditor.jsx');
   const monaco = read('src/services/monaco.js');
@@ -36,18 +37,35 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(detail).not.toContain('autoPlay');
   });
 
-  it('renderiza QA em cards de 350px, modal estruturado e anexos em timeline', () => {
+  it('renderiza QA e anexos em timelines centralizadas com dimensoes exatas', () => {
     expect(detail).toContain('Registrar Novo Teste');
     expect(detail).toContain('max-w-[350px]');
-    expect(detail).toContain('sm:w-[350px]');
+    expect(detail).toContain('w-[350px]');
+    expect(detail).toContain('h-[122.15px] w-[350px]');
+    expect(detail).toContain('relative mx-auto w-[398px] border-l border-slate-200');
     expect(detail).toContain('aria-labelledby="task-test-title"');
     for (const field of ['validated_profiles', 'environment', 'backend_info', 'frontend_info', 'testing_notes']) expect(detail).toContain(field);
+    expect(detail).toContain('<CheckboxGroup legend="Ambiente"');
+    expect(detail).toContain('<CheckboxGroup legend="Perfis Validados"');
+    expect(detail).toContain('type="checkbox"');
+    expect(detail).toContain('api.get(\'/users/profiles\')');
+    expect(detail).toContain('qaComponentOptions(form.backend_info)');
+    expect(detail).toContain('qaComponentOptions(form.frontend_info)');
     expect(detail).toContain("body.append('sourceSection', 'testes')");
     expect(detail).toContain("body.append('sourceSection', 'comentarios')");
     expect(detail).toContain("body.append('sourceSection', 'geral')");
     expect(detail).toContain('attachmentSourceLabel(item.source_section)');
-    expect(detail).toContain('relative ml-3 border-l border-slate-200');
+    expect(detail).toContain('const orderedTests = [...data.tests].sort');
     expect(detail).toContain('new Date(b.created_at) - new Date(a.created_at)');
+  });
+
+  it('posiciona o checklist de pre-requisitos junto ao avanço de etapa', () => {
+    expect(detail).toContain('<StagePrerequisiteChecklist task={task} tests={data.tests} githubCards={data.github_cards} attachments={data.attachments} />');
+    expect(detail).toContain('aria-describedby="stage-prerequisite-checklist"');
+    expect(detail).toContain('disabled={saving || advanceBlocked}');
+    for (const item of ['Testes de QA aprovados', 'Cards do GitHub vinculados', 'Anexos inseridos', 'Pendências obrigatórias']) expect(checklist).toContain(item);
+    expect(checklist).toContain('task.missing_requirements || []');
+    expect(checklist).toContain("test.stage_id === currentStageId && test.status === 'APPROVED'");
   });
 
   it('mantem o cabecalho da lista destacado e sem subtitulo redundante', () => {
