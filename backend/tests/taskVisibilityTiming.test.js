@@ -10,14 +10,14 @@ describe('visibilidade Roadmap e cronometros', () => {
 
   it('calcula tempo ativo pela soma persistida e timestamp, inclusive apos reinicio', () => {
     const now = new Date('2026-08-06T12:00:00Z');
-    const snapshot = timingSnapshot({ timer_status: 'running', timer_last_started_at: '2026-08-06T11:30:00Z', active_elapsed_seconds: 3600, estimated_duration_seconds: 10800, started_at: '2026-08-06T08:00:00Z' }, now);
+    const snapshot = timingSnapshot({ timer_status: 'running', timer_last_started_at: '2026-08-06T11:30:00Z', active_elapsed_seconds: 3600, estimated_duration_seconds: 10800, current_stage_entered_at: '2026-08-06T08:00:00Z' }, now);
     expect(snapshot.active_elapsed_seconds).toBe(5400);
     expect(snapshot.remaining_seconds).toBe(5400);
     expect(snapshot.elapsed_since_start_seconds).toBe(14400);
   });
 
   it('mantem regressiva parada durante pausa, mas tempo total continua', () => {
-    const snapshot = timingSnapshot({ timer_status: 'paused', active_elapsed_seconds: 7200, estimated_duration_seconds: 10800, started_at: '2026-08-06T08:00:00Z' }, new Date('2026-08-06T12:00:00Z'));
+    const snapshot = timingSnapshot({ timer_status: 'paused', active_elapsed_seconds: 7200, estimated_duration_seconds: 10800, current_stage_entered_at: '2026-08-06T08:00:00Z' }, new Date('2026-08-06T12:00:00Z'));
     expect(snapshot.active_elapsed_seconds).toBe(7200);
     expect(snapshot.remaining_seconds).toBe(3600);
     expect(snapshot.elapsed_since_start_seconds).toBe(14400);

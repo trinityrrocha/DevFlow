@@ -31,7 +31,10 @@ async function calculateGeneral(client, companyId) {
          SELECT i.task_id,SUM(EXTRACT(EPOCH FROM (i.ended_at-i.started_at))) AS active_seconds
          FROM task_stage_intervals i JOIN tasks t ON t.id=i.task_id
          WHERE t.company_id=$1 AND t.state='COMPLETED' AND t.deleted_at IS NULL
-           AND i.ended_at IS NOT NULL GROUP BY i.task_id
+           AND i.ended_at IS NOT NULL
+           AND UPPER(i.stage_code_snapshot)<>'ROADMAP'
+           AND LOWER(TRIM(i.stage_name_snapshot))<>'roadmap'
+         GROUP BY i.task_id
        )
        SELECT COALESCE(AVG(active_seconds),0)::bigint AS average_completion_seconds FROM totals`,
       [companyId]
@@ -40,6 +43,8 @@ async function calculateGeneral(client, companyId) {
       `SELECT i.stage_code_snapshot AS stage,i.stage_name_snapshot AS stage_name,
               COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(i.ended_at,CURRENT_TIMESTAMP)-i.started_at))),0)::bigint AS average_seconds
        FROM task_stage_intervals i WHERE i.company_id=$1
+         AND UPPER(i.stage_code_snapshot)<>'ROADMAP'
+         AND LOWER(TRIM(i.stage_name_snapshot))<>'roadmap'
        GROUP BY i.stage_code_snapshot,i.stage_name_snapshot ORDER BY i.stage_name_snapshot`,
       [companyId]
     )
@@ -65,17 +70,17 @@ async function calculateDevelopers(client, companyId) {
        SELECT id,frontend_assignee_id FROM tasks WHERE company_id=$1 AND deleted_at IS NULL
      ),
      worked_intervals AS (
-       SELECT CASE s.responsibility
-                WHEN 'BACKEND_ASSIGNEE' THEN t.backend_assignee_id
-                WHEN 'FRONTEND_ASSIGNEE' THEN t.frontend_assignee_id
-              END AS user_id,
-              i.task_id,i.stage_code_snapshot AS stage,
-              EXTRACT(EPOCH FROM (COALESCE(i.ended_at,CURRENT_TIMESTAMP)-i.started_at)) AS seconds
-       FROM task_stage_intervals i
-       JOIN tasks t ON t.id=i.task_id
-       JOIN workflow_stages s ON s.id=i.stage_id
-       WHERE i.company_id=$1
-         AND s.responsibility IN ('BACKEND_ASSIGNEE','FRONTEND_ASSIGNEE')
+       SELECT session.user_id,session.task_id,stage.code AS stage,
+              session.active_seconds
+              + CASE WHEN session.ended_at IS NULL
+                  THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-session.started_at))
+                  ELSE 0 END AS seconds
+       FROM task_stage_touch_sessions session
+       JOIN workflow_stages stage
+         ON stage.id=session.stage_id AND stage.company_id=session.company_id
+       WHERE session.company_id=$1
+         AND UPPER(stage.code)<>'ROADMAP'
+         AND LOWER(TRIM(stage.name))<>'roadmap'
      ),
      work_by_task AS (
        SELECT user_id,task_id,SUM(seconds) AS seconds FROM worked_intervals

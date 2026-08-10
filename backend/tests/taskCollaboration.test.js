@@ -25,7 +25,8 @@ describe('cadastros e dossie tecnico da tarefa', () => {
   });
 
   it('mapeia todos os eventos de cronometro para valores aceitos pelo banco', () => {
-    expect(timingService).toContain("complete: 'COMPLETED'");
+    expect(timingService).toContain("resume: 'RESUMED'");
+    expect(timingService).not.toContain("complete: 'COMPLETED'");
     expect(timingService).not.toContain("cancel: 'CANCELLED'");
     expect(timingService).not.toContain('`${action.toUpperCase()}D`');
   });

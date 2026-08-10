@@ -1,6 +1,17 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.14-alpha`
+## Instalacao isolada `0.6.15-alpha`
+
+| Revisao 0.6.15 | Evidencia |
+|---|---|
+| Migration | `011_stage_time_tracking.sql` adiciona chegada da etapa, `stage_id` nos eventos e sessoes manuais por usuario |
+| Lead time | `task_stage_intervals` abre automaticamente na entrada e fecha na transicao |
+| Touch time | `taskTimingService.js` abre/fecha `task_stage_touch_sessions` e vincula eventos a etapa atual |
+| Transicao | `transitionTask` encerra sessoes/intervalo anterior, zera o timer e abre a etapa seguinte na mesma transacao |
+| Roadmap | backend rejeita timer e frontend omite integralmente o card temporal |
+| Anexos | MIME canonico no backend; `<img>`/`<video>` e icones Lucide no frontend |
+| Regressao | 82 testes backend, 30 frontend, lint e build de producao locais aprovados |
+
 
 | Revisao 0.6.14 | Evidencia |
 |---|---|

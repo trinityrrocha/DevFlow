@@ -20,6 +20,20 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(detail).toContain('animate-spin');
     expect(detail).not.toContain("timerAction('cancel')");
     expect(detail).not.toContain("stateAction('cancel')");
+    expect(detail).not.toContain("timerAction('complete')");
+    expect(detail).not.toContain('Concluir tempo');
+    expect(detail).toContain('{!isRoadmapStage && <section');
+    expect(detail).toContain('summaryIsRoadmap ? []');
+    expect(detail).toContain('data.stage_touch_by_user');
+  });
+
+  it('renderiza previews nativos e icones sem autoplay', () => {
+    expect(detail).toContain('<img src={url}');
+    expect(detail).toContain('<video src={url} controls preload="metadata"');
+    expect(detail).toContain('object-cover');
+    expect(detail).toContain('FileArchive');
+    expect(detail).toContain('FileSpreadsheet');
+    expect(detail).not.toContain('autoPlay');
   });
 
   it('mantem o cabecalho da lista destacado e sem subtitulo redundante', () => {

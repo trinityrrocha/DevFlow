@@ -112,7 +112,7 @@ async function updateAdministration(req, res) {
 async function timerAction(req, res) {
   try {
     const { action } = z.object({
-      action: z.enum(['start', 'pause', 'resume', 'complete'])
+      action: z.enum(['start', 'pause', 'resume'])
     }).strict().parse(req.body);
     const task = await taskService.timerAction(req, req.params.id, action);
     await recordAudit({ req, operation: `TASK_TIMER_${action.toUpperCase()}`, entityType: 'TASK', entityId: task.id, newValues: { timer_status: task.timer_status, active_elapsed_seconds: task.active_elapsed_seconds, is_overdue: task.is_overdue } });
@@ -212,7 +212,10 @@ async function uploadAttachment(req, res) {
 async function downloadAttachment(req, res) {
   const { attachment, filePath } = await attachmentService.getAttachment(req.user, req.params.id, req.params.attachmentId);
   res.setHeader('Content-Type', attachment.mime_type);
-  res.setHeader('Content-Disposition', `attachment; filename="${path.basename(attachment.original_name).replace(/"/g, '')}"`);
+  const disposition = /^(image|video)\//u.test(attachment.mime_type) || attachment.mime_type === 'application/pdf'
+    ? 'inline'
+    : 'attachment';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${path.basename(attachment.original_name).replace(/"/g, '')}"`);
   res.setHeader('Cache-Control', 'private, no-store');
   res.sendFile(filePath);
 }

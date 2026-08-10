@@ -14,9 +14,27 @@ function timingSnapshot(task, now = new Date()) {
   const active = stored + current;
   const estimate = task.estimated_duration_seconds == null ? null : Number(task.estimated_duration_seconds);
   const remaining = estimate == null ? null : estimate - active;
-  const end = task.timer_ended_at ? new Date(task.timer_ended_at) : now;
-  const elapsed = task.started_at ? Math.max(0, Math.floor((end.getTime() - new Date(task.started_at).getTime()) / 1000)) : 0;
-  return { active_elapsed_seconds: active, estimated_duration_seconds: estimate, remaining_seconds: remaining, elapsed_since_start_seconds: elapsed, is_overdue: estimate != null && remaining <= 0 && !['completed', 'cancelled'].includes(task.timer_status) };
+  const leadStart = task.current_stage_entered_at;
+  const lead = leadStart ? Math.max(0, Math.floor((now.getTime() - new Date(leadStart).getTime()) / 1000)) : 0;
+  return { active_elapsed_seconds: active, estimated_duration_seconds: estimate, remaining_seconds: remaining, lead_time_seconds: lead, elapsed_since_start_seconds: lead, is_overdue: estimate != null && remaining <= 0 && !['completed', 'cancelled'].includes(task.timer_status) };
+}
+
+function isRoadmapStage(stage) {
+  return String(stage.stage || stage.code || '').toUpperCase() === 'ROADMAP'
+    || String(stage.stage_name || stage.name || '').trim().toLowerCase() === 'roadmap';
+}
+
+async function closeActiveTouchSessions(client, { companyId, taskId, stageId, endReason }) {
+  return client.query(
+    `UPDATE task_stage_touch_sessions
+     SET ended_at=CURRENT_TIMESTAMP,
+         active_seconds=GREATEST(0,EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-started_at))::bigint),
+         end_reason=$4::varchar(32)
+     WHERE company_id=$1::uuid AND task_id=$2::uuid AND stage_id=$3::uuid
+       AND ended_at IS NULL
+     RETURNING id,user_id,active_seconds`,
+    [companyId, taskId, stageId, endReason]
+  );
 }
 
 function canOperateTimer(user, task, stage) {
@@ -32,8 +50,8 @@ async function updateEstimate(req, taskId, seconds) {
     const snapshot = timingSnapshot(task);
     const overdue = snapshot.active_elapsed_seconds >= seconds && !['completed', 'cancelled'].includes(task.timer_status);
     const updated = (await client.query('UPDATE tasks SET estimated_duration_seconds=$3,is_overdue=$4,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND company_id=$2 RETURNING *', [taskId, req.user.company_id, seconds, overdue])).rows[0];
-    await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,previous_estimate_seconds,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'ESTIMATE_CHANGED',$3,$4,$4,$5,$6,$7)`, [req.user.company_id, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, seconds, snapshot.active_elapsed_seconds]);
-    if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'OVERDUE',$3,$4,$4,$5,$6)`, [req.user.company_id, taskId, req.user.id, task.timer_status, seconds, snapshot.active_elapsed_seconds]);
+    await client.query(`INSERT INTO task_timer_events (company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,previous_estimate_seconds,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,'ESTIMATE_CHANGED',$4,$5,$5,$6,$7,$8)`, [req.user.company_id, taskId, task.current_stage_id, req.user.id, task.timer_status, task.estimated_duration_seconds, seconds, snapshot.active_elapsed_seconds]);
+    if (overdue && !task.is_overdue) await client.query(`INSERT INTO task_timer_events (company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,'OVERDUE',$4,$5,$5,$6,$7)`, [req.user.company_id, taskId, task.current_stage_id, req.user.id, task.timer_status, seconds, snapshot.active_elapsed_seconds]);
     if (overdue && !task.is_overdue) await notifyOverdue({ ...task, ...updated }, client);
     return { ...updated, ...timingSnapshot(updated), became_overdue: overdue && !task.is_overdue };
   });
@@ -62,6 +80,7 @@ async function timerAction(req, taskId, action) {
       assert(canOperateTimer(req.user, task, task), 'TIMER_FORBIDDEN', 'Voce nao pode operar o cronometro desta etapa.', 403);
       assert(task.state === 'ACTIVE', 'TIMER_TASK_STATE_INVALID', 'A tarefa precisa estar ativa para operar o cronometro.', 409);
       assert(task.tracks_time === true, 'TIMER_STAGE_DISABLED', 'A etapa atual nao permite controle de tempo.', 409);
+      assert(!isRoadmapStage(task), 'TIMER_STAGE_DISABLED', 'A etapa Roadmap nao permite controle de tempo.', 409);
 
       if (action === 'start' && task.timer_status === 'running') {
         const activeActorId = task.timer_resumed_by || task.timer_started_by;
@@ -74,11 +93,11 @@ async function timerAction(req, taskId, action) {
         throw new AppError('TIMER_ALREADY_RUNNING', 'A tarefa ja possui um cronometro ativo.', 409);
       }
 
-      const allowed = { start: ['not_started'], pause: ['running'], resume: ['paused'], complete: ['running', 'paused'] };
+      const allowed = { start: ['not_started'], pause: ['running'], resume: ['paused'] };
       assert(allowed[action]?.includes(task.timer_status), 'TIMER_STATE_INVALID', 'Transicao de cronometro invalida.', 409);
 
       const snapshot = timingSnapshot(task);
-      const next = { start: 'running', pause: 'paused', resume: 'running', complete: 'completed' }[action];
+      const next = { start: 'running', pause: 'paused', resume: 'running' }[action];
       const active = snapshot.active_elapsed_seconds;
       const overdue = snapshot.estimated_duration_seconds != null
         && active >= snapshot.estimated_duration_seconds
@@ -101,21 +120,36 @@ async function timerAction(req, taskId, action) {
       )).rows[0];
 
       assert(updated, 'TIMER_UPDATE_CONFLICT', 'A tarefa foi alterada durante a operacao do cronometro.', 409);
-      const eventTypes = { start: 'STARTED', pause: 'PAUSED', resume: 'RESUMED', complete: 'COMPLETED' };
+      if (action === 'pause') {
+        await closeActiveTouchSessions(client, {
+          companyId,
+          taskId,
+          stageId: task.current_stage_id,
+          endReason: 'PAUSED'
+        });
+      } else {
+        await client.query(
+          `INSERT INTO task_stage_touch_sessions (
+             company_id,task_id,stage_id,user_id,started_at
+           ) VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,CURRENT_TIMESTAMP)`,
+          [companyId, taskId, task.current_stage_id, actorId]
+        );
+      }
+      const eventTypes = { start: 'STARTED', pause: 'PAUSED', resume: 'RESUMED' };
       await client.query(
         `INSERT INTO task_timer_events (
-           company_id,task_id,event_type,actor_id,previous_status,new_status,
+           company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,
            new_estimate_seconds,active_elapsed_seconds
-         ) VALUES ($1::uuid,$2::uuid,$3::varchar(32),$4::uuid,$5::varchar(20),$6::varchar(20),$7::bigint,$8::bigint)`,
-        [companyId, taskId, eventTypes[action], actorId, task.timer_status, next, task.estimated_duration_seconds, active]
+         ) VALUES ($1::uuid,$2::uuid,$3::uuid,$4::varchar(32),$5::uuid,$6::varchar(20),$7::varchar(20),$8::bigint,$9::bigint)`,
+        [companyId, taskId, task.current_stage_id, eventTypes[action], actorId, task.timer_status, next, task.estimated_duration_seconds, active]
       );
       if (overdue && !task.is_overdue) {
         await client.query(
           `INSERT INTO task_timer_events (
-             company_id,task_id,event_type,actor_id,previous_status,new_status,
+             company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,
              new_estimate_seconds,active_elapsed_seconds
-           ) VALUES ($1::uuid,$2::uuid,'OVERDUE',$3::uuid,$4::varchar(20),$4::varchar(20),$5::bigint,$6::bigint)`,
-          [companyId, taskId, actorId, next, task.estimated_duration_seconds, active]
+           ) VALUES ($1::uuid,$2::uuid,$3::uuid,'OVERDUE',$4::uuid,$5::varchar(20),$5::varchar(20),$6::bigint,$7::bigint)`,
+          [companyId, taskId, task.current_stage_id, actorId, next, task.estimated_duration_seconds, active]
         );
         await notifyOverdue({ ...task, ...updated }, client);
       }
@@ -133,4 +167,4 @@ async function timerAction(req, taskId, action) {
   }
 }
 
-module.exports = { MAX_ESTIMATE_SECONDS, timingSnapshot, canOperateTimer, updateEstimate, timerAction };
+module.exports = { MAX_ESTIMATE_SECONDS, timingSnapshot, canOperateTimer, closeActiveTouchSessions, updateEstimate, timerAction };

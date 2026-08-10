@@ -9,6 +9,7 @@ const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
 const TASK_ID = '00000000-0000-4000-8000-000000000002';
 const ACTOR_ID = '00000000-0000-4000-8000-000000000003';
 const OTHER_ID = '00000000-0000-4000-8000-000000000004';
+const STAGE_ID = '00000000-0000-4000-8000-000000000005';
 
 function request(overrides = {}) {
   return {
@@ -35,6 +36,9 @@ function timerTask(overrides = {}) {
   return {
     id: TASK_ID,
     company_id: COMPANY_ID,
+    current_stage_id: STAGE_ID,
+    stage: 'BACKEND',
+    stage_name: 'Backend',
     state: 'ACTIVE',
     tracks_time: true,
     responsibility: 'BACKEND_ASSIGNEE',
@@ -94,8 +98,14 @@ describe('transacao estrutural do cronometro', () => {
     expect(updateSql).toContain('$7::uuid');
     expect(updateParams).toEqual([TASK_ID, COMPANY_ID, 'running', 0, false, 'start', ACTOR_ID]);
 
-    const [, eventParams] = client.query.mock.calls[2];
-    expect(eventParams[3]).toBe(ACTOR_ID);
+    const [sessionSql, sessionParams] = client.query.mock.calls[2];
+    expect(sessionSql).toContain('task_stage_touch_sessions');
+    expect(sessionParams).toEqual([COMPANY_ID, TASK_ID, STAGE_ID, ACTOR_ID]);
+
+    const [eventSql, eventParams] = client.query.mock.calls[3];
+    expect(eventSql).toContain('stage_id');
+    expect(eventParams[2]).toBe(STAGE_ID);
+    expect(eventParams[4]).toBe(ACTOR_ID);
     expect(eventParams).not.toContain(OTHER_ID);
   });
 
@@ -143,6 +153,20 @@ describe('transacao estrutural do cronometro', () => {
       status: 409
     });
   });
+
+  it('encerra a sessao de touch time da etapa ao pausar', async () => {
+    const client = mockTransaction(timerTask({
+      timer_status: 'running',
+      timer_started_by: ACTOR_ID,
+      timer_last_started_at: new Date().toISOString()
+    }), { timer_status: 'paused', timer_last_started_at: null });
+
+    await timingService.timerAction(request({ body: { action: 'pause' } }), TASK_ID, 'pause');
+
+    const closeCall = client.query.mock.calls.find(([sql]) => sql.includes('UPDATE task_stage_touch_sessions'));
+    expect(closeCall).toBeTruthy();
+    expect(closeCall[1]).toEqual([COMPANY_ID, TASK_ID, STAGE_ID, 'PAUSED']);
+  });
 });
 
 describe('respostas semanticas do controller do cronometro', () => {
@@ -172,6 +196,16 @@ describe('respostas semanticas do controller do cronometro', () => {
     expect(service).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Acao de cronometro invalida.' }));
+  });
+
+  it('rejeita conclusao manual porque a etapa encerra o tempo', async () => {
+    const service = vi.spyOn(taskService, 'timerAction');
+    const res = response();
+
+    await taskController.timerAction(request({ body: { action: 'complete' } }), res);
+
+    expect(service).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('registra o erro real e responde 500 generico', async () => {

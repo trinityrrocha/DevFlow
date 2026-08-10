@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, FileCode2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, File, FileArchive, FileCode2, FileSpreadsheet, FileText, FileVideo2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
 import { Link, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
@@ -73,6 +73,8 @@ export default function TaskDetail() {
     || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
     || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
+  const isRoadmapStage = String(task.stage || '').toUpperCase() === 'ROADMAP'
+    || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
 
   const transition = (target, backward = false) => {
     const reason = backward ? window.prompt('Informe o motivo do retrocesso:') : undefined;
@@ -86,7 +88,7 @@ export default function TaskDetail() {
     mutate(() => api.post(`/tasks/${id}/state`, { action: 'reopen', reason }), 'Estado atualizado.');
   };
   const timerAction = async (action) => {
-    const messages = { start: 'Cronometro iniciado.', pause: 'Cronometro pausado.', resume: 'Cronometro retomado.', complete: 'Cronometro concluido.' };
+    const messages = { start: 'Cronometro iniciado.', pause: 'Cronometro pausado.', resume: 'Cronometro retomado.' };
     setTimerPending(true);
     try {
       return await mutate(() => api.post(`/tasks/${id}/timer`, { action }), messages[action]);
@@ -113,16 +115,17 @@ export default function TaskDetail() {
 
       <section className="card overflow-x-auto p-5"><WorkflowStepper stages={workflowStages} current={task.current_stage_id} state={task.state} /></section>
 
-      <section className={`card p-5 ${task.is_overdue ? 'border-red-300' : ''}`} aria-label="Controle de tempo da tarefa">
+      {!isRoadmapStage && <section className={`card p-5 ${task.is_overdue ? 'border-red-300' : ''}`} aria-label={`Tempos da etapa ${task.stage_name}`}>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
-          ['Tempo estimado', formatSignedDuration(task.estimated_duration_seconds)],
+          ['Etapa atual', task.stage_name],
+          ['Lead time', formatSignedDuration(task.lead_time_seconds)],
+          ['Touch time', formatSignedDuration(task.active_elapsed_seconds)],
           ['Tempo restante', formatSignedDuration(task.remaining_seconds)],
-          ['Tempo ativo', formatSignedDuration(task.active_elapsed_seconds)],
-          ['Desde o inicio', formatSignedDuration(task.elapsed_since_start_seconds)],
           ['Cronometro', task.timer_status]
-        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && ['not_started', 'running', 'paused'].includes(task.timer_status) && <button type="button" aria-busy={timerPending} disabled={saving || timerPending} onClick={() => timerAction(task.timer_status === 'running' ? 'pause' : task.timer_status === 'paused' ? 'resume' : 'start')} className={task.timer_status === 'running' ? 'inline-flex h-10 items-center justify-center rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50' : 'btn-primary'}>{timerPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : task.timer_status === 'running' ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{task.timer_status === 'running' ? 'Pause' : 'Iniciar'}</button>}{canOperate && ['running', 'paused'].includes(task.timer_status) && <button type="button" disabled={saving || timerPending} onClick={() => timerAction('complete')} className="btn-secondary">Concluir tempo</button>}</div></div>
+        ].map(([name, value]) => <div key={name}><p className="text-xs font-medium text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div className="flex flex-wrap gap-2">{canOperate && task.tracks_time && task.state === 'ACTIVE' && ['not_started', 'running', 'paused'].includes(task.timer_status) && <button type="button" aria-busy={timerPending} disabled={saving || timerPending} onClick={() => timerAction(task.timer_status === 'running' ? 'pause' : task.timer_status === 'paused' ? 'resume' : 'start')} className={task.timer_status === 'running' ? 'inline-flex h-10 items-center justify-center rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50' : 'btn-primary'}>{timerPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : task.timer_status === 'running' ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{task.timer_status === 'running' ? 'Pause' : 'Iniciar'}</button>}</div></div>
+        {data.stage_touch_by_user?.length > 0 && <div className="mt-4 flex flex-wrap gap-2" aria-label="Touch time por desenvolvedor">{data.stage_touch_by_user.map((item) => <div key={item.user_id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-1 pl-1 pr-3"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ${item.is_running ? 'bg-emerald-600' : 'bg-indigo-600'}`}>{item.user_name.split(/\s+/u).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><span className="text-xs"><strong>{item.user_name}</strong> · {formatDuration(item.active_seconds)}</span></div>)}</div>}
         <p className={`mt-4 text-sm font-semibold ${task.is_overdue ? 'text-red-700' : 'text-emerald-700'}`}><span className="sr-only">Status do prazo: </span>{task.is_overdue ? 'Tarefa atrasada' : task.estimated_duration_seconds == null ? 'Estimativa nao definida' : 'Dentro do prazo'}</p>
-      </section>
+      </section>}
 
       {(error || message) && <div role="alert" className={`rounded-md border p-3 text-sm ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{error || message}</div>}
 
@@ -183,6 +186,8 @@ function Summary({ data, user, mutate }) {
     }
   }, [user.permissions]);
 
+  const summaryIsRoadmap = String(task.stage || '').toUpperCase() === 'ROADMAP'
+    || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
   const detailRows = [
     ['Etapa', task.stage_name],
     ['Estado', label(task.state)],
@@ -190,8 +195,10 @@ function Summary({ data, user, mutate }) {
     ['Ambiente', task.environment_name],
     ['Responsável Backend', task.backend_assignee_name],
     ['Responsável Frontend', task.frontend_assignee_name],
-    ['Tempo total', formatDuration(task.total_seconds)],
-    ['Tempo nesta etapa', formatDuration(task.current_stage_seconds)]
+    ...(summaryIsRoadmap ? [] : [
+      ['Tempo total', formatDuration(task.total_seconds)],
+      ['Tempo nesta etapa', formatDuration(task.current_stage_seconds)]
+    ])
   ];
 
   return (
@@ -218,7 +225,7 @@ function Summary({ data, user, mutate }) {
             <Select value={admin.priority_id} onChange={(value) => setAdmin({ ...admin, priority_id: value })} options={priorities.map((item) => [item.id, item.name])} />
             <Select value={admin.backend_assignee_id} onChange={(value) => setAdmin({ ...admin, backend_assignee_id: value })} options={users.map((item) => [item.id, `Backend: ${item.name}`])} />
             <Select value={admin.frontend_assignee_id} onChange={(value) => setAdmin({ ...admin, frontend_assignee_id: value })} options={users.map((item) => [item.id, `Frontend: ${item.name}`])} />
-            <input aria-label="Tempo estimado dd-hh-mm" pattern="[0-9]{2,3}-[0-9]{2}-[0-9]{2}" placeholder="Estimativa dd-hh-mm" value={admin.estimated_duration} onChange={(event) => setAdmin({ ...admin, estimated_duration: event.target.value.replace(/[^0-9-]/g, '').slice(0, 9) })} className="field" />
+            {!summaryIsRoadmap && <input aria-label="Tempo estimado dd-hh-mm" pattern="[0-9]{2,3}-[0-9]{2}-[0-9]{2}" placeholder="Estimativa dd-hh-mm" value={admin.estimated_duration} onChange={(event) => setAdmin({ ...admin, estimated_duration: event.target.value.replace(/[^0-9-]/g, '').slice(0, 9) })} className="field" />}
           </div>
           <button className="btn-primary mt-3"><Save className="mr-2 h-4 w-4" />Salvar administração</button>
         </form>
@@ -255,7 +262,7 @@ function Tests({ data, user, mutate }) {
         <h3 className="font-semibold">Registros de teste</h3>
         <div className="mt-3 space-y-3">
           {data.tests.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">Nenhum teste registrado.</p>}
-          {data.tests.map((test) => <div key={test.id} className="rounded-md border border-slate-200 p-4"><div className="flex justify-between gap-3"><div><StatusBadge value={test.result} /><span className="ml-2 text-xs font-medium text-slate-500">{test.stage_name}</span></div><span className="text-xs text-slate-400">{formatDate(test.created_at)}</span></div><p className="mt-2 text-sm font-medium">{test.description}</p>{test.evidence && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{test.evidence}</p>}<p className="mt-2 text-xs text-slate-400">por {test.created_by_name}</p></div>)}
+          {data.tests.map((test) => <div key={test.id} className="rounded-md border border-slate-200 p-4"><div className="flex justify-between gap-3"><div><StatusBadge value={test.result} /><span className="ml-2 text-xs font-medium text-slate-500">{test.stage_name}</span></div><span className="text-xs text-slate-400">{formatDate(test.created_at)}</span></div><p className="mt-2 text-sm font-medium">{test.description}</p>{test.evidence && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{test.evidence}</p>}{test.attachments?.map((attachment) => <AttachmentLink key={attachment.id} taskId={task.id} item={attachment} />)}<p className="mt-2 text-xs text-slate-400">por {test.created_by_name}</p></div>)}
         </div>
         {data.tests.some((test) => test.tested_as_super_admin || test.tested_as_admin || test.tested_as_user) && <div className="mt-3 rounded-md bg-indigo-50 p-3 text-xs text-indigo-800">Perfis cobertos nos testes: {[['tested_as_super_admin', 'Super Admin'], ['tested_as_admin', 'Admin'], ['tested_as_user', 'Usuario']].filter(([key]) => data.tests.some((test) => test[key])).map(([, text]) => text).join(', ')}.</div>}
         {data.approvals.length > 0 && <><h3 className="mt-6 font-semibold">Aprovações</h3><div className="mt-3 space-y-2">{data.approvals.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-3 text-sm"><StatusBadge value={item.decision} /><strong className="ml-2">{item.stage_name}</strong><p className="mt-1 text-slate-600">{item.notes}</p><p className="mt-1 text-xs text-slate-400">{item.created_by_name} · {formatDate(item.created_at)}</p></div>)}</div></>}
@@ -413,13 +420,16 @@ function Attachments({ data, user, mutate }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field mt-3 max-w-md" />
         <div><button type="button" disabled={!file} onClick={upload} className="btn-primary mt-3">Enviar anexo</button></div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {data.attachments.map((item) => (
-          <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-4">
+          <div key={item.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <AttachmentPreview taskId={data.task.id} item={item} />
+            <div className="flex items-center justify-between gap-3 p-3">
             <div className="min-w-0"><p className="truncate text-sm font-medium">{item.original_name}</p><p className="text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB · {item.created_by_name}</p></div>
-            <div className="flex gap-1">
-              <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-4 w-4" /></a>
+            <div className="flex shrink-0 gap-1">
+              <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} download={item.original_name} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-4 w-4" /></a>
               {user.access_level === 'ADMIN' && <button onClick={() => mutate(() => api.delete(`/tasks/${data.task.id}/attachments/${item.id}`), 'Anexo removido logicamente.')} className="rounded-md p-2 text-red-600 hover:bg-red-50" title="Remover"><XCircle className="h-4 w-4" /></button>}
+            </div>
             </div>
           </div>
         ))}
@@ -455,7 +465,45 @@ function Comments({ data, mutate }) {
 }
 
 function AttachmentLink({ taskId, item }) {
-  return <a href={`${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`} className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"><Paperclip className="h-3.5 w-3.5" />{item.original_name}</a>;
+  const url = `${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`;
+  if (isImageAttachment(item)) return <a href={url} target="_blank" rel="noreferrer" className="mt-2 block w-fit"><img src={url} alt={item.original_name} loading="lazy" className="h-20 w-28 rounded-md border border-slate-200 object-cover" /></a>;
+  if (isVideoAttachment(item)) return <video src={url} controls preload="metadata" className="mt-2 max-h-48 w-full max-w-sm rounded-md border border-slate-200">Seu navegador nao suporta video.</video>;
+  const Icon = attachmentIcon(item);
+  return <a href={url} className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"><Icon className="h-3.5 w-3.5" />{item.original_name}</a>;
+}
+
+function attachmentExtension(item) {
+  return String(item.original_name || '').toLowerCase().match(/\.[^.]+$/u)?.[0] || '';
+}
+
+function isImageAttachment(item) {
+  return String(item.mime_type || '').startsWith('image/') || ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(attachmentExtension(item));
+}
+
+function isVideoAttachment(item) {
+  return String(item.mime_type || '').startsWith('video/') || ['.mp4', '.webm'].includes(attachmentExtension(item));
+}
+
+function attachmentIcon(item) {
+  const extension = attachmentExtension(item);
+  if (isVideoAttachment(item)) return FileVideo2;
+  if (['.zip', '.7z', '.rar', '.tar', '.gz'].includes(extension)) return FileArchive;
+  if (['.xls', '.xlsx'].includes(extension)) return FileSpreadsheet;
+  if (['.pdf', '.doc', '.docx', '.txt', '.md'].includes(extension)) return FileText;
+  if (['.js', '.jsx', '.ts', '.tsx', '.json', '.sql'].includes(extension)) return FileCode2;
+  return File;
+}
+
+function AttachmentPreview({ taskId, item }) {
+  const url = `${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`;
+  if (isImageAttachment(item)) {
+    return <a href={url} target="_blank" rel="noreferrer" title="Abrir imagem em tamanho completo" className="block bg-slate-100"><img src={url} alt={item.original_name} loading="lazy" className="h-44 w-full object-cover" /></a>;
+  }
+  if (isVideoAttachment(item)) {
+    return <video src={url} controls preload="metadata" className="aspect-video max-h-64 w-full bg-slate-950 object-contain">Seu navegador nao suporta video.</video>;
+  }
+  const Icon = attachmentIcon(item);
+  return <a href={url} target="_blank" rel="noreferrer" className="flex h-44 items-center justify-center bg-slate-50 text-slate-500" title={`Abrir ${item.original_name}`}><Icon className="h-14 w-14" aria-hidden="true" /></a>;
 }
 
 function History({ events, timerEvents = [] }) {

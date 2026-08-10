@@ -8,11 +8,21 @@ const env = require('../config/env');
 const { AppError, assert } = require('../utils/errors');
 const taskService = require('./taskService');
 
-const allowedExtensions = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.mp4', '.webm',
-  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md',
-  '.zip', '.7z', '.rar', '.tar', '.gz'
+const mimeByExtension = new Map([
+  ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.pdf', 'application/pdf'],
+  ['.mp4', 'video/mp4'], ['.webm', 'video/webm'],
+  ['.doc', 'application/msword'],
+  ['.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['.xls', 'application/vnd.ms-excel'],
+  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  ['.ppt', 'application/vnd.ms-powerpoint'],
+  ['.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ['.txt', 'text/plain; charset=utf-8'], ['.md', 'text/markdown; charset=utf-8'],
+  ['.zip', 'application/zip'], ['.7z', 'application/x-7z-compressed'],
+  ['.rar', 'application/vnd.rar'], ['.tar', 'application/x-tar'], ['.gz', 'application/gzip']
 ]);
+const allowedExtensions = new Set(mimeByExtension.keys());
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true, mode: 0o700 });
 
@@ -75,7 +85,7 @@ async function createAttachment(req, taskId, file, description, context = {}) {
        RETURNING id,original_name,mime_type,size_bytes,description,test_id,comment_id,created_at`,
       [
         companyId, taskId, path.basename(file.originalname).slice(0, 255), storageKey,
-        String(file.mimetype || 'application/octet-stream').slice(0, 160), stat.size,
+        mimeByExtension.get(path.extname(file.originalname).toLowerCase()) || 'application/octet-stream', stat.size,
         await sha256File(finalPath), String(description || '').trim().slice(0, 1000) || null,
         req.user.id, context.test_id || null, context.comment_id || null
       ]
@@ -104,7 +114,12 @@ async function getAttachment(user, taskId, id) {
     [id, taskId, companyId]
   )).rows[0];
   if (!attachment) throw new AppError('ATTACHMENT_NOT_FOUND', 'Anexo não encontrado.', 404);
-  return { attachment, filePath: resolveStorageKey(attachment.storage_key) };
+  const canonicalMimeType = mimeByExtension.get(path.extname(attachment.original_name).toLowerCase())
+    || 'application/octet-stream';
+  return {
+    attachment: { ...attachment, mime_type: canonicalMimeType },
+    filePath: resolveStorageKey(attachment.storage_key)
+  };
 }
 
 async function softDeleteAttachment(req, taskId, id) {

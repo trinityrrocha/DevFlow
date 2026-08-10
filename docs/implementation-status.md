@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-09. Versao: `0.6.14-alpha`.
+Data de corte: 2026-08-09. Versao: `0.6.15-alpha`.
+
+Revisao 0.6.15 implementada localmente: lead time usa o intervalo automatico da etapa e touch time usa sessoes manuais vinculadas a tarefa, etapa e usuario. Transicoes encerram ambos os ciclos antigos e reiniciam o controle manual da nova etapa; Roadmap nao gera nem exibe metricas. Imagens e videos possuem preview nativo, demais formatos usam icones por extensao e o backend entrega MIME canonico. Migration, lint, testes e build foram validados localmente; PostgreSQL, navegador autenticado, Docker e VPS reais ainda dependem de homologacao.
 
 Revisao 0.6.14 implementada localmente: o backend usa os quatro diretorios do daemon como autoridade do ciclo de vida e o arquivo `status/` apenas para a fase detalhada. O frontend preserva loading e polling em timeout/Network Error/502/503/504, mostra reinicio dos servicos e recarrega somente apos `completed`. Testes locais cobrem todas as transicoes; a troca real de containers e o retorno da VPS ainda dependem de homologacao.
 

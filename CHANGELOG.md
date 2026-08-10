@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.15-alpha] - 2026-08-09
+
+### Adicionado
+
+- migration 011 registra o instante de entrada na etapa, vincula eventos do cronometro a `stage_id` e cria sessoes de touch time por tarefa, etapa e usuario;
+- detalhe da tarefa agrega touch time individual por desenvolvedor e apresenta identificacao visual com estado ativo;
+- anexos de imagem e video recebem preview nativo; documentos e compactados usam icones Lucide por extensao.
+
+### Alterado
+
+- lead time passa a ser o intervalo automatico entre entrada e saida da etapa; touch time permanece manual em um unico toggle Iniciar/Pause;
+- transicao encerra sessoes manuais e intervalo anterior, registra o evento com a etapa de origem, zera o timer e abre o ciclo da nova etapa atomicamente;
+- Roadmap nao abre intervalos, rejeita operacao do timer e nao renderiza o card de tempo;
+- conclusao manual do cronometro foi removida da API e da interface; o encerramento ocorre pela transicao;
+- backend deriva `Content-Type` da extensao permitida e usa disposicao inline somente para imagens, videos e PDF.
+
+### Validado
+
+- lint backend/frontend, 82 testes backend, 30 testes frontend e build Vite de producao aprovados localmente;
+- migration, PostgreSQL, Docker, navegador autenticado e VPS reais permanecem pendentes de homologacao.
+
 ## [0.6.14-alpha] - 2026-08-09
 
 ### Corrigido

@@ -7,6 +7,7 @@ const timing = require('./taskTimingService');
 
 const isAdmin = (user) => user?.is_super_admin === true || user?.roles?.includes('ADMIN') || user?.permissions?.includes('tasks.manage');
 const isRoadmap = (task) => String(task.stage || '').toUpperCase() === 'ROADMAP' || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
+const stageTracksTime = (stage) => stage?.tracks_time === true && stage?.completes_task !== true && !isRoadmap(stage);
 
 async function canViewTask(user, task, queryable = db) {
   if (isAdmin(user)) return true;
@@ -119,9 +120,9 @@ async function createTask(req, payload) {
          workflow_id,current_stage_id,kind,title,initial_description,requester_id,
          client_environment,product_affected,related_requirement,related_task_id,
          bug_area,initial_evidence,backend_assignee_id,frontend_assignee_id,created_by,
-         estimated_duration_seconds
+         estimated_duration_seconds,current_stage_entered_at
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
        ) RETURNING *`,
       [
         companyId, project.id, project.client_id, payload.task_type_id, payload.priority_id,
@@ -131,9 +132,18 @@ async function createTask(req, payload) {
         payload.related_requirement || null, payload.related_task_id || null,
         payload.bug_area || null, payload.initial_evidence || null,
         payload.backend_assignee_id, payload.frontend_assignee_id, req.user.id,
-        payload.estimated_duration_seconds || null
+        payload.estimated_duration_seconds || null,
+        stageTracksTime(firstStage) ? new Date() : null
       ]
     )).rows[0];
+    if (stageTracksTime(firstStage)) {
+      await client.query(
+        `INSERT INTO task_stage_intervals (
+           company_id,task_id,stage_id,stage_code_snapshot,stage_name_snapshot,started_at
+         ) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [companyId, task.id, firstStage.id, firstStage.code, firstStage.name, task.current_stage_entered_at]
+      );
+    }
     await addEvent(
       client,
       req,
@@ -234,6 +244,8 @@ async function listTasks(user, filters) {
             COALESCE((
               SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at,CURRENT_TIMESTAMP)-i.started_at)))::bigint
               FROM task_stage_intervals i WHERE i.task_id=t.id
+                AND UPPER(i.stage_code_snapshot)<>'ROADMAP'
+                AND LOWER(TRIM(i.stage_name_snapshot))<>'roadmap'
             ),0) AS total_seconds,
             (t.active_elapsed_seconds + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END) AS timer_active_seconds,
             CASE WHEN t.estimated_duration_seconds IS NULL THEN NULL ELSE t.estimated_duration_seconds-(t.active_elapsed_seconds + CASE WHEN t.timer_status='running' AND t.timer_last_started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-t.timer_last_started_at))::bigint ELSE 0 END) END AS remaining_seconds,
@@ -299,7 +311,7 @@ async function getTask(taskId, companyId, queryable = db, user = null) {
 async function getTaskDetail(taskId, user) {
   const companyId = user.company_id;
   const task = await getTask(taskId, companyId, db, user);
-  const [tests, approvals, github, comments, attachments, events, submissions, intervals, stages, relatedBugs, timerEvents] = await Promise.all([
+  const [tests, approvals, github, comments, attachments, events, submissions, intervals, stages, relatedBugs, timerEvents, touchByUser] = await Promise.all([
     db.query(
       `SELECT test.*,stage.code AS stage,stage.name AS stage_name,u.name AS created_by_name,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -381,14 +393,36 @@ async function getTaskDetail(taskId, user) {
       [taskId, companyId, isAdmin(user), user.id]
     ),
     db.query(
-      `SELECT event.*,u.name AS actor_name FROM task_timer_events event
+      `SELECT event.*,u.name AS actor_name,stage.code AS stage,stage.name AS stage_name
+       FROM task_timer_events event
        JOIN users u ON u.id=event.actor_id
+       LEFT JOIN workflow_stages stage ON stage.id=event.stage_id AND stage.company_id=event.company_id
        WHERE event.task_id=$1 AND event.company_id=$2 ORDER BY event.created_at DESC,event.id DESC`,
       [taskId, companyId]
+    ),
+    db.query(
+      `SELECT session.user_id,u.name AS user_name,
+              COALESCE(SUM(
+                session.active_seconds
+                + CASE WHEN session.ended_at IS NULL
+                    THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-session.started_at))::bigint
+                    ELSE 0 END
+              ),0)::bigint AS active_seconds,
+              BOOL_OR(session.ended_at IS NULL) AS is_running
+       FROM task_stage_touch_sessions session
+       JOIN users u ON u.id=session.user_id
+       WHERE session.task_id=$1 AND session.company_id=$2 AND session.stage_id=$3
+       GROUP BY session.user_id,u.name
+       ORDER BY active_seconds DESC,u.name`,
+      [taskId, companyId, task.current_stage_id]
     )
   ]);
-  const totalSeconds = intervals.rows.reduce((sum, item) => sum + Number(item.seconds), 0);
-  const currentStageSeconds = intervals.rows
+  const measuredIntervals = intervals.rows.filter((item) => !isRoadmap({
+    stage: item.stage,
+    stage_name: item.stage_name
+  }));
+  const totalSeconds = measuredIntervals.reduce((sum, item) => sum + Number(item.seconds), 0);
+  const currentStageSeconds = measuredIntervals
     .filter((item) => item.stage_id === task.current_stage_id)
     .reduce((sum, item) => sum + Number(item.seconds), 0);
   const currentStage = stages.rows.find((stage) => stage.id === task.current_stage_id);
@@ -419,7 +453,11 @@ async function getTaskDetail(taskId, user) {
     related_bugs: relatedBugs.rows,
     workflow: stages.rows.map((stageItem) => stageItem.code),
     workflow_stages: stages.rows,
-    timer_events: timerEvents.rows
+    timer_events: timerEvents.rows,
+    stage_touch_by_user: touchByUser.rows.map((item) => ({
+      ...item,
+      active_seconds: Number(item.active_seconds)
+    }))
   };
 }
 
@@ -492,30 +530,43 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
       );
       assert(String(reason || '').trim().length >= 5, 'TRANSITION_REASON_REQUIRED', 'Informe o motivo do retrocesso.');
     }
+    const timerBeforeTransition = timing.timingSnapshot(task);
+    await timing.closeActiveTouchSessions(client, {
+      companyId,
+      taskId,
+      stageId: currentStage.id,
+      endReason: 'STAGE_TRANSITION'
+    });
     await client.query(
       `UPDATE task_stage_intervals SET ended_at=CURRENT_TIMESTAMP
        WHERE task_id=$1 AND company_id=$2 AND ended_at IS NULL`,
       [taskId, companyId]
     );
-    const startsNow = !task.started_at && targetStage.tracks_time;
-    const timerBeforeTransition = timing.timingSnapshot(task);
+    const tracksTargetTime = stageTracksTime(targetStage);
+    const startsNow = !task.started_at && tracksTargetTime;
     updated = (await client.query(
       `UPDATE tasks SET
          current_stage_id=$3,
+         current_stage_entered_at=CASE WHEN $7 THEN CURRENT_TIMESTAMP ELSE NULL END,
          state=CASE WHEN $4 THEN 'COMPLETED' ELSE state END,
          started_at=CASE WHEN $5 THEN CURRENT_TIMESTAMP ELSE started_at END,
          completed_at=CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE completed_at END,
-         active_elapsed_seconds=CASE WHEN $4 THEN $7 ELSE active_elapsed_seconds END,
-         timer_status=CASE WHEN $4 AND timer_status NOT IN ('not_started','cancelled') THEN 'completed' ELSE timer_status END,
-         timer_last_started_at=CASE WHEN $4 THEN NULL ELSE timer_last_started_at END,
-         timer_ended_at=CASE WHEN $4 AND timer_status<>'not_started' THEN CURRENT_TIMESTAMP ELSE timer_ended_at END,
-         is_overdue=CASE WHEN $4 THEN FALSE ELSE is_overdue END,
+         active_elapsed_seconds=0,
+         paused_elapsed_seconds=0,
+         timer_status=CASE WHEN $4 THEN 'completed' ELSE 'not_started' END,
+         timer_last_started_at=NULL,
+         timer_paused_at=NULL,
+         timer_ended_at=CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE NULL END,
+         timer_started_by=NULL,
+         timer_paused_by=NULL,
+         timer_resumed_by=NULL,
+         is_overdue=FALSE,
          rework_count=rework_count+CASE WHEN $6 THEN 1 ELSE 0 END,
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
-      [taskId, companyId, targetStage.id, targetStage.completes_task, startsNow, direction === 'BACKWARD', timerBeforeTransition.active_elapsed_seconds]
+      [taskId, companyId, targetStage.id, targetStage.completes_task, startsNow, direction === 'BACKWARD', tracksTargetTime]
     )).rows[0];
-    if (targetStage.tracks_time && !targetStage.completes_task) {
+    if (tracksTargetTime) {
       await client.query(
         `INSERT INTO task_stage_intervals (
            company_id,task_id,stage_id,stage_code_snapshot,stage_name_snapshot,started_at
@@ -532,8 +583,19 @@ async function transitionTask(req, taskId, targetStageValue, reason) {
       { stage_id: currentStage.id, stage: currentStage.code, state: task.state },
       { stage_id: targetStage.id, stage: targetStage.code, state: updated.state }
     );
-    if (targetStage.completes_task && !['not_started', 'completed', 'cancelled'].includes(task.timer_status)) {
-      await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'COMPLETED',$3,$4,'completed',$5,$6)`, [companyId, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, timerBeforeTransition.active_elapsed_seconds]);
+    if (['running', 'paused'].includes(task.timer_status)) {
+      await client.query(
+        `INSERT INTO task_timer_events (
+           company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,
+           new_estimate_seconds,active_elapsed_seconds
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          companyId, taskId, currentStage.id,
+          targetStage.completes_task ? 'COMPLETED' : 'PAUSED', req.user.id,
+          task.timer_status, targetStage.completes_task ? 'completed' : 'not_started',
+          task.estimated_duration_seconds, timerBeforeTransition.active_elapsed_seconds
+        ]
+      );
     }
     updated = {
       ...updated,
@@ -567,15 +629,15 @@ async function setTaskState(req, taskId, action, reason) {
     assert(task, 'TASK_NOT_FOUND', 'Tarefa não encontrada.', 404);
     assert(hasPermission(req.user, 'tasks.manage'), 'PERMISSION_DENIED', 'Ação não permitida.', 403);
     assert(String(reason || '').trim().length >= 5, 'TASK_REASON_REQUIRED', 'Informe um motivo com pelo menos 5 caracteres.');
+    const currentStageForState = (await client.query(
+      'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
+      [task.current_stage_id, companyId]
+    )).rows[0];
+    const timerBeforeState = timing.timingSnapshot(task);
     let nextState;
     if (action === 'pause') {
       assert(task.state === 'ACTIVE', 'TASK_STATE_INVALID', 'Somente tarefas ativas podem ser pausadas.', 409);
       nextState = 'PAUSED';
-      await client.query(
-        `UPDATE task_stage_intervals SET ended_at=CURRENT_TIMESTAMP
-         WHERE task_id=$1 AND company_id=$2 AND ended_at IS NULL`,
-        [taskId, companyId]
-      );
     } else if (action === 'reopen') {
       assert(['PAUSED', 'CANCELED', 'COMPLETED'].includes(task.state), 'TASK_STATE_INVALID', 'A tarefa não pode ser reaberta.', 409);
       nextState = 'ACTIVE';
@@ -583,7 +645,7 @@ async function setTaskState(req, taskId, action, reason) {
         'SELECT * FROM workflow_stages WHERE id=$1 AND company_id=$2',
         [task.current_stage_id, companyId]
       )).rows[0];
-      if (currentStage?.tracks_time && !currentStage.completes_task) {
+      if (stageTracksTime(currentStage) && task.state !== 'PAUSED') {
         await client.query(
           `INSERT INTO task_stage_intervals (
              company_id,task_id,stage_id,stage_code_snapshot,stage_name_snapshot,started_at
@@ -602,24 +664,33 @@ async function setTaskState(req, taskId, action, reason) {
     } else {
       throw new AppError('TASK_ACTION_INVALID', 'Ação administrativa inválida.');
     }
+    if (['pause', 'cancel'].includes(action)) {
+      await timing.closeActiveTouchSessions(client, {
+        companyId,
+        taskId,
+        stageId: task.current_stage_id,
+        endReason: action === 'pause' ? 'TASK_PAUSED' : 'TASK_CANCELLED'
+      });
+    }
     const updated = (await client.query(
       `UPDATE tasks SET state=$3,
          paused_at=CASE WHEN $3='PAUSED' THEN CURRENT_TIMESTAMP ELSE NULL END,
          canceled_at=CASE WHEN $3='CANCELED' THEN CURRENT_TIMESTAMP WHEN $3='ACTIVE' THEN NULL ELSE canceled_at END,
          completed_at=CASE WHEN $3='ACTIVE' THEN NULL ELSE completed_at END,
-         active_elapsed_seconds=CASE WHEN $3='CANCELED' AND timer_status='running' THEN active_elapsed_seconds+EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-timer_last_started_at))::bigint ELSE active_elapsed_seconds END,
-         timer_status=CASE WHEN $3='CANCELED' AND timer_status NOT IN ('completed','cancelled') THEN 'cancelled' WHEN $3='ACTIVE' AND timer_status IN ('cancelled','completed') THEN 'paused' ELSE timer_status END,
-         timer_last_started_at=CASE WHEN $3='CANCELED' THEN NULL ELSE timer_last_started_at END,
+         current_stage_entered_at=CASE WHEN $3='CANCELED' THEN NULL WHEN $3='ACTIVE' AND $5 AND $6<>'PAUSED' THEN CURRENT_TIMESTAMP ELSE current_stage_entered_at END,
+         active_elapsed_seconds=CASE WHEN $3 IN ('PAUSED','CANCELED') AND timer_status='running' THEN $4 ELSE active_elapsed_seconds END,
+         timer_status=CASE WHEN $3='CANCELED' AND timer_status NOT IN ('completed','cancelled') THEN 'cancelled' WHEN $3='PAUSED' AND timer_status='running' THEN 'paused' WHEN $3='ACTIVE' AND timer_status IN ('cancelled','completed') THEN 'not_started' ELSE timer_status END,
+         timer_last_started_at=CASE WHEN $3 IN ('PAUSED','CANCELED') THEN NULL ELSE timer_last_started_at END,
+         timer_paused_at=CASE WHEN $3='PAUSED' AND timer_status='running' THEN CURRENT_TIMESTAMP WHEN $3='ACTIVE' THEN NULL ELSE timer_paused_at END,
          timer_ended_at=CASE WHEN $3='CANCELED' AND timer_status<>'not_started' THEN CURRENT_TIMESTAMP WHEN $3='ACTIVE' THEN NULL ELSE timer_ended_at END,
          is_overdue=CASE WHEN $3='CANCELED' THEN FALSE ELSE is_overdue END,
          updated_at=CURRENT_TIMESTAMP
        WHERE id=$1 AND company_id=$2 RETURNING *`,
-      [taskId, companyId, nextState]
+      [taskId, companyId, nextState, timerBeforeState.active_elapsed_seconds, stageTracksTime(currentStageForState), task.state]
     )).rows[0];
     await addEvent(client, req, taskId, `TASK_${action.toUpperCase()}`, reason, { state: task.state }, { state: nextState });
     if (action === 'cancel' && !['not_started', 'completed', 'cancelled'].includes(task.timer_status)) {
-      const active = timing.timingSnapshot(task).active_elapsed_seconds;
-      await client.query(`INSERT INTO task_timer_events (company_id,task_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,'CANCELLED',$3,$4,'cancelled',$5,$6)`, [companyId, taskId, req.user.id, task.timer_status, task.estimated_duration_seconds, active]);
+      await client.query(`INSERT INTO task_timer_events (company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,new_estimate_seconds,active_elapsed_seconds) VALUES ($1,$2,$3,'CANCELLED',$4,$5,'cancelled',$6,$7)`, [companyId, taskId, task.current_stage_id, req.user.id, task.timer_status, task.estimated_duration_seconds, timerBeforeState.active_elapsed_seconds]);
     }
     await client.query('COMMIT');
     return updated;
@@ -705,10 +776,10 @@ async function updateAdministration(req, taskId, payload) {
     if (payload.estimated_duration_seconds !== undefined) {
       await client.query(
         `INSERT INTO task_timer_events (
-           company_id,task_id,event_type,actor_id,previous_status,new_status,
+           company_id,task_id,stage_id,event_type,actor_id,previous_status,new_status,
            previous_estimate_seconds,new_estimate_seconds,active_elapsed_seconds
-         ) VALUES ($1,$2,'ESTIMATE_CHANGED',$3,$4,$4,$5,$6,$7)`,
-        [companyId, taskId, req.user.id, before.timer_status, before.estimated_duration_seconds, payload.estimated_duration_seconds, timerSnapshot.active_elapsed_seconds]
+         ) VALUES ($1,$2,$3,'ESTIMATE_CHANGED',$4,$5,$5,$6,$7,$8)`,
+        [companyId, taskId, before.current_stage_id, req.user.id, before.timer_status, before.estimated_duration_seconds, payload.estimated_duration_seconds, timerSnapshot.active_elapsed_seconds]
       );
     }
     const notificationTask = {
