@@ -13,7 +13,7 @@ const checks = [];
 const base = {
   schemaVersion: 3,
   installationMode: 'isolated',
-  installedVersion: '0.6.24-alpha',
+  installedVersion: '0.6.25-alpha',
   installedCommit: '0123456789012345678901234567890123456789',
   installedRef: 'main',
   repository: 'https://github.com/trinityrrocha/DevFlow.git',

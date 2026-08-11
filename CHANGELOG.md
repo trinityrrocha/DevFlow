@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.25-alpha] - 2026-08-11
+
+### Adicionado
+
+- tema escuro completo para login, navegação autenticada, páginas, tabelas, formulários, dropdowns, modais e estados semânticos;
+- alternância acessível por ícones Moon/Sun na barra superior e na tela de login;
+- `ThemeContext` com preferência `light`/`dark`, persistência local e acompanhamento do sistema antes da primeira escolha manual.
+
+### Experiência
+
+- preferência é aplicada antes do primeiro paint para evitar flash de tema incorreto;
+- foco, placeholders, campos desabilitados, impressão e viewport mobile preservam contraste e usabilidade.
+
+### Validado
+
+- 36 cenários automatizados de tema, layout, componentes e regressão;
+- alternância, reload, persistência e viewport 390 x 844 verificados no navegador local; homologação visual na VPS permanece pendente.
+
 ## [0.6.24-alpha] - 2026-08-11
 
 ### Corrigido

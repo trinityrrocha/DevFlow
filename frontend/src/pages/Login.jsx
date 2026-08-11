@@ -3,6 +3,7 @@ import { KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { Navigate, useNavigate } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function Login() {
   const { user, login, verifyMfa } = useAuth();
@@ -102,7 +103,8 @@ export default function Login() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
+    <main className="relative flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100">
+      <ThemeToggle className="absolute right-4 top-4" />
       <section className="w-full max-w-md">
         <div className="mb-7 text-center">
           <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-indigo-600"><ShieldCheck className="h-9 w-9" /></span>

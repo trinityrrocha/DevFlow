@@ -4,24 +4,46 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased transition-colors dark:bg-slate-950 dark:text-slate-100;
   }
 
   button,
   input,
   select,
   textarea {
-    @apply focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1;
+    @apply focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-indigo-400 dark:focus:ring-offset-slate-950;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-slate-400 dark:text-slate-500;
+  }
+
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  input:read-only,
+  textarea:read-only {
+    @apply cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply border-slate-300 bg-white text-indigo-600 dark:border-slate-600 dark:bg-slate-900 dark:text-indigo-400;
+  }
+
+  option {
+    @apply bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100;
   }
 }
 
 @layer components {
   .field {
-    @apply h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm shadow-sm;
+    @apply h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100;
   }
 
   .textarea-field {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm;
+    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100;
   }
 
   .btn-primary {
@@ -29,15 +51,97 @@
   }
 
   .btn-secondary {
-    @apply inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
   }
 
   .btn-danger {
-    @apply inline-flex h-10 items-center justify-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-10 items-center justify-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/50;
   }
 
   .card {
-    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+    @apply rounded-lg border border-slate-200 bg-white shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900;
+  }
+}
+
+/* Compatibilidade visual para componentes legados que usam utilities claras diretamente. */
+html.dark [class~='bg-white']:not([class*='dark:bg-']) { background-color: rgb(15 23 42); }
+html.dark [class~='bg-slate-50']:not([class*='dark:bg-']),
+html.dark [class*='bg-slate-50/']:not([class*='dark:bg-']) { background-color: rgb(30 41 59 / 0.72); }
+html.dark [class~='bg-slate-100'] { background-color: rgb(30 41 59); }
+html.dark [class~='bg-slate-200'],
+html.dark [class*='bg-slate-200/'] { background-color: rgb(51 65 85); }
+html.dark [class~='text-slate-900'],
+html.dark [class~='text-slate-800'] { color: rgb(241 245 249); }
+html.dark [class~='text-slate-700'],
+html.dark [class~='text-slate-600'] { color: rgb(203 213 225); }
+html.dark [class~='text-slate-500'] { color: rgb(148 163 184); }
+html.dark [class~='text-slate-400'] { color: rgb(148 163 184); }
+html.dark [class~='border-slate-100'],
+html.dark [class~='border-slate-200'] { border-color: rgb(51 65 85); }
+html.dark [class~='border-slate-300'] { border-color: rgb(71 85 105); }
+html.dark [class~='divide-slate-100'] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(51 65 85); }
+html.dark [class~='fill-slate-100'] { fill: rgb(51 65 85); }
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover { background-color: rgb(30 41 59); }
+html.dark .hover\:text-slate-900:hover { color: rgb(241 245 249); }
+
+html.dark [class~='bg-indigo-50'],
+html.dark [class*='bg-indigo-50/'] { background-color: rgb(30 27 75 / 0.72); }
+html.dark [class~='bg-indigo-100'] { background-color: rgb(49 46 129 / 0.55); }
+html.dark [class~='text-indigo-700'],
+html.dark [class~='text-indigo-800'],
+html.dark [class~='text-indigo-900'] { color: rgb(165 180 252); }
+html.dark [class~='text-indigo-600'] { color: rgb(129 140 248); }
+html.dark [class~='border-indigo-200'],
+html.dark [class~='border-indigo-300'] { border-color: rgb(67 56 202 / 0.75); }
+html.dark .hover\:bg-indigo-50:hover { background-color: rgb(30 27 75 / 0.85); }
+
+html.dark [class~='bg-red-50'],
+html.dark [class*='bg-red-50/'] { background-color: rgb(69 10 10 / 0.55); }
+html.dark [class~='bg-red-100'] { background-color: rgb(127 29 29 / 0.5); }
+html.dark [class~='text-red-600'],
+html.dark [class~='text-red-700'],
+html.dark [class~='text-red-800'] { color: rgb(252 165 165); }
+html.dark [class~='border-red-200'],
+html.dark [class~='border-red-300'] { border-color: rgb(153 27 27 / 0.8); }
+html.dark .hover\:bg-red-50:hover { background-color: rgb(69 10 10 / 0.75); }
+
+html.dark [class~='bg-amber-50'],
+html.dark [class*='bg-amber-50/'] { background-color: rgb(69 26 3 / 0.55); }
+html.dark [class~='bg-amber-100'] { background-color: rgb(120 53 15 / 0.55); }
+html.dark [class~='text-amber-700'],
+html.dark [class~='text-amber-800'],
+html.dark [class~='text-amber-900'],
+html.dark [class~='text-amber-950'] { color: rgb(253 230 138); }
+html.dark [class~='border-amber-200'],
+html.dark [class~='border-amber-300'] { border-color: rgb(180 83 9 / 0.75); }
+
+html.dark [class~='bg-emerald-50'],
+html.dark [class*='bg-emerald-50/'],
+html.dark [class~='bg-green-50'] { background-color: rgb(2 44 34 / 0.6); }
+html.dark [class~='bg-emerald-100'] { background-color: rgb(6 78 59 / 0.6); }
+html.dark [class~='text-emerald-700'],
+html.dark [class~='text-emerald-800'],
+html.dark [class~='text-green-600'],
+html.dark [class~='text-green-700'] { color: rgb(110 231 183); }
+html.dark [class~='border-emerald-200'],
+html.dark [class~='border-green-200'] { border-color: rgb(6 95 70 / 0.85); }
+
+html.dark [class~='bg-blue-50'] { background-color: rgb(23 37 84 / 0.65); }
+html.dark [class~='text-blue-700'] { color: rgb(147 197 253); }
+html.dark [class~='border-blue-200'] { border-color: rgb(30 64 175 / 0.8); }
+
+html.dark table { color: rgb(226 232 240); }
+html.dark thead { background-color: rgb(30 41 59); color: rgb(148 163 184); }
+html.dark tbody tr:hover { background-color: rgb(30 41 59 / 0.8); }
+html.dark [role='dialog'] .card { border-color: rgb(51 65 85); background-color: rgb(15 23 42); }
+
+@media print {
+  html.dark,
+  html.dark body {
+    color-scheme: light;
+    background: white !important;
+    color: black !important;
   }
 }
 

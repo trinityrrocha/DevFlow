@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-11. Versao: `0.6.24-alpha`.
+Data de corte: 2026-08-11. Versao: `0.6.25-alpha`.
+
+Revisao 0.6.25 implementada localmente: ThemeContext controla light/dark sem backend, persiste somente valores permitidos em `devflow-theme`, segue `prefers-color-scheme` sem escolha manual e aplica o tema antes do primeiro paint. Header, login, componentes globais e utilities legadas receberam cobertura escura indigo/slate. A tela de login foi verificada no navegador local em desktop e mobile; a navegacao autenticada e a VPS ainda dependem de homologacao do usuario.
 
 Revisao 0.6.24 implementada localmente: o WebUpdater propaga explicitamente o contexto daemon; o pre-update e o health final usam `health.sh --daemon`, resolvem `devflow-nginx` na rede `devflow_edge` e mantêm TLS estrito. Somente arquivos de certificado e timer systemd, exclusivos do host, são reportados como `skipped-host-only`. Docker, HTTPS e WebUpdater reais ainda dependem de homologacao na VPS.
 

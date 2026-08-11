@@ -1,5 +1,11 @@
 # Roadmap inicial
 
+## Marco `0.6.25-alpha`
+
+- homologar alternancia e persistencia dos temas claro/escuro na VPS;
+- usar a mudanca visual observavel para validar o WebUpdater corrigido na revisao anterior;
+- revisar contraste das telas autenticadas com dados reais.
+
 ## Marco `0.6.24-alpha`
 
 - homologar na VPS o health de runtime do WebUpdater pela rede `devflow_edge`;

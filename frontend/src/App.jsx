@@ -15,7 +15,7 @@ import { LEGACY_ROUTES } from './navigation';
 
 function ProtectedRoute({ permission, superAdmin = false, children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Carregando sessão segura...</div>;
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">Carregando sessão segura...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (superAdmin && !user.is_super_admin) return <Navigate to="/dashboard" replace />;
   if (permission && !user.is_super_admin && !user.permissions?.includes(permission)) return <Navigate to="/dashboard" replace />;

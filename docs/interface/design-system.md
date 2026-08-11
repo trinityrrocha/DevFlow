@@ -6,6 +6,10 @@ O DevFlow deve parecer parte da mesma família do Full Password: interface sóbr
 
 ## 2. Paleta
 
+O tema claro usa fundo `slate-50`, superficies `white`, bordas `slate-200/300` e texto `slate-900`. O tema escuro preserva a mesma identidade com fundo `slate-950`, superficies `slate-900/800`, bordas `slate-700`, texto principal `slate-100` e texto secundario `slate-300/400`. Indigo e as cores semanticas mantem seu significado com tonalidades ajustadas para contraste.
+
+O tema usa estrategia Tailwind por classe no elemento `html`. A preferencia manual aceita somente `light` ou `dark` na chave local `devflow-theme`; sem preferencia salva, o sistema operacional define a primeira renderizacao. O seletor sempre possui nome acessivel e o modo de impressao retorna a fundo claro.
+
 | Uso | Token de referência |
 |---|---|
 | Fundo da aplicação | `slate-50` |

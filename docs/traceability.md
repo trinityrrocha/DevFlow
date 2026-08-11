@@ -1,5 +1,17 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.25-alpha`
+
+| Revisao 0.6.25 | Evidencia |
+|---|---|
+| Estado global | `ThemeContext.jsx` fornece `theme`, `setTheme`, `toggleTheme` e `isDark` |
+| Persistencia | `theme.js` aceita somente `light`/`dark` na chave `devflow-theme` |
+| Primeira visita | preferencia salva prevalece; na ausencia, usa `prefers-color-scheme` |
+| Anti-flash | `index.html` aplica classe, dataset e color scheme antes do bundle |
+| Alternancia | `ThemeToggle.jsx` usa Moon/Sun com `aria-label` e `title` contextuais |
+| Cobertura | CSS global, header, login, dropdowns, notificacoes, tabelas, formularios e modais |
+| Validacao | 36 cenarios automatizados e teste local desktop/mobile no login |
+
 ## Instalacao isolada `0.6.24-alpha`
 
 | Revisao 0.6.24 | Evidencia |
