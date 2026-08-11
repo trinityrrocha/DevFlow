@@ -39,10 +39,10 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
 
   it('renderiza QA e anexos em timelines centralizadas com dimensoes exatas', () => {
     expect(detail).toContain('Registrar Novo Teste');
-    expect(detail).toContain('max-w-[350px]');
-    expect(detail).toContain('w-[350px]');
-    expect(detail).toContain('h-[122.15px] w-[350px]');
-    expect(detail).toContain('relative mx-auto w-[398px] border-l border-slate-200');
+    expect(detail).toContain('max-w-[490px]');
+    expect(detail).toContain('w-[490px]');
+    expect(detail).toContain('h-[171px] w-[490px]');
+    expect(detail).toContain('relative mx-auto w-[538px] border-l border-slate-200');
     expect(detail).toContain('aria-labelledby="task-test-title"');
     for (const field of ['validated_profiles', 'environment', 'backend_info', 'frontend_info', 'testing_notes']) expect(detail).toContain(field);
     expect(detail).toContain('<CheckboxGroup legend="Ambiente"');
@@ -57,6 +57,22 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(detail).toContain('attachmentSourceLabel(item.source_section)');
     expect(detail).toContain('const orderedTests = [...data.tests].sort');
     expect(detail).toContain('new Date(b.created_at) - new Date(a.created_at)');
+  });
+
+  it('remove os perfis proibidos das opções selecionáveis de QA', () => {
+    expect(detail).toContain("const QA_EXCLUDED_PROFILES = new Set(['Cliente', 'Desenvolvedor Backend', 'Desenvolvedor Frontend'])");
+    expect(detail).toContain('systemProfiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile.name))');
+    expect(detail).toContain('form.validated_profiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile))');
+  });
+
+  it('oferece revisão dedicada na etapa de aprovação do frontend', () => {
+    expect(detail).toContain("isFrontendApprovalStage");
+    expect(detail).toContain('<FrontendApprovalPanel');
+    expect(detail).toContain('Descrição/Observações de Aprovação');
+    expect(detail).toContain('Motivo da Reprovação');
+    expect(detail).toContain('Anexar evidência da reprovação');
+    expect(detail).toContain("decision: 'APPROVED'");
+    expect(detail).toContain("decision: 'REJECTED'");
   });
 
   it('posiciona o checklist de pre-requisitos junto ao avanço de etapa', () => {

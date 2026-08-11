@@ -15,9 +15,9 @@ const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
 const QA_ACCESS_PROFILES = [
   ['Super Admin', 'Super Admin'],
-  ['Administrador', 'Administrador'],
-  ['Cliente', 'Cliente']
+  ['Administrador', 'Administrador']
 ];
+const QA_EXCLUDED_PROFILES = new Set(['Cliente', 'Desenvolvedor Backend', 'Desenvolvedor Frontend']);
 const QA_COMPONENT_OPTIONS = [
   ['', 'Não informado'],
   ['Não se aplica', 'Não se aplica'],
@@ -90,6 +90,7 @@ export default function TaskDetail() {
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const isRoadmapStage = String(task.stage || '').toUpperCase() === 'ROADMAP'
     || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
+  const isFrontendApprovalStage = String(task.stage || '').toUpperCase() === 'FRONTEND_APPROVAL';
   const advanceBlocked = task.missing_requirements.length > 0;
 
   const transition = (target, backward = false) => {
@@ -165,16 +166,62 @@ export default function TaskDetail() {
 
       <section className="card p-5">
         <h2 className="font-semibold">Controle da etapa</h2>
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <StagePrerequisiteChecklist task={task} tests={data.tests} githubCards={data.github_cards} attachments={data.attachments} />
-          <div className="flex flex-wrap justify-end gap-2">
-            {canManage && previousStage && task.state === 'ACTIVE' && <button disabled={saving} onClick={() => transition(previousStage.id, true)} className="btn-secondary"><RotateCcw className="mr-2 h-4 w-4" />Retroceder</button>}
-            {canOperate && nextStage && task.state === 'ACTIVE' && <button aria-describedby="stage-prerequisite-checklist" title={advanceBlocked ? 'Conclua as pendências obrigatórias antes de avançar.' : `Avançar para ${nextStage.name}`} disabled={saving || advanceBlocked} onClick={() => transition(nextStage.id)} className={advanceBlocked ? 'inline-flex h-10 items-center justify-center rounded-md border border-amber-400 bg-amber-100 px-4 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-80' : 'btn-primary'}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{advanceBlocked && <AlertTriangle className="mr-2 h-4 w-4" />}Avançar para {nextStage.name}</button>}
-          </div>
-        </div>
+        {isFrontendApprovalStage
+          ? <FrontendApprovalPanel task={task} user={user} previousStage={previousStage} nextStage={nextStage} canReview={canOperate} saving={saving} mutate={mutate} />
+          : <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <StagePrerequisiteChecklist task={task} tests={data.tests} githubCards={data.github_cards} attachments={data.attachments} />
+              <div className="flex flex-wrap justify-end gap-2">
+                {canManage && previousStage && task.state === 'ACTIVE' && <button disabled={saving} onClick={() => transition(previousStage.id, true)} className="btn-secondary"><RotateCcw className="mr-2 h-4 w-4" />Retroceder</button>}
+                {canOperate && nextStage && task.state === 'ACTIVE' && <button aria-describedby="stage-prerequisite-checklist" title={advanceBlocked ? 'Conclua as pendências obrigatórias antes de avançar.' : `Avançar para ${nextStage.name}`} disabled={saving || advanceBlocked} onClick={() => transition(nextStage.id)} className={advanceBlocked ? 'inline-flex h-10 items-center justify-center rounded-md border border-amber-400 bg-amber-100 px-4 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-80' : 'btn-primary'}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{advanceBlocked && <AlertTriangle className="mr-2 h-4 w-4" />}Avançar para {nextStage.name}</button>}
+              </div>
+            </div>}
       </section>
     </div>
   );
+}
+
+function FrontendApprovalPanel({ task, user, previousStage, nextStage, canReview, saving, mutate }) {
+  const [approvalNotes, setApprovalNotes] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState(null);
+  const activeReview = task.state === 'ACTIVE' && canReview;
+  const approve = () => mutate(async () => {
+    const notes = approvalNotes.trim();
+    await api.post(`/tasks/${task.id}/approvals`, { decision: 'APPROVED', notes });
+    await api.post(`/tasks/${task.id}/comments`, { content: `Aprovação do Frontend: ${notes}` });
+    await api.post(`/tasks/${task.id}/transition`, { target_stage: nextStage.id });
+  }, 'Frontend aprovado e encaminhado para Update GitHub.');
+  const reject = () => mutate(async () => {
+    const reason = rejectionReason.trim();
+    await api.post(`/tasks/${task.id}/approvals`, { decision: 'REJECTED', notes: reason });
+    const response = await api.post(`/tasks/${task.id}/comments`, { content: `Reprovação do Frontend: ${reason}` });
+    if (evidenceFile) {
+      const body = new FormData();
+      body.append('file', evidenceFile);
+      body.append('comment_id', response.data.comment.id);
+      body.append('description', 'Evidência da reprovação do Frontend');
+      body.append('sourceSection', 'comentarios');
+      await api.post(`/tasks/${task.id}/attachments`, body);
+    }
+    await api.post(`/tasks/${task.id}/transition`, { target_stage: previousStage.id, reason });
+  }, 'Frontend reprovado e devolvido para a etapa Frontend.');
+
+  return <div className="mt-4 space-y-4">
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900"><p className="font-semibold">Revisão dedicada do Frontend</p><p className="mt-1">Responsável pela revisão: {canReview ? user.name : 'Gestor ou Administrador atribuído à etapa'}.</p></div>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <form onSubmit={(event) => { event.preventDefault(); approve(); }} className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        <h3 className="flex items-center gap-2 font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Aprovar Frontend</h3>
+        <label className="mt-3 block text-sm font-medium text-slate-700">Descrição/Observações de Aprovação<textarea required minLength={3} maxLength={50000} rows={4} disabled={!activeReview || saving} value={approvalNotes} onChange={(event) => setApprovalNotes(event.target.value)} className="textarea-field mt-1 disabled:bg-slate-100" /></label>
+        <button disabled={!activeReview || saving || approvalNotes.trim().length < 3 || !nextStage} className="btn-primary mt-3">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar Frontend</button>
+      </form>
+      <form onSubmit={(event) => { event.preventDefault(); reject(); }} className="rounded-xl border border-red-200 bg-red-50/60 p-4">
+        <h3 className="flex items-center gap-2 font-semibold text-red-800"><RotateCcw className="h-5 w-5" />Reprovar / Devolver para Frontend</h3>
+        <label className="mt-3 block text-sm font-medium text-slate-700">Motivo da Reprovação<textarea required minLength={5} maxLength={50000} rows={4} disabled={!activeReview || saving} value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} className="textarea-field mt-1 disabled:bg-slate-100" /></label>
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600"><Paperclip className="h-4 w-4" /><input type="file" disabled={!activeReview || saving} onChange={(event) => setEvidenceFile(event.target.files[0] || null)} className="sr-only" />{evidenceFile ? evidenceFile.name : 'Anexar evidência da reprovação'}</label>
+        <button disabled={!activeReview || saving || rejectionReason.trim().length < 5 || !previousStage} className="btn-danger mt-3">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Reprovar / Devolver para Frontend</button>
+      </form>
+    </div>
+  </div>;
 }
 
 function Summary({ data, user, mutate }) {
@@ -271,7 +318,7 @@ function Tests({ data, user, mutate }) {
   const canRegisterTest = canOperate;
   const canChangeTest = (test) => canApprove || test.author_id === user.id;
   const orderedTests = [...data.tests].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const profileOptions = [...QA_ACCESS_PROFILES, ...systemProfiles.map((profile) => [profile.name, profile.name]), ...form.validated_profiles.map((profile) => [profile, profile])]
+  const profileOptions = [...QA_ACCESS_PROFILES, ...systemProfiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile.name)).map((profile) => [profile.name, profile.name]), ...form.validated_profiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile)).map((profile) => [profile, profile])]
     .filter((option, index, options) => options.findIndex(([value]) => value === option[0]) === index);
   const toggleGroupValue = (field, value, checked) => setForm((current) => ({
     ...current,
@@ -282,7 +329,7 @@ function Tests({ data, user, mutate }) {
       status: test.status,
       environments: test.environment === 'local_nuvem' ? ['local', 'cloud'] : ['local'],
       context: test.context,
-      validated_profiles: String(test.validated_profiles || '').split(',').map((profile) => profile.trim()).filter(Boolean),
+      validated_profiles: String(test.validated_profiles || '').split(',').map((profile) => profile.trim()).filter((profile) => profile && !QA_EXCLUDED_PROFILES.has(profile)),
       backend_info: test.backend_info,
       frontend_info: test.frontend_info,
       testing_notes: test.testing_notes
@@ -338,11 +385,11 @@ function Tests({ data, user, mutate }) {
           {canRegisterTest && <button type="button" onClick={() => openTest('create')} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Registrar Novo Teste</button>}
         </div>
         {orderedTests.length === 0 && <p className="mt-4 rounded-md bg-slate-50 p-4 text-center text-sm text-slate-500">Nenhum teste registrado.</p>}
-        {orderedTests.length > 0 && <div className="mt-4 overflow-x-auto pb-1"><ol className="relative mx-auto w-[398px] border-l border-slate-200" aria-label="Linha do tempo dos testes">
+        {orderedTests.length > 0 && <div className="mt-4 overflow-x-auto pb-1"><ol className="relative mx-auto w-[538px] border-l border-slate-200" aria-label="Linha do tempo dos testes">
           {orderedTests.map((test) => (
             <li key={test.id} className="relative mb-6 ml-6 last:mb-0">
               <span className={`absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white ${test.status === 'APPROVED' ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
-              <article onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-[350px] max-w-[350px] cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+              <article onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-[490px] max-w-[490px] cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md">
               <div className="flex items-start justify-between gap-3">
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${test.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{test.status === 'APPROVED' ? 'Aprovado' : 'Não Aprovado'}</span>
                 {canChangeTest(test) && <div className="flex gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); openTest('edit', test); }} className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50" aria-label="Editar teste"><Pencil className="h-4 w-4" /></button><button type="button" onClick={(event) => removeTest(event, test)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" aria-label="Excluir teste"><Trash2 className="h-4 w-4" /></button></div>}
@@ -513,19 +560,19 @@ function Attachments({ data, user, mutate }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field mt-3 max-w-md" />
         <div><button type="button" disabled={!file} onClick={upload} className="btn-primary mt-3">Enviar anexo</button></div>
       </div>
-      <div className="overflow-x-auto pb-1"><ol className="relative mx-auto w-[398px] border-l border-slate-200" aria-label="Linha do tempo dos anexos">
+      <div className="overflow-x-auto pb-1"><ol className="relative mx-auto w-[538px] border-l border-slate-200" aria-label="Linha do tempo dos anexos">
         {[...data.attachments].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((item) => (
           <li key={item.id} className="relative mb-6 ml-6 last:mb-0">
           <span className="absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white bg-indigo-500" aria-hidden="true" />
-          <article className="flex h-[122.15px] w-[350px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <article className="flex h-[171px] w-[490px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <AttachmentPreview taskId={data.task.id} item={item} />
-            <div className="flex min-w-0 flex-1 flex-col justify-between p-2.5">
-              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="whitespace-nowrap text-xs font-semibold text-slate-700">{formatShortDateTime(item.created_at)}</p><p className="truncate text-[11px] text-slate-500">{item.created_by_name}</p></div><div className="flex shrink-0 gap-0.5">
-              <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} download={item.original_name} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-4 w-4" /></a>
-              {user.access_level === 'ADMIN' && <button onClick={() => mutate(() => api.delete(`/tasks/${data.task.id}/attachments/${item.id}`), 'Anexo removido logicamente.')} className="rounded-md p-2 text-red-600 hover:bg-red-50" title="Remover"><XCircle className="h-4 w-4" /></button>}
+            <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="whitespace-nowrap text-sm font-semibold text-slate-700">{formatShortDateTime(item.created_at)}</p><p className="truncate text-xs text-slate-500">{item.created_by_name}</p></div><div className="flex shrink-0 gap-1">
+              <a href={`${api.defaults.baseURL}/tasks/${data.task.id}/attachments/${item.id}`} download={item.original_name} className="rounded-md p-2.5 text-indigo-600 hover:bg-indigo-50" title="Baixar"><Download className="h-5 w-5" /></a>
+              {user.access_level === 'ADMIN' && <button onClick={() => mutate(() => api.delete(`/tasks/${data.task.id}/attachments/${item.id}`), 'Anexo removido logicamente.')} className="rounded-md p-2.5 text-red-600 hover:bg-red-50" title="Remover"><XCircle className="h-5 w-5" /></button>}
               </div></div>
-              <span className="w-fit max-w-full truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">Anexado em: {attachmentSourceLabel(item.source_section)}</span>
-              <div className="min-w-0"><p className="truncate text-xs font-medium text-slate-800">{item.original_name}</p><p className="truncate text-[10px] text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB{item.description ? ` · ${item.description}` : ''}</p></div>
+              <span className="w-fit max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Anexado em: {attachmentSourceLabel(item.source_section)}</span>
+              <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-800">{item.original_name}</p><p className="truncate text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB{item.description ? ` · ${item.description}` : ''}</p></div>
             </div>
           </article>
           </li>
@@ -603,13 +650,13 @@ function attachmentIcon(item) {
 function AttachmentPreview({ taskId, item }) {
   const url = `${api.defaults.baseURL}/tasks/${taskId}/attachments/${item.id}`;
   if (isImageAttachment(item)) {
-    return <a href={url} target="_blank" rel="noreferrer" title="Abrir imagem em tamanho completo" className="block h-full w-24 shrink-0 bg-slate-100"><img src={url} alt={item.original_name} loading="lazy" className="h-full w-full object-cover" /></a>;
+    return <a href={url} target="_blank" rel="noreferrer" title="Abrir imagem em tamanho completo" className="block h-full w-36 shrink-0 bg-slate-100"><img src={url} alt={item.original_name} loading="lazy" className="h-full w-full object-cover" /></a>;
   }
   if (isVideoAttachment(item)) {
-    return <video src={url} controls preload="metadata" className="h-full w-24 shrink-0 bg-slate-950 object-cover">Seu navegador nao suporta video.</video>;
+    return <video src={url} controls preload="metadata" className="h-full w-36 shrink-0 bg-slate-950 object-cover">Seu navegador nao suporta video.</video>;
   }
   const Icon = attachmentIcon(item);
-  return <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-24 shrink-0 items-center justify-center bg-slate-50 text-slate-500" title={`Abrir ${item.original_name}`}><Icon className="h-10 w-10" aria-hidden="true" /></a>;
+  return <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-36 shrink-0 items-center justify-center bg-slate-50 text-slate-500" title={`Abrir ${item.original_name}`}><Icon className="h-14 w-14" aria-hidden="true" /></a>;
 }
 
 function History({ events, timerEvents = [] }) {

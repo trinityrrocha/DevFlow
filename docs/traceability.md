@@ -1,5 +1,17 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.23-alpha`
+
+| Revisao 0.6.23 | Evidencia |
+|---|---|
+| Etapa existente | `014_frontend_approval_stage.sql` desloca etapas posteriores em ordem descendente e insere `FRONTEND_APPROVAL` |
+| Novos tenants | `tenantService.js` posiciona Aprovação do Frontend entre Frontend e Update GitHub |
+| Gate | `requirements.approval=true` exige decisão `APPROVED` da etapa atual |
+| Aprovação | UI registra observações, aprovação, comentário e avança para a etapa seguinte |
+| Reprovação | UI exige motivo, registra decisão/comentário/anexo e devolve para Frontend |
+| QA | opções Cliente, Desenvolvedor Backend e Desenvolvedor Frontend são filtradas inclusive em registros legados |
+| Cards | testes usam 490 px; anexos usam 490 x 171 px em timelines centralizadas |
+
 ## Instalacao isolada `0.6.22-alpha`
 
 | Revisao 0.6.22 | Evidencia |

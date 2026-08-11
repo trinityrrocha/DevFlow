@@ -5,6 +5,7 @@ export const LABELS = {
   REPORT_BUG: 'Report Bug',
   BACKEND: 'Backend',
   FRONTEND: 'Frontend',
+  FRONTEND_APPROVAL: 'Aprovação do Frontend',
   GITHUB_UPDATE: 'Update GitHub',
   TESTING: 'Testando',
   REVIEW: 'Revisando',

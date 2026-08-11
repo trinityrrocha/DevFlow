@@ -35,6 +35,7 @@ const update = read('scripts/update.sh');
 const migrationSource = read('backend/scripts/migrate.js');
 const qaMigration = read('database/migrations/012_qa_tests_and_attachment_sources.sql');
 const qaRepairMigration = read('database/migrations/013_qa_tests_idempotency_repair.sql');
+const frontendApprovalMigration = read('database/migrations/014_frontend_approval_stage.sql');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migrations-'));
 
@@ -146,7 +147,13 @@ try {
     && qaRepairMigration.includes('ADD COLUMN IF NOT EXISTS source_section VARCHAR(50)')
     && qaRepairMigration.includes('ALTER COLUMN source_section TYPE VARCHAR(50)')
     && !qaRepairMigration.includes('RAISE EXCEPTION'));
-  if (checks.length !== 26) throw new Error(`Expected 26 checks, got ${checks.length}`);
+  check('frontend approval is inserted repeat-safely after Frontend',
+    frontendApprovalMigration.includes("frontend.code = 'FRONTEND'")
+    && frontendApprovalMigration.includes("approval.code = 'FRONTEND_APPROVAL'")
+    && frontendApprovalMigration.includes('ORDER BY sort_order DESC')
+    && frontendApprovalMigration.includes("'{\"approval\": true}'::jsonb")
+    && !frontendApprovalMigration.includes('RAISE EXCEPTION'));
+  if (checks.length !== 27) throw new Error(`Expected 27 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

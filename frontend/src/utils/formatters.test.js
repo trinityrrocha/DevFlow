@@ -5,6 +5,7 @@ describe('formatters', () => {
   it('traduz estados e prioridades para português', () => {
     expect(label('ACTIVE')).toBe('Em andamento');
     expect(label('URGENT_PRODUCTION')).toBe('Urgente Produção');
+    expect(label('FRONTEND_APPROVAL')).toBe('Aprovação do Frontend');
   });
 
   it('formata duração acumulada sem incluir segundos isolados', () => {

@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-10. Versao: `0.6.22-alpha`.
+Data de corte: 2026-08-11. Versao: `0.6.23-alpha`.
+
+Revisao 0.6.23 implementada localmente: a migration 014 inclui `FRONTEND_APPROVAL` imediatamente após `FRONTEND` nos fluxos existentes e o seed aplica a sequência aos novos tenants. A etapa exige aprovação de Gestor/Admin; a interface registra aprovação ou reprovação, comentário e evidência antes de avançar ou devolver. QA remove Cliente e os dois perfis de desenvolvimento, e as timelines usam cards de 490 px (anexos com 171 px de altura). A VPS ainda depende de homologação.
 
 Revisao 0.6.22 implementada localmente: backend e updater usam a raiz canônica `/var/lib/devflow/updater` sobre o mesmo bind mount persistente do host. O backend aceita apenas `DEVFLOW_UPDATER_QUEUE_DIR` absoluto, grava em `requests/` e registra o destino após a promoção atômica do arquivo. A VPS ainda depende de homologação.
 

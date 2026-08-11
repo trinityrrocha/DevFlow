@@ -1,5 +1,12 @@
 # Roadmap inicial
 
+## Marco `0.6.23-alpha`
+
+- inserir aprovação gerencial do Frontend antes da atualização no GitHub;
+- preservar motivo, comentário e evidência nas devoluções para Frontend;
+- simplificar os perfis de QA e ampliar as timelines de testes e anexos;
+- homologar migration e transições na VPS.
+
 ## Marco `0.6.22-alpha`
 
 - unificar o contrato absoluto e persistente da fila entre backend e updater;

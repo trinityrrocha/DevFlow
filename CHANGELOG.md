@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.23-alpha] - 2026-08-11
+
+### Adicionado
+
+- migration 014 para inserir `FRONTEND_APPROVAL` entre Frontend e Update GitHub em fluxos existentes;
+- revisão dedicada com aprovação, reprovação, comentário e anexo de evidência;
+- gate declarativo que exige aprovação registrada antes do avanço.
+
+### Alterado
+
+- novos tenants recebem a sequência Roadmap/Report Bug → Backend → Frontend → Aprovação do Frontend → Update GitHub → Testando → Revisando → Produção;
+- Cliente, Desenvolvedor Backend e Desenvolvedor Frontend deixam de ser opções de Perfis Validados no QA;
+- cards de testes passam para 490 px e cards de anexos para 490 x 171 px.
+
+### Validado
+
+- lint e testes direcionados de workflow, frontend e migrations; homologação real na VPS permanece pendente.
+
 ## [0.6.22-alpha] - 2026-08-10
 
 ### Corrigido

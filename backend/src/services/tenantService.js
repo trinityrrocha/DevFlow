@@ -57,16 +57,19 @@ const commonDevelopmentStages = [
     passing_test: true,
     submission_fields: ['observations']
   }),
-  stage('GITHUB_UPDATE', 'Update GitHub', 40, 'MANAGER', {
+  stage('FRONTEND_APPROVAL', 'Aprovação do Frontend', 40, 'MANAGER', {
+    approval: true
+  }),
+  stage('GITHUB_UPDATE', 'Update GitHub', 50, 'MANAGER', {
     github_fields: ['repository_url', 'branch', 'commit_sha']
   }),
-  stage('TESTING', 'Testando', 50, 'MANAGER', {
+  stage('TESTING', 'Testando', 60, 'MANAGER', {
     passing_test: true,
     test_evidence: true,
     approval: true
   }),
-  stage('REVIEW', 'Revisando', 60, 'MANAGER', { approval: true }),
-  stage('PRODUCTION', 'Produção', 70, 'MANAGER', {}, { tracksTime: false, completesTask: true })
+  stage('REVIEW', 'Revisando', 70, 'MANAGER', { approval: true }),
+  stage('PRODUCTION', 'Produção', 80, 'MANAGER', {}, { tracksTime: false, completesTask: true })
 ];
 
 const WORKFLOW_DEFINITIONS = [

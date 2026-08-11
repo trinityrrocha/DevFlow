@@ -20,7 +20,7 @@ services:
       timeout: 5s
       retries: 12
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.22-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.23-alpha}
       devflow.component: maintenance
     networks:
       - devflow_edge
