@@ -542,7 +542,7 @@ run_edge_updater_stage() {
   updater_id="$("${DEVFLOW_COMPOSE[@]}" ps -q updater 2>/dev/null || true)"
   edge_id="$("${DEVFLOW_COMPOSE[@]}" ps -q edge 2>/dev/null || true)"
   [[ -n "$updater_id" ]] && updater_running="$(docker inspect --format '{{.State.Running}}' "$updater_id" 2>/dev/null || true)"
-  docker exec devflow-updater test -f /var/lib/devflow-updater/daemon.ready 2>/dev/null && updater_ready=true
+  docker exec devflow-updater test -f /var/lib/devflow/updater/daemon.ready 2>/dev/null && updater_ready=true
   printf '%s\n' \
     "updater_container_present=$([[ -n "$updater_id" ]] && echo true || echo false)" \
     "updater_container_running=$updater_running" \

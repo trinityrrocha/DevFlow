@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.22-alpha] - 2026-08-10
+
+### Corrigido
+
+- backend e updater agora compartilham explicitamente `${DEVFLOW_UPDATER_ROOT}` no caminho canônico `/var/lib/devflow/updater`;
+- o controller grava a solicitação somente em `DEVFLOW_UPDATER_QUEUE_DIR=/var/lib/devflow/updater/requests`, sem fallback relativo;
+- daemon, health checks e status transacional usam a mesma raiz interna persistente.
+
+### Observabilidade
+
+- o backend registra `[UPDATER_QUEUE] Arquivo de solicitação gravado em:` somente depois da promoção atômica bem-sucedida.
+
+### Validado
+
+- validações locais do backend, Compose, daemon e contrato da fila; homologação real na VPS permanece pendente.
+
 ## [0.6.21-alpha] - 2026-08-10
 
 ### Adicionado

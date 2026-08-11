@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.21-alpha**. Esta revisao refatora o modal e as timelines de QA/anexos e adiciona um checklist visual de pré-requisitos junto ao avanço de etapa. A instalação isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.22-alpha**. Esta revisao torna explícito o contrato da fila autônoma: backend e updater compartilham o bind mount de `${DEVFLOW_UPDATER_ROOT}` em `/var/lib/devflow/updater`, e o backend grava somente em `/var/lib/devflow/updater/requests`. A instalação isolada e o updater transacional permanecem preservados.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

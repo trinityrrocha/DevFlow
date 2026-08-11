@@ -3,7 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 APP_DIR="${APP_DIR:-/opt/devflow}"
-REQUEST_ROOT="${UPDATER_REQUEST_DIR:-/var/lib/devflow-updater}"
+REQUEST_ROOT="${DEVFLOW_UPDATER_ROOT:-/var/lib/devflow/updater}"
 REQUEST_DIR="$REQUEST_ROOT/requests"
 PROCESSING_DIR="$REQUEST_ROOT/processing"
 PROCESSED_DIR="$REQUEST_ROOT/processed"

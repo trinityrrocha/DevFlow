@@ -164,7 +164,7 @@ refresh_updater_runtime_external() {
   [[ "$INTERNAL_MODE" == false ]] || return 0
   set_compose_for "$CANDIDATE_DIR"
   "${DEVFLOW_COMPOSE[@]}" up -d --wait --no-deps --force-recreate updater
-  docker exec devflow-updater test -f /var/lib/devflow-updater/daemon.ready
+  docker exec devflow-updater test -f /var/lib/devflow/updater/daemon.ready
 }
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
@@ -342,7 +342,7 @@ ROLLBACK_HEALTH_PASSED=false
 
 UPDATE_STATUS_FILE="${DEVFLOW_UPDATE_STATUS_FILE:-}"
 if [[ -n "$UPDATE_STATUS_FILE" ]]; then
-  [[ "$INTERNAL_MODE" == true && "$UPDATE_STATUS_FILE" == /var/lib/devflow-updater/status/*.json ]] \
+  [[ "$INTERNAL_MODE" == true && "$UPDATE_STATUS_FILE" == /var/lib/devflow/updater/status/*.json ]] \
     || die 'Arquivo de status do update invalido.'
   [[ -r "$SCRIPT_DIR/write-update-status.mjs" ]] || die 'Gravador de status do update ausente.'
 fi

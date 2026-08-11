@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createSignedRequest, getRequestStatus, updaterQueueReady } = require('../src/services/updateOperationService');
+const { persistUpdateRequest } = require('../src/controllers/updateOperationController');
 const { csrfProtection } = require('../src/middleware/csrfMiddleware');
 const { isMfaSetupAllowed } = require('../src/middleware/authMiddleware');
 
@@ -49,16 +50,45 @@ describe('fila privada de atualizacao', () => {
     const controller = fs.readFileSync(path.resolve(__dirname, '../src/controllers/updateOperationController.js'), 'utf8');
     const environment = fs.readFileSync(path.resolve(__dirname, '../src/config/env.js'), 'utf8');
     const compose = fs.readFileSync(path.resolve(__dirname, '../../docker-compose.yml'), 'utf8');
-    expect(controller).toContain('fs.mkdirSync(env.UPDATE_REQUEST_DIR, { recursive: true');
+    expect(controller).toContain('queueDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR');
     expect(controller.indexOf('assertUpdaterQueueReady()')).toBeLessThan(controller.indexOf('createSignedRequest('));
-    expect(controller).toContain('fs.writeFileSync(temporary');
-    expect(controller).toContain('fs.renameSync(temporary, destination)');
-    expect(controller.indexOf('writeStatus(')).toBeLessThan(controller.indexOf('fs.renameSync'));
-    expect(environment).toContain("UPDATE_REQUEST_DIR: z.string().refine(path.isAbsolute");
-    expect(environment).toContain("UPDATE_STATUS_DIR: z.string().refine(path.isAbsolute");
-    expect(environment).toContain('path.dirname(value.UPDATE_REQUEST_DIR) !== path.dirname(value.UPDATE_STATUS_DIR)');
-    expect(compose.match(/\$\{DEVFLOW_UPDATER_ROOT:-\/opt\/devflow\/updater\}:\/var\/lib\/devflow-updater/g)).toHaveLength(2);
+    expect(controller).toContain('filesystem.writeFileSync(temporary');
+    expect(controller).toContain('filesystem.renameSync(temporary, destination)');
+    expect(controller).toContain("console.log('[UPDATER_QUEUE] Arquivo de solicitação gravado em:', destination)");
+    expect(controller.indexOf('statusWriter(request.id')).toBeLessThan(controller.indexOf('filesystem.renameSync'));
+    expect(environment).toContain("DEVFLOW_UPDATER_QUEUE_DIR: z.string().refine(path.isAbsolute");
+    expect(environment).toContain("DEVFLOW_UPDATER_STATUS_DIR: z.string().refine(path.isAbsolute");
+    expect(environment).toContain("default('/var/lib/devflow/updater/requests')");
+    expect(environment).not.toContain("default('./requests')");
+    expect(environment).not.toContain("default('../requests')");
+    expect(environment).toContain('path.dirname(value.DEVFLOW_UPDATER_QUEUE_DIR) !== path.dirname(value.DEVFLOW_UPDATER_STATUS_DIR)');
+    expect(compose.match(/\$\{DEVFLOW_UPDATER_ROOT:-\/opt\/devflow\/updater\}:\/var\/lib\/devflow\/updater/g)).toHaveLength(2);
+    expect(compose).toContain('DEVFLOW_UPDATER_QUEUE_DIR: /var/lib/devflow/updater/requests');
+    expect(compose).toContain('DEVFLOW_UPDATER_ROOT: /var/lib/devflow/updater');
     expect(compose).not.toContain('devflow_updater_requests:');
+  });
+
+  it('grava e promove o JSON no diretorio absoluto compartilhado', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-updater-mounted-root-'));
+    const queueDirectory = path.join(root, 'requests');
+    const statusDirectory = path.join(root, 'status');
+    const request = createSignedRequest('admin@example.com');
+    try {
+      const destination = persistUpdateRequest(request, {
+        queueDirectory,
+        statusDirectory,
+        statusWriter: (id, state) => {
+          fs.mkdirSync(statusDirectory, { recursive: true });
+          fs.writeFileSync(path.join(statusDirectory, `${id}.json`), JSON.stringify({ id, state }));
+        }
+      });
+      expect(destination).toBe(path.join(queueDirectory, `${request.id}.json`));
+      expect(JSON.parse(fs.readFileSync(destination, 'utf8'))).toMatchObject({ id: request.id, signature: request.signature });
+      expect(fs.readdirSync(queueDirectory)).toEqual([`${request.id}.json`]);
+      expect(fs.existsSync(path.join(statusDirectory, `${request.id}.json`))).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('somente aceita a fila quando o heartbeat compartilhado esta recente', () => {

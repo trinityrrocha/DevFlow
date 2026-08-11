@@ -4,11 +4,11 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.6.21-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.6.22-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   UPDATE_API_ENABLED: z.string().default('false').transform((value) => value === 'true'),
-  UPDATE_REQUEST_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow-updater/requests'),
-  UPDATE_STATUS_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow-updater/status'),
+  DEVFLOW_UPDATER_QUEUE_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow/updater/requests'),
+  DEVFLOW_UPDATER_STATUS_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow/updater/status'),
   UPDATE_REQUEST_SECRET: z.string().min(64),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),
@@ -43,8 +43,8 @@ const environmentSchema = z.object({
   EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(120).default(30)
 }).superRefine((value, context) => {
-  if (path.dirname(value.UPDATE_REQUEST_DIR) !== path.dirname(value.UPDATE_STATUS_DIR)) {
-    context.addIssue({ code: 'custom', path: ['UPDATE_STATUS_DIR'], message: 'deve compartilhar a raiz persistente da fila' });
+  if (path.dirname(value.DEVFLOW_UPDATER_QUEUE_DIR) !== path.dirname(value.DEVFLOW_UPDATER_STATUS_DIR)) {
+    context.addIssue({ code: 'custom', path: ['DEVFLOW_UPDATER_STATUS_DIR'], message: 'deve compartilhar a raiz persistente da fila' });
   }
   if (value.SMTP_ENABLED && !value.SMTP_HOST) context.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'obrigatorio quando SMTP_ENABLED=true' });
   if (value.SMTP_ENABLED && !value.SMTP_FROM) context.addIssue({ code: 'custom', path: ['SMTP_FROM'], message: 'obrigatorio quando SMTP_ENABLED=true' });

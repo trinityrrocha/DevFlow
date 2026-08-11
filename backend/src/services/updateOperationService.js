@@ -15,7 +15,7 @@ const UPDATER_HEARTBEAT_MAX_AGE_MS = 15000;
 
 function updaterQueueReady({
   filesystem = fs,
-  requestDirectory = env.UPDATE_REQUEST_DIR,
+  requestDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR,
   now = Date.now()
 } = {}) {
   try {
@@ -95,9 +95,9 @@ async function getUpdateCapabilities() {
 
 function writeStatus(id, state, requestedAt = new Date().toISOString()) {
   if (!UPDATE_STATES.includes(state)) throw new AppError('UPDATE_STATUS_INVALID', 'Estado de atualizacao invalido.', 500);
-  fs.mkdirSync(env.UPDATE_STATUS_DIR, { recursive: true, mode: 0o700 });
-  const destination = path.join(env.UPDATE_STATUS_DIR, `${id}.json`);
-  const temporary = path.join(env.UPDATE_STATUS_DIR, `.${id}.${process.pid}.tmp`);
+  fs.mkdirSync(env.DEVFLOW_UPDATER_STATUS_DIR, { recursive: true, mode: 0o700 });
+  const destination = path.join(env.DEVFLOW_UPDATER_STATUS_DIR, `${id}.json`);
+  const temporary = path.join(env.DEVFLOW_UPDATER_STATUS_DIR, `.${id}.${process.pid}.tmp`);
   const messages = {
     pending: 'Atualizacao aguardando processamento.', processing: 'Atualizacao em processamento.',
     backup: 'Backup de seguranca em andamento.', maintenance: 'Modo de manutencao ativo.',
@@ -131,9 +131,9 @@ function createSignedRequest(actorEmail) {
 }
 
 function getUpdateQueueDirectories() {
-  const queueRoot = path.dirname(env.UPDATE_REQUEST_DIR);
+  const queueRoot = path.dirname(env.DEVFLOW_UPDATER_QUEUE_DIR);
   return Object.freeze([
-    Object.freeze({ name: 'requests', directory: env.UPDATE_REQUEST_DIR, status: 'pending' }),
+    Object.freeze({ name: 'requests', directory: env.DEVFLOW_UPDATER_QUEUE_DIR, status: 'pending' }),
     Object.freeze({ name: 'processing', directory: path.join(queueRoot, 'processing'), status: 'processing' }),
     Object.freeze({ name: 'processed', directory: path.join(queueRoot, 'processed'), status: 'completed' }),
     Object.freeze({ name: 'failed', directory: path.join(queueRoot, 'failed'), status: 'failed' })
@@ -159,7 +159,7 @@ function safeFailureMessage(...values) {
 function getRequestStatus(id, {
   filesystem = fs,
   directories = getUpdateQueueDirectories(),
-  statusDirectory = env.UPDATE_STATUS_DIR
+  statusDirectory = env.DEVFLOW_UPDATER_STATUS_DIR
 } = {}) {
   if (!REQUEST_ID_PATTERN.test(id)) throw new AppError('UPDATE_REQUEST_NOT_FOUND', 'Solicitacao de atualizacao nao encontrada.', 404);
   let lifecycle;

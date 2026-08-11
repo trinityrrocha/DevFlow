@@ -40,10 +40,15 @@ for (const service of ['db', 'backend', 'frontend', 'edge', 'updater']) {
 }
 if (!compose.services.edge.volumes.includes('/etc/letsencrypt:/etc/letsencrypt:ro')) throw new Error('Certificado do host deve ser somente leitura.');
 if (!compose.services.updater.volumes.includes('/var/run/docker.sock:/var/run/docker.sock')) throw new Error('Updater deve possuir o socket Docker explicitamente.');
-const updaterQueueMount = '${DEVFLOW_UPDATER_ROOT:-/opt/devflow/updater}:/var/lib/devflow-updater';
+const updaterQueueMount = '${DEVFLOW_UPDATER_ROOT:-/opt/devflow/updater}:/var/lib/devflow/updater';
 if (!compose.services.backend.volumes.includes(updaterQueueMount)
   || !compose.services.updater.volumes.includes(updaterQueueMount)) {
   throw new Error('Backend e updater devem compartilhar o mesmo bind persistente da fila.');
+}
+if (compose.services.backend.environment.DEVFLOW_UPDATER_QUEUE_DIR !== '/var/lib/devflow/updater/requests'
+  || compose.services.backend.environment.DEVFLOW_UPDATER_STATUS_DIR !== '/var/lib/devflow/updater/status'
+  || compose.services.updater.environment.DEVFLOW_UPDATER_ROOT !== '/var/lib/devflow/updater') {
+  throw new Error('Backend e updater devem usar a mesma raiz canonica dentro dos containers.');
 }
 if (compose.volumes?.devflow_updater_requests) throw new Error('Fila do updater nao pode depender de volume Docker opaco.');
 if (!maintenance.services?.maintenance || maintenance.services.maintenance.restart !== 'no') {

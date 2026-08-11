@@ -42,7 +42,7 @@ try {
   check('04 updater daemon is executable through active symlink', install.includes('-x "$DEVFLOW_INSTALL_ROOT/app/scripts/updater-daemon.sh"'));
   check('05 daemon creates ready marker', daemon.includes('touch "$REQUEST_ROOT/daemon.ready"'));
   check('06 updater healthcheck requires ready marker', compose.services.updater.healthcheck.test.join(' ')
-    === 'CMD test -f /var/lib/devflow-updater/daemon.ready');
+    === 'CMD test -f /var/lib/devflow/updater/daemon.ready');
   check('07 updater healthcheck has start period', compose.services.updater.healthcheck.start_period === '15s');
 
   writeFileSync(gate, '');

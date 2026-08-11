@@ -29,7 +29,7 @@ O motor aceita somente os remotes `https://github.com/trinityrrocha/DevFlow`, su
 Depois que o status do request for `completed` ou `failed`, uma manutencao controlada pode promover o daemon da release ativa. Essa promocao e obrigatoria uma vez ao migrar de uma versao anterior a `0.6.4-alpha`, pois o daemon antigo ainda chamava a interface removida `--request-file`. Nunca execute estes comandos enquanto existir JSON em `processing/`:
 
 ```bash
-sudo docker exec devflow-updater sh -c '! find /var/lib/devflow-updater/processing -maxdepth 1 -name "*.json" -print -quit | grep -q .'
+sudo docker exec devflow-updater sh -c '! find /var/lib/devflow/updater/processing -maxdepth 1 -name "*.json" -print -quit | grep -q .'
 cd /opt/devflow/app
 sudo docker compose --project-name devflow --env-file /opt/devflow/config/devflow.env build updater
 sudo docker compose --project-name devflow --env-file /opt/devflow/config/devflow.env up -d --no-deps --wait updater

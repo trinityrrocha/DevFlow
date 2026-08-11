@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-10. Versao: `0.6.21-alpha`.
+Data de corte: 2026-08-10. Versao: `0.6.22-alpha`.
+
+Revisao 0.6.22 implementada localmente: backend e updater usam a raiz canônica `/var/lib/devflow/updater` sobre o mesmo bind mount persistente do host. O backend aceita apenas `DEVFLOW_UPDATER_QUEUE_DIR` absoluto, grava em `requests/` e registra o destino após a promoção atômica do arquivo. A VPS ainda depende de homologação.
 
 Revisao 0.6.21 implementada localmente: ambiente e perfis do QA usam checkboxes, Backend/Frontend usam selects, testes e anexos seguem timelines centralizadas e os anexos têm cards de 350 x 122,15 px. O checklist próximo ao avanço apresenta evidências e os bloqueios obrigatórios calculados pelo backend, sem criar novas regras de transição. Navegador autenticado e VPS ainda dependem de homologação.
 

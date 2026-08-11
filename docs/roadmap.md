@@ -1,5 +1,11 @@
 # Roadmap inicial
 
+## Marco `0.6.22-alpha`
+
+- unificar o contrato absoluto e persistente da fila entre backend e updater;
+- registrar no backend o destino final do pedido enfileirado;
+- homologar na VPS a criação, consumo e rastreamento do JSON pelo volume compartilhado.
+
 ## Marco `0.6.21-alpha`
 
 - refinar modal e timeline de QA;

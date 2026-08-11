@@ -23,7 +23,7 @@ const [statusPath, state] = process.argv.slice(2);
 const fail = (message) => { process.stderr.write(`invalid-update-status:${message}\n`); process.exit(2); };
 if (!statusPath || !ALLOWED_STATES.has(state)) fail('arguments');
 const absolute = resolve(statusPath);
-if (!absolute.startsWith('/var/lib/devflow-updater/status/') || basename(absolute) !== basename(statusPath)) fail('path');
+if (!absolute.startsWith('/var/lib/devflow/updater/status/') || basename(absolute) !== basename(statusPath)) fail('path');
 if (!/^[0-9a-f-]{36}\.json$/.test(basename(absolute))) fail('identity');
 
 let previous = {};

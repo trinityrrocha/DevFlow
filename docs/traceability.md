@@ -1,5 +1,16 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.22-alpha`
+
+| Revisao 0.6.22 | Evidencia |
+|---|---|
+| Bind mount | backend e updater usam `${DEVFLOW_UPDATER_ROOT:-/opt/devflow/updater}:/var/lib/devflow/updater` |
+| Fila backend | `DEVFLOW_UPDATER_QUEUE_DIR=/var/lib/devflow/updater/requests` |
+| Status backend | `DEVFLOW_UPDATER_STATUS_DIR=/var/lib/devflow/updater/status` |
+| Raiz daemon | `DEVFLOW_UPDATER_ROOT=/var/lib/devflow/updater` |
+| Observabilidade | controller registra o caminho final após `renameSync` atômico |
+| Regressão | testes recusam fallback relativo e validam dois mounts idênticos |
+
 ## Instalacao isolada `0.6.21-alpha`
 
 | Revisao 0.6.21 | Evidencia |
@@ -36,7 +47,7 @@
 | Revisao 0.6.18 | Evidencia |
 |---|---|
 | Causa raiz da fila | Compose usava um volume Docker opaco enquanto o instalador mantinha a fila persistente em `/opt/devflow/updater` |
-| Persistencia | backend e updater montam o mesmo `DEVFLOW_UPDATER_ROOT` em `/var/lib/devflow-updater` |
+| Persistencia | backend e updater montam o mesmo `DEVFLOW_UPDATER_ROOT` em `/var/lib/devflow/updater`; o backend usa `DEVFLOW_UPDATER_QUEUE_DIR=/var/lib/devflow/updater/requests` |
 | Gate do daemon | backend somente aceita o POST quando `daemon.ready` e um arquivo regular, nao e symlink e possui heartbeat recente |
 | Atualizacao externa | `update.sh` recria o updater ao final apenas no fluxo SSH; o daemon nunca tenta recriar a si proprio |
 | Fase 1 | `Settings.jsx` consulta exclusivamente o ciclo de vida do request enquanto a API permanece disponivel |
