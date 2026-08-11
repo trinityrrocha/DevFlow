@@ -69,7 +69,8 @@ while true; do
   fi
   node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" processing
   log "Processando solicitacao validada: $request_id"
-  if DEVFLOW_UPDATE_INTERNAL=true \
+  if DEVFLOW_UPDATE_DAEMON=true \
+    DEVFLOW_UPDATE_INTERNAL=true \
     DEVFLOW_UPDATE_STATUS_FILE="$status_file" \
     UPDATE_SERVICES='db backend frontend worker edge' \
     "$APP_DIR/app/scripts/update.sh" >>"$log_file" 2>&1; then

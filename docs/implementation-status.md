@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-11. Versao: `0.6.23-alpha`.
+Data de corte: 2026-08-11. Versao: `0.6.24-alpha`.
+
+Revisao 0.6.24 implementada localmente: o WebUpdater propaga explicitamente o contexto daemon; o pre-update e o health final usam `health.sh --daemon`, resolvem `devflow-nginx` na rede `devflow_edge` e mantêm TLS estrito. Somente arquivos de certificado e timer systemd, exclusivos do host, são reportados como `skipped-host-only`. Docker, HTTPS e WebUpdater reais ainda dependem de homologacao na VPS.
 
 Revisao 0.6.23 implementada localmente: a migration 014 inclui `FRONTEND_APPROVAL` imediatamente após `FRONTEND` nos fluxos existentes e o seed aplica a sequência aos novos tenants. A etapa exige aprovação de Gestor/Admin; a interface registra aprovação ou reprovação, comentário e evidência antes de avançar ou devolver. QA remove Cliente e os dois perfis de desenvolvimento, e as timelines usam cards de 490 px (anexos com 171 px de altura). A VPS ainda depende de homologação.
 

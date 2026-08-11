@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.24-alpha] - 2026-08-11
+
+### Corrigido
+
+- WebUpdater passa a executar health de runtime explícito dentro do container updater, sem depender do loopback, dos certificados em arquivo ou do systemd do host;
+- pre-update, health final e rollback público selecionam o contexto correto entre execução manual no host e execução interna pelo daemon.
+
+### Segurança
+
+- HTTP e HTTPS do modo daemon atravessam o `devflow-nginx` pelo IP da rede `devflow_edge`;
+- HTTPS continua validando certificado, hostname e cadeia de confiança com a CA store explícita da imagem, sem `curl -k`, host networking ou mounts sensíveis adicionais.
+
+### Validado
+
+- 20 cenários locais cobrem os contextos host/daemon/candidate e preservam HMAC, fila, allowlist de serviços e isolamento do updater;
+- Docker, HTTPS e WebUpdater reais na VPS permanecem pendentes de homologação pelo usuário.
+
 ## [0.6.23-alpha] - 2026-08-11
 
 ### Adicionado

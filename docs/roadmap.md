@@ -1,5 +1,11 @@
 # Roadmap inicial
 
+## Marco `0.6.24-alpha`
+
+- homologar na VPS o health de runtime do WebUpdater pela rede `devflow_edge`;
+- confirmar HTTP 301/308 e HTTPS estrito pelo Nginx a partir do updater;
+- preservar o health do host como gate estrito de certificados e timers.
+
 ## Marco `0.6.23-alpha`
 
 - inserir aprovação gerencial do Frontend antes da atualização no GitHub;

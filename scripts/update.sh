@@ -13,6 +13,7 @@ CHECK_ONLY=false
 ROLLBACK_REQUESTED=false
 EXPECTED_UPDATE_VERSION=
 INTERNAL_MODE="${DEVFLOW_UPDATE_INTERNAL:-false}"
+DAEMON_MODE="${DEVFLOW_UPDATE_DAEMON:-false}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true; shift ;;
@@ -46,6 +47,10 @@ done
   || die 'Versão explicitamente esperada não atende ao contrato SemVer.'
 [[ "$INTERNAL_MODE" == true || "$INTERNAL_MODE" == false ]] \
   || die 'DEVFLOW_UPDATE_INTERNAL deve ser true ou false.'
+[[ "$DAEMON_MODE" == true || "$DAEMON_MODE" == false ]] \
+  || die 'DEVFLOW_UPDATE_DAEMON deve ser true ou false.'
+[[ "$DAEMON_MODE" == false || "$INTERNAL_MODE" == true ]] \
+  || die 'DEVFLOW_UPDATE_DAEMON exige DEVFLOW_UPDATE_INTERNAL=true.'
 
 require_linux
 require_root
@@ -128,6 +133,16 @@ export DEVFLOW_APP_ROOT DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_INSTALLED
   DEVFLOW_IDENTITY_RELEASE_ROOT
 compose_files
 
+run_context_health() {
+  local release="$1"
+  shift
+  if [[ "$INTERNAL_MODE" == true ]]; then
+    DEVFLOW_UPDATE_DAEMON=true "$release/scripts/health.sh" --daemon "$@"
+  else
+    "$release/scripts/health.sh" "$@"
+  fi
+}
+
 UPDATE_SERVICES="${UPDATE_SERVICES:-db backend frontend worker edge}"
 declare -a UPDATE_SERVICE_LIST=()
 for service in $UPDATE_SERVICES; do
@@ -168,7 +183,7 @@ refresh_updater_runtime_external() {
 }
 validate_installed_release_runtime \
   || die 'Identidade da release instalada diverge das imagens ou da API; atualização bloqueada.'
-"$OLD_RELEASE_DIR/scripts/health.sh" \
+run_context_health "$OLD_RELEASE_DIR" \
   || die 'Pre-update health da release instalada falhou; atualizacao bloqueada.'
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
   || die 'Banco instalado nao esta saudavel.'
@@ -652,7 +667,7 @@ rollback_update() {
     printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored'
     return 1
   fi
-  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" \
+  DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_UPDATE_DAEMON=false \
     "$OLD_RELEASE_DIR/scripts/health.sh" --internal
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
   if [[ "$rollback_failures" -ne 0 ]]; then
@@ -670,7 +685,7 @@ rollback_update() {
   [[ $? -eq 0 ]] || { log ERROR 'Não foi possível restaurar o proxy anterior.'; rollback_failures=$((rollback_failures + 1)); }
   MAINTENANCE_ACTIVE=false
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" \
-    "$OLD_RELEASE_DIR/scripts/health.sh"
+    run_context_health "$OLD_RELEASE_DIR"
   [[ $? -eq 0 ]] || { log ERROR 'Health check público após rollback falhou.'; rollback_failures=$((rollback_failures + 1)); }
 
   if ! refresh_host_units "$OLD_RELEASE_DIR"; then
@@ -888,6 +903,7 @@ up_runtime_services --force-recreate --remove-orphans
 UPDATE_PHASE=health-internal
 set_update_status health
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$CANDIDATE_IMAGE_TAG" \
+  DEVFLOW_UPDATE_DAEMON="$DAEMON_MODE" \
   "$CANDIDATE_DIR/scripts/health.sh" --candidate \
     --expected-version "$NEW_VERSION" \
     --expected-commit "$NEW_SHA" \
@@ -926,7 +942,7 @@ write_update_transaction state-promoted \
   || die 'Promocao da release e do estado nao foi registrada.'
 
 UPDATE_PHASE=health-installed-internal
-DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" \
+DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" DEVFLOW_UPDATE_DAEMON=false \
   "$CANDIDATE_DIR/scripts/health.sh" --internal
 
 UPDATE_PHASE=proxy
@@ -936,7 +952,7 @@ MAINTENANCE_ACTIVE=false
 
 UPDATE_PHASE=health-public
 DEVFLOW_APP_ROOT="$CANDIDATE_DIR" DEVFLOW_IMAGE_TAG="$FINAL_IMAGE_TAG" \
-  "$CANDIDATE_DIR/scripts/health.sh"
+  run_context_health "$CANDIDATE_DIR"
 
 UPDATE_PHASE=updater-runtime
 refresh_updater_runtime_external

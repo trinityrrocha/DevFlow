@@ -1,5 +1,16 @@
 # Rastreabilidade
 
+## Instalacao isolada `0.6.24-alpha`
+
+| Revisao 0.6.24 | Evidencia |
+|---|---|
+| Contexto do daemon | `updater-daemon.sh` exporta `DEVFLOW_UPDATE_DAEMON=true` e mantém `DEVFLOW_UPDATE_INTERNAL=true` |
+| Pre-update e final | `update.sh` seleciona `health.sh --daemon` no WebUpdater e health normal na execução manual |
+| Borda HTTP | `health.sh --daemon` resolve `devflow-nginx` em `devflow_edge` e exige redirect 301/308 |
+| Borda HTTPS | `curl --resolve` usa o domínio real e valida TLS sem modo inseguro |
+| Recursos host-only | certificado em arquivo, expiração local e timer systemd são skips não-fatais somente no daemon |
+| Regressões | validador local cobre 20 cenários e preserva HMAC, fila, serviços e mounts |
+
 ## Instalacao isolada `0.6.23-alpha`
 
 | Revisao 0.6.23 | Evidencia |

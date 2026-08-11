@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.23-alpha**. Esta revisao adiciona a etapa auditável de Aprovação do Frontend entre Frontend e Update GitHub, refina os perfis selecionáveis do QA e amplia os cards das timelines de testes e anexos. A instalação isolada e o updater transacional permanecem preservados.
+Versao atual: **0.6.24-alpha**. Esta revisao separa o health estrito do host do health de runtime usado pelo WebUpdater, preservando TLS validado pelo Nginx sem exigir certificados ou systemd dentro do container updater.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

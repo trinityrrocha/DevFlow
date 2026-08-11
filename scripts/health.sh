@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INTERNAL_ONLY=false
 QUIET=false
 CANDIDATE_MODE=false
+DAEMON_MODE="${DEVFLOW_UPDATE_DAEMON:-false}"
 EXPECTED_VERSION_ARG=
 EXPECTED_COMMIT_ARG=
 EXPECTED_MIGRATION_ARG=
@@ -18,15 +19,21 @@ REQUESTED_IMAGE_TAG="${DEVFLOW_IMAGE_TAG:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --internal) INTERNAL_ONLY=true; shift ;;
+    --daemon) DAEMON_MODE=true; shift ;;
     --candidate) CANDIDATE_MODE=true; INTERNAL_ONLY=true; shift ;;
     --expected-version) [[ -n "${2:-}" ]] || die '--expected-version exige valor.'; EXPECTED_VERSION_ARG="$2"; shift 2 ;;
     --expected-commit) [[ -n "${2:-}" ]] || die '--expected-commit exige valor.'; EXPECTED_COMMIT_ARG="$2"; shift 2 ;;
     --expected-migration) [[ -n "${2:-}" ]] || die '--expected-migration exige valor.'; EXPECTED_MIGRATION_ARG="$2"; shift 2 ;;
     --quiet) QUIET=true; shift ;;
-    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal|--candidate --expected-version V --expected-commit SHA --expected-migration FILE] [--quiet]'; exit 0 ;;
+    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal|--daemon|--candidate --expected-version V --expected-commit SHA --expected-migration FILE] [--quiet]'; exit 0 ;;
     *) die "Opcao desconhecida: $1" ;;
   esac
 done
+
+[[ "$DAEMON_MODE" == true || "$DAEMON_MODE" == false ]] \
+  || die 'DEVFLOW_UPDATE_DAEMON deve ser true ou false.'
+[[ "$DAEMON_MODE" == false || "$INTERNAL_ONLY" == false || "$CANDIDATE_MODE" == true ]] \
+  || die '--daemon e --internal nao podem ser combinados.'
 
 require_linux
 require_root
@@ -200,10 +207,17 @@ fi
 
 if [[ "$INTERNAL_ONLY" == false ]]; then
   resolve_ip="${DEVFLOW_HEALTH_RESOLVE_IP:-127.0.0.1}"
-  if [[ "${DEVFLOW_UPDATE_DAEMON:-false}" == true && "$resolve_ip" == 127.0.0.1 ]]; then
+  if [[ "$DAEMON_MODE" == true ]]; then
     resolve_ip="$(docker inspect --format '{{(index .NetworkSettings.Networks "devflow_edge").IPAddress}}' devflow-nginx 2>/dev/null || true)"
+    if validate_ipv4 "$resolve_ip"; then
+      report PASS nginx_edge_ip "$resolve_ip"
+    else
+      report FAIL nginx_edge_ip "${resolve_ip:-missing}"
+      resolve_ip=0.0.0.0
+    fi
+  else
+    validate_ipv4 "$resolve_ip" || die 'Endereco de resolucao local do health invalido.'
   fi
-  validate_ipv4 "$resolve_ip" || die 'Endereco de resolucao local do health invalido.'
   http_code="$(curl --resolve "$DEVFLOW_DOMAIN:80:$resolve_ip" --silent --output /dev/null \
     --write-out '%{http_code}' --max-time 20 "http://$DEVFLOW_DOMAIN/" || true)"
   [[ "$http_code" == 301 || "$http_code" == 308 ]] \
@@ -214,24 +228,30 @@ if [[ "$INTERNAL_ONLY" == false ]]; then
   else
     report FAIL external_https unhealthy
   fi
-  certificate="$DEVFLOW_CERTIFICATE_PATH/live/$DEVFLOW_DOMAIN/fullchain.pem"
-  if validate_devflow_certificate "$DEVFLOW_DOMAIN" "$DEVFLOW_CERTIFICATE_PATH" >/dev/null; then
-    report PASS certificate valid
+  if [[ "$DAEMON_MODE" == true ]]; then
+    report PASS certificate_file_check skipped-host-only
+    report PASS certificate_expiration_file_check skipped-host-only
+    report PASS certificate_renewal_timer skipped-host-only
   else
-    report FAIL certificate invalid
-  fi
-  if [[ -r "$certificate" ]] && openssl x509 -checkend 2592000 -noout -in "$certificate" >/dev/null 2>&1; then
-    report PASS certificate_expiration valid-30-days
-  else
-    report FAIL certificate_expiration expiring
-  fi
-  if { command -v systemctl >/dev/null 2>&1 \
-      && systemctl is-enabled --quiet devflow-certificate-renewal.timer \
-      && systemctl is-active --quiet devflow-certificate-renewal.timer; } \
-    || [[ -f "$DEVFLOW_STATE_ROOT/host-units.installed" ]]; then
-    report PASS certificate_renewal active
-  else
-    report FAIL certificate_renewal inactive
+    certificate="$DEVFLOW_CERTIFICATE_PATH/live/$DEVFLOW_DOMAIN/fullchain.pem"
+    if validate_devflow_certificate "$DEVFLOW_DOMAIN" "$DEVFLOW_CERTIFICATE_PATH" >/dev/null; then
+      report PASS certificate valid
+    else
+      report FAIL certificate invalid
+    fi
+    if [[ -r "$certificate" ]] && openssl x509 -checkend 2592000 -noout -in "$certificate" >/dev/null 2>&1; then
+      report PASS certificate_expiration valid-30-days
+    else
+      report FAIL certificate_expiration expiring
+    fi
+    if { command -v systemctl >/dev/null 2>&1 \
+        && systemctl is-enabled --quiet devflow-certificate-renewal.timer \
+        && systemctl is-active --quiet devflow-certificate-renewal.timer; } \
+      || [[ -f "$DEVFLOW_STATE_ROOT/host-units.installed" ]]; then
+      report PASS certificate_renewal active
+    else
+      report FAIL certificate_renewal inactive
+    fi
   fi
 else
   report PASS external_http skipped-internal
@@ -249,6 +269,9 @@ if [[ "$CANDIDATE_MODE" == true ]]; then
     "candidate_frontend_healthy=$([[ "$RESULT_FRONTEND" == healthy ]] && echo true || echo false)" \
     "candidate_worker_healthy=$([[ "$RESULT_WORKER" == healthy ]] && echo true || echo false)" \
     "candidate_internal_health=$overall"
+fi
+if [[ "$DAEMON_MODE" == true && "$CANDIDATE_MODE" == false ]]; then
+  printf '%s\n' "daemon_runtime_health=$overall"
 fi
 printf '%s\n' \
   'installation_mode=isolated' \
