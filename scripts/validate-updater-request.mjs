@@ -18,28 +18,33 @@ if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) fail('unsafe-fi
 let request;
 try { request = JSON.parse(readFileSync(requestPath, 'utf8')); } catch { fail('json'); }
 const keys = Object.keys(request).sort();
-const expectedKeys = ['action', 'id', 'nonce', 'operation', 'requestedAt', 'requestedBy', 'requester', 'schemaVersion', 'signature', 'timestamp'].sort();
+const expectedKeys = request.schemaVersion === 2
+  ? ['action', 'id', 'nonce', 'operation', 'requestedAt', 'requestedBy', 'requester', 'schemaVersion', 'signature', 'timestamp'].sort()
+  : ['action', 'backupId', 'id', 'nonce', 'operation', 'requestedAt', 'requestedBy', 'requester', 'schemaVersion', 'signature', 'timestamp'].sort();
 if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) fail('keys');
-if (request.schemaVersion !== 2 || request.id !== expectedId || request.action !== 'update'
-  || request.operation !== 'install-update' || request.timestamp !== request.requestedAt
+const allowedOperations = new Set(['install-update', 'create-backup', 'verify-backup', 'restore-backup', 'delete-backup']);
+const legacy = request.schemaVersion === 2 && request.action === 'update' && request.operation === 'install-update';
+const current = request.schemaVersion === 3 && request.action === 'operation' && allowedOperations.has(request.operation);
+if ((!legacy && !current) || request.id !== expectedId || request.timestamp !== request.requestedAt
   || request.requester !== request.requestedBy) fail('contract');
+if (current) {
+  const needsBackup = !['install-update', 'create-backup'].includes(request.operation);
+  if ((needsBackup && !/^[0-9a-f]{32}$/.test(request.backupId || ''))
+    || (!needsBackup && request.backupId !== null)) fail('backup-id');
+}
 if (!/^[0-9a-f-]{36}$/.test(request.id) || !/^[0-9a-f]{64}$/.test(request.nonce)) fail('identity');
 if (typeof request.requestedBy !== 'string' || request.requestedBy.length < 3 || request.requestedBy.length > 320) fail('actor');
 const requestedAt = Date.parse(request.requestedAt);
 const age = Date.now() - requestedAt;
 if (!Number.isFinite(requestedAt) || age < -300000 || age > 7 * 86400000) fail('timestamp');
-const canonical = JSON.stringify({
-  schemaVersion: request.schemaVersion,
-  id: request.id,
-  action: request.action,
-  timestamp: request.timestamp,
-  requester: request.requester,
-  operation: request.operation,
-  requestedAt: request.requestedAt,
-  requestedBy: request.requestedBy,
-  nonce: request.nonce
-});
+const unsigned = {
+  schemaVersion: request.schemaVersion, id: request.id, action: request.action,
+  timestamp: request.timestamp, requester: request.requester, operation: request.operation,
+  requestedAt: request.requestedAt, requestedBy: request.requestedBy, nonce: request.nonce
+};
+if (request.schemaVersion === 3) unsigned.backupId = request.backupId;
+const canonical = JSON.stringify(unsigned);
 const calculated = Buffer.from(createHmac('sha256', secret).update(canonical).digest('hex'));
 const received = Buffer.from(String(request.signature || ''));
 if (received.length !== calculated.length || !timingSafeEqual(received, calculated)) fail('signature');
-process.stdout.write(`update_request_valid=true\nrequest_id=${request.id}\noperation=install-update\n`);
+process.stdout.write(`operation_request_valid=true\nrequest_id=${request.id}\noperation=${request.operation}\nbackup_id=${request.backupId || ''}\n`);

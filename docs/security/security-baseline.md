@@ -11,7 +11,7 @@ O DevFlow controla somente recursos prefixados ou armazenados em seu namespace: 
 - frontend conecta apenas a borda;
 - backend intermedia borda e rede interna;
 - o Certbot standalone do host atua antes do Nginx; o container Nginx recebe `/etc/letsencrypt` somente leitura;
-- o updater nao publica portas, valida pedidos HMAC e possui allowlist exclusiva `install-update`.
+- o updater nao publica portas, valida pedidos HMAC e possui allowlist fechada para `install-update`, `create-backup`, `verify-backup`, `restore-backup` e `delete-backup`.
 
 ## Segredos
 
@@ -45,4 +45,4 @@ Antes da emissao, o instalador compara fontes independentes do IPv4 publico, tod
 
 ## Atualizacao via frontend
 
-Somente o Super Admin pode consultar capacidades e criar um pedido de atualizacao. O backend grava JSON de schema estrito, nonce aleatorio e assinatura HMAC em volume privado. O `devflow-updater` valida tamanho, tipo, idade, ID, allowlist e assinatura em tempo constante e delega exclusivamente ao `update.sh`. Nenhum campo vira comando ou argumento de shell. O socket Docker permanece um privilegio de alto impacto, isolado no updater, e exige homologacao de seguranca antes de producao.
+Somente o Super Admin pode criar pedidos de atualizacao ou backup. O backend grava JSON de schema estrito, nonce aleatorio e assinatura HMAC em volume privado. O `devflow-updater` valida tamanho, tipo, idade, ID, allowlist e assinatura em tempo constante e delega aos scripts oficiais. Nenhum campo vira comando ou argumento de shell. Backups sao referenciados por ID opaco, resolvidos apenas sob `/opt/devflow/backups`, com recusa de traversal e symlink. Restore e delete exigem confirmacoes fortes, todas as mutacoes passam por CSRF, rate limit, auditoria e lock global. O socket Docker permanece um privilegio de alto impacto, isolado no updater, e exige homologacao de seguranca antes de producao.

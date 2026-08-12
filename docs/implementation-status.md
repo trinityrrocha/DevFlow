@@ -1,6 +1,6 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-11. Versao: `0.6.25-alpha`.
+Data de corte: 2026-08-11. Versao: `0.6.26-alpha`.
 
 Revisao 0.6.25 implementada localmente: ThemeContext controla light/dark sem backend, persiste somente valores permitidos em `devflow-theme`, segue `prefers-color-scheme` sem escolha manual e aplica o tema antes do primeiro paint. Header, login, componentes globais e utilities legadas receberam cobertura escura indigo/slate. A tela de login foi verificada no navegador local em desktop e mobile; a navegacao autenticada e a VPS ainda dependem de homologacao do usuario.
 
@@ -48,7 +48,7 @@ Fase 2 concluida localmente: telefone E.164 opcional, e-mail proprio pendente at
 
 Fase 1 concluida localmente: navegacao superior responsiva sem menu lateral, dropdowns com ARIA/teclado/Escape, rotas canonicas com compatibilidade, paginas independentes de Clientes e Projetos, autorizacao backend separada para leitura/gestao e Nova Tarefa restrita a `/task`. CRUD, filtros, paginacao, associacao de equipe e bloqueio de exclusao com vinculos foram cobertos por validacoes locais e simuladas. Homologacao visual em navegador e VPS permanece pendente.
 
-Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, motor de update nao interativo, CLI manual separada, fila HMAC com replay protection, polling sanitizado e rollback transacional. O update agora separa health instalado, health candidato e health final, vincula backup e snapshot ao ID da transacao e bloqueia o health antigo enquanto o banco migrado nao tiver sido restaurado.
+Implementado localmente: Certbot standalone do host, validacao DNS multi-fonte, certificado e chave validados, Nginx runtime, Compose isolado com updater, retomada por estado material, bootstrap administrativo protegido, renovacao systemd, motor de update nao interativo, CLI manual separada, fila HMAC com replay protection, polling sanitizado e rollback operacional. O update separa health instalado, health candidato e health final, preserva o snapshot do estado instalado e nao cria, seleciona ou restaura backup de dados automaticamente. Se migrations tiverem alterado o banco, a transacao registra a possibilidade de restore administrativo manual.
 
 Nesta versao, MFA e opcional por padrao e possui politica persistente `optional`/`admins`/`all`, API e controle de Super Admin auditado. O CSRF e vinculado a sessao e centralizado no cliente HTTP. A troca da senha inicial continua obrigatoria e separada do MFA.
 

@@ -11,6 +11,7 @@ import Audit from './pages/Audit';
 import Settings from './pages/Settings';
 import Clients from './pages/Clients';
 import Projects from './pages/Projects';
+import Backups from './pages/Backups';
 import { LEGACY_ROUTES } from './navigation';
 
 function ProtectedRoute({ permission, superAdmin = false, children }) {
@@ -42,6 +43,7 @@ export default function App() {
   else if (pathname === '/settings/modules/workflows') page = <ProtectedRoute permission="catalogs.manage"><Settings section="workflows" /></ProtectedRoute>;
   else if (pathname === '/settings/server/smtp') page = <ProtectedRoute superAdmin><Settings section="smtp" /></ProtectedRoute>;
   else if (pathname === '/settings/updates') page = <ProtectedRoute superAdmin><Settings section="updates" /></ProtectedRoute>;
+  else if (pathname === '/settings/backups') page = <ProtectedRoute superAdmin><Backups /></ProtectedRoute>;
   else page = <Navigate to="/dashboard" replace />;
 
   return (

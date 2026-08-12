@@ -14,7 +14,7 @@ const SAFE_MESSAGES = Object.freeze({
   migrations: 'Migrations em processamento.',
   containers: 'Servicos da aplicacao em atualizacao.',
   health: 'Validando a saude da aplicacao.',
-  rollback: 'Restauracao automatica em andamento.',
+  rollback: 'Rollback operacional em andamento.',
   completed: 'Atualizacao concluida com sucesso.',
   failed: 'Atualizacao interrompida. Consulte o diagnostico do servidor.'
 });

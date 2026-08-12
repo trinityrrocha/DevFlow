@@ -23,7 +23,18 @@ compose_files
 [[ "$MAX_RESTORE_MB" =~ ^[0-9]+$ ]] || die 'Limite de verificação inválido.'
 [[ "$(stat -c '%s' "$BACKUP_FILE")" -le $((MAX_RESTORE_MB * 1024 * 1024)) ]] || die 'Backup excede o limite de verificação.'
 
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devflow-verify.XXXXXX")"
+TEMP_ROOT=/opt/devflow/tmp
+[[ "$TEMP_ROOT" = /* && "$TEMP_ROOT" == /opt/devflow/* ]] || die 'Namespace temporario de verificacao invalido.'
+if [[ -e "$TEMP_ROOT" || -L "$TEMP_ROOT" ]]; then
+  [[ -d "$TEMP_ROOT" && ! -L "$TEMP_ROOT" ]] || die 'Namespace temporario de verificacao invalido.'
+else
+  install -d -m 0700 -o root -g root "$TEMP_ROOT"
+fi
+[[ -d "$TEMP_ROOT" && ! -L "$TEMP_ROOT" ]] \
+  || die 'Namespace temporario de verificacao invalido.'
+[[ "$(stat -c '%u:%a' "$TEMP_ROOT")" == 0:700 ]] || die 'Namespace temporario deve pertencer a root e usar modo 0700.'
+TEMP_DIR="$(mktemp -d "$TEMP_ROOT/verify-backup.XXXXXX")"
+chmod 0700 "$TEMP_DIR"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
 "${DEVFLOW_COMPOSE[@]}" run --rm --no-deps --user 0:0 \
@@ -94,5 +105,43 @@ while IFS= read -r listing; do
 done < <(tar -tvzf "$TEMP_DIR/uploads.tar.gz")
 uploads_expanded_bytes="$(tar --numeric-owner -tvzf "$TEMP_DIR/uploads.tar.gz" | awk '{total += $3} END {printf "%.0f", total}')"
 [[ "$uploads_expanded_bytes" -le $((MAX_RESTORE_MB * 1024 * 1024)) ]] || die 'Uploads excedem o limite de verificação.'
+
+BACKUP_ROOT="$(dirname "$BACKUP_FILE")"
+if [[ "$BACKUP_ROOT" == /opt/devflow/backups ]]; then
+  metadata_id="$(printf '%s' "$(basename "$BACKUP_FILE")" | sha256sum | cut -c1-32)"
+  METADATA_ROOT="$BACKUP_ROOT/.metadata"
+  if [[ -e "$METADATA_ROOT" || -L "$METADATA_ROOT" ]]; then
+    [[ -d "$METADATA_ROOT" && ! -L "$METADATA_ROOT" ]] || die 'Cache de metadata inseguro.'
+  else
+    install -d -m 0700 "$METADATA_ROOT"
+  fi
+  METADATA_ID="$metadata_id" METADATA_FILENAME="$(basename "$BACKUP_FILE")" \
+    python3 - "$TEMP_DIR/manifest.json" "$METADATA_ROOT/$metadata_id.json" <<'PY'
+import datetime
+import json
+import os
+import pathlib
+import tempfile
+import sys
+
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+metadata = {
+    "id": os.environ["METADATA_ID"], "filename": os.environ["METADATA_FILENAME"],
+    "status": "verified", "applicationVersion": manifest.get("application_version"),
+    "applicationCommit": manifest.get("application_sha"),
+    "databaseMigration": manifest.get("database_migration"), "format": manifest.get("format"),
+    "verifiedAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+}
+destination = pathlib.Path(sys.argv[2])
+fd, temporary = tempfile.mkstemp(prefix=".metadata.", dir=destination.parent)
+try:
+    os.chmod(temporary, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(metadata, stream, separators=(",", ":")); stream.write("\n")
+    os.replace(temporary, destination)
+finally:
+    if os.path.exists(temporary): os.unlink(temporary)
+PY
+fi
 
 printf 'Backup verificado: %s\n' "$BACKUP_FILE"

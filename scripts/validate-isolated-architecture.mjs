@@ -76,13 +76,14 @@ check('22 renewal runs host Certbot and reloads only DevFlow Nginx', renewal.inc
   && renewal.includes('docker exec devflow-nginx nginx -s reload'));
 check('23 renewal dry-run is explicit and never automatic', renewal.includes('--dry-run')
   && !read('scripts/systemd/devflow-certificate-renewal.service').includes('--dry-run'));
-check('24 backend writes only signed allowlisted update requests', requestValidator.includes("operation !== 'install-update'")
-  && read('backend/src/services/updateOperationService.js').includes("createHmac('sha256'"));
+check('24 backend writes only signed allowlisted operational requests', requestValidator.includes('allowedOperations')
+  && read('backend/src/services/operationalRequestService.js').includes("createHmac('sha256'"));
 check('25 updater queue rejects shell input and validates HMAC', requestValidator.includes('timingSafeEqual')
   && !daemon.includes('eval ') && !daemon.includes('bash -c'));
-check('26 updater delegates only to update.sh', daemon.includes('scripts/update.sh')
-  && !daemon.includes('install.sh'));
-check('27 update remains transactional with backup health and rollback', ['backup.sh', 'verify-backup.sh', 'rollback_update', 'health.sh'].every((token) => update.includes(token)));
+check('26 updater delegates only to official operational scripts', daemon.includes('scripts/update.sh')
+  && daemon.includes('scripts/backup-operation.sh') && !daemon.includes('install.sh'));
+check('27 update remains transactional without automatic data backup', ['rollback_update', 'health.sh', 'manual_data_restore_may_be_required'].every((token) => update.includes(token))
+  && !update.slice(update.indexOf("log WARN 'O update nao cria backup")).includes('"$SCRIPT_DIR/backup.sh"'));
 check('28 updater is not recreated during its own request', update.includes('up_runtime_services --force-recreate --remove-orphans')
   && update.includes('local services=(db backend frontend)')
   && update.includes('services=(db backend worker frontend)')

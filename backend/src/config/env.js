@@ -4,11 +4,13 @@ require('dotenv').config();
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DEVFLOW_VERSION: z.string().min(1).default('0.6.25-alpha'),
+  DEVFLOW_VERSION: z.string().min(1).default('0.6.26-alpha'),
   DEVFLOW_RELEASE_COMMIT: z.string().regex(/^(unknown|[0-9a-f]{40})$/).default('unknown'),
   UPDATE_API_ENABLED: z.string().default('false').transform((value) => value === 'true'),
   DEVFLOW_UPDATER_QUEUE_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow/updater/requests'),
   DEVFLOW_UPDATER_STATUS_DIR: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow/updater/status'),
+  DEVFLOW_BACKUP_CATALOG_FILE: z.string().refine(path.isAbsolute, 'deve ser um caminho absoluto').default('/var/lib/devflow/updater/backup-catalog.json'),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   UPDATE_REQUEST_SECRET: z.string().min(64),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),

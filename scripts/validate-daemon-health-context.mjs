@@ -11,7 +11,7 @@ const daemon = read('scripts/updater-daemon.sh');
 const composeText = read('docker-compose.yml');
 const compose = YAML.parse(composeText);
 const updaterDockerfile = read('docker/updater/Dockerfile');
-const updateService = read('backend/src/services/updateOperationService.js');
+const updateService = read('backend/src/services/operationalRequestService.js');
 const requestValidator = read('scripts/validate-updater-request.mjs');
 
 let passed = 0;
@@ -68,7 +68,7 @@ check('15 candidate health keeps identity and migration gates', update.includes(
 check('16 final WebUpdater health uses the contextual daemon gate', update.includes('UPDATE_PHASE=health-public')
   && update.indexOf('run_context_health "$CANDIDATE_DIR"') > update.indexOf('UPDATE_PHASE=health-public'));
 check('17 signed HMAC request contract remains active', updateService.includes("createHmac('sha256'")
-  && requestValidator.includes('timingSafeEqual') && requestValidator.includes("operation !== 'install-update'"));
+  && requestValidator.includes('timingSafeEqual') && requestValidator.includes('allowedOperations'));
 check('18 queue lifecycle and roots remain unchanged', ['/requests', '/processing', '/processed', '/failed', '/status']
   .every((suffix) => daemon.includes(`$REQUEST_ROOT${suffix}`)));
 check('19 updater service allowlist remains unchanged', daemon.includes("UPDATE_SERVICES='db backend frontend worker edge'")

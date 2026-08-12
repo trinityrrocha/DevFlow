@@ -24,7 +24,8 @@ export const navigationGroups = [
       { label: 'Catalogos configuraveis', to: '/settings/modules/catalogs', permission: 'catalogs.manage' },
       { label: 'Fluxos configuraveis', to: '/settings/modules/workflows', permission: 'catalogs.manage' },
       { label: 'Servidor SMTP', to: '/settings/server/smtp', superAdmin: true },
-      { label: 'Atualizacoes', to: '/settings/updates', superAdmin: true }
+      { label: 'Atualizacoes', to: '/settings/updates', superAdmin: true },
+      { label: 'Backups', to: '/settings/backups', superAdmin: true }
     ]
   }
 ];

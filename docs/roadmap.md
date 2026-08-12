@@ -1,5 +1,11 @@
 # Roadmap inicial
 
+## Marco `0.6.26-alpha`
+
+- homologar a gestao administrativa de backups e o WebUpdater sem backup pre-update;
+- validar restore com backup de seguranca na VPS;
+- confirmar rollback operacional sem afirmacao de restore de dados.
+
 ## Marco `0.6.25-alpha`
 
 - homologar alternancia e persistencia dos temas claro/escuro na VPS;

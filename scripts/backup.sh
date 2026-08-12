@@ -35,8 +35,11 @@ DEVFLOW_RELEASE_COMMIT="$INSTALLED_COMMIT"
 export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IDENTITY_RELEASE_ROOT
 fi
 command -v flock >/dev/null 2>&1 || { echo 'flock é obrigatório para serializar backups.' >&2; exit 1; }
-exec 8>/run/lock/devflow-backup.lock
-flock -n 8 || { echo 'Outro backup DevFlow está em andamento.' >&2; exit 1; }
+if [[ "${DEVFLOW_OPERATION_LOCK_HELD:-false}" != true ]]; then
+  install -d -m 0750 /run/lock/devflow
+  exec 8>/run/lock/devflow/operations.lock
+  flock -n 8 || { echo 'Outra operacao DevFlow esta em andamento.' >&2; exit 1; }
+fi
 ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}"
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
@@ -66,6 +69,9 @@ archive_suffix="$(openssl rand -hex 4)"
 archive_name="devflow-${timestamp}-${archive_suffix}.dfbackup"
 
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TEMP_DIR/database.dump"
+current_migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
+  'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"')"
+[[ "$current_migration" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] || die 'Migration atual nao pode ser identificada para o backup.'
 docker run --rm \
   -v "$UPLOAD_SOURCE:/source:ro" \
   -v "$TEMP_DIR:/work" \
@@ -86,7 +92,7 @@ if [[ -n "${DEVFLOW_BACKUP_TRANSACTION_ID:-}" ]]; then
     > "$TEMP_DIR/manifest.json"
 else
   printf '%s\n' \
-    "{\"format\":\"devflow-backup-v1\",\"created_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"application_sha\":\"$app_sha\",\"database_sha256\":\"$db_sha\",\"uploads_sha256\":\"$uploads_sha\"}" \
+    "{\"format\":\"devflow-backup-v1\",\"created_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"application_version\":\"$INSTALLED_VERSION\",\"application_sha\":\"$app_sha\",\"database_migration\":\"$current_migration\",\"database_sha256\":\"$db_sha\",\"uploads_sha256\":\"$uploads_sha\"}" \
     > "$TEMP_DIR/manifest.json"
 fi
 (
@@ -104,4 +110,7 @@ fi
 mv -- "$TEMP_DIR/$archive_name" "$ARCHIVE_DIR/$archive_name"
 chmod 600 "$ARCHIVE_DIR/$archive_name"
 find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -mtime "+$RETENTION_DAYS" -delete
+if [[ -d "$ARCHIVE_DIR/.metadata" && ! -L "$ARCHIVE_DIR/.metadata" ]]; then
+  find "$ARCHIVE_DIR/.metadata" -maxdepth 1 -type f -name '*.json' -mtime "+$RETENTION_DAYS" -delete
+fi
 printf 'Backup criado: %s\n' "$ARCHIVE_DIR/$archive_name"

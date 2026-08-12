@@ -36,8 +36,8 @@ describe('fila privada de atualizacao', () => {
     const expected = crypto.createHmac('sha256', process.env.UPDATE_REQUEST_SECRET)
       .update(JSON.stringify(unsigned)).digest('hex');
     expect(request).toMatchObject({
-      schemaVersion: 2,
-      action: 'update',
+      schemaVersion: 3,
+      action: 'operation',
       requester: 'admin@example.com',
       requestedBy: 'admin@example.com',
       operation: 'install-update'
@@ -48,14 +48,15 @@ describe('fila privada de atualizacao', () => {
 
   it('mantem a gravacao atomica do arquivo fisico no controller', () => {
     const controller = fs.readFileSync(path.resolve(__dirname, '../src/controllers/updateOperationController.js'), 'utf8');
+    const queueService = fs.readFileSync(path.resolve(__dirname, '../src/services/operationalRequestService.js'), 'utf8');
     const environment = fs.readFileSync(path.resolve(__dirname, '../src/config/env.js'), 'utf8');
     const compose = fs.readFileSync(path.resolve(__dirname, '../../docker-compose.yml'), 'utf8');
-    expect(controller).toContain('queueDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR');
+    expect(queueService).toContain('queueDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR');
     expect(controller.indexOf('assertUpdaterQueueReady()')).toBeLessThan(controller.indexOf('createSignedRequest('));
-    expect(controller).toContain('filesystem.writeFileSync(temporary');
-    expect(controller).toContain('filesystem.renameSync(temporary, destination)');
+    expect(queueService).toContain('filesystem.writeFileSync(temporary');
+    expect(queueService).toContain('filesystem.renameSync(temporary, destination)');
     expect(controller).toContain("console.log('[UPDATER_QUEUE] Arquivo de solicitação gravado em:', destination)");
-    expect(controller.indexOf('statusWriter(request.id')).toBeLessThan(controller.indexOf('filesystem.renameSync'));
+    expect(queueService.indexOf("statusWriter(request.id")).toBeLessThan(queueService.indexOf('filesystem.renameSync'));
     expect(environment).toContain("DEVFLOW_UPDATER_QUEUE_DIR: z.string().refine(path.isAbsolute");
     expect(environment).toContain("DEVFLOW_UPDATER_STATUS_DIR: z.string().refine(path.isAbsolute");
     expect(environment).toContain("default('/var/lib/devflow/updater/requests')");
@@ -120,7 +121,7 @@ describe('fila privada de atualizacao', () => {
     for (const entry of directories) fs.mkdirSync(entry.directory, { recursive: true });
     fs.mkdirSync(statusDirectory, { recursive: true });
     const options = { directories, statusDirectory };
-    const request = { schemaVersion: 2, id, requestedAt: '2026-08-09T22:00:00.000Z' };
+    const request = { schemaVersion: 3, id, operation: 'install-update', requestedAt: '2026-08-09T22:00:00.000Z' };
 
     try {
       fs.writeFileSync(path.join(directories[0].directory, `${id}.json`), JSON.stringify(request));
@@ -155,11 +156,7 @@ describe('fila privada de atualizacao', () => {
         ...request,
         error: 'Rollback automatico concluido apos falha no health.'
       }));
-      expect(getRequestStatus(id, options)).toMatchObject({
-        status: 'failed',
-        state: 'failed',
-        error: 'Rollback automatico concluido apos falha no health.'
-      });
+      expect(getRequestStatus(id, options)).toMatchObject({ status: 'failed', state: 'failed' });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -177,7 +174,7 @@ describe('fila privada de atualizacao', () => {
       expect(() => getRequestStatus('c10aacfb-81ba-40da-93aa-9d2ff1b629a0', {
         directories,
         statusDirectory: path.join(root, 'status')
-      })).toThrow(expect.objectContaining({ code: 'UPDATE_REQUEST_NOT_FOUND', status: 404 }));
+      })).toThrow(expect.objectContaining({ code: 'OPERATION_REQUEST_NOT_FOUND', status: 404 }));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

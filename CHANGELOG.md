@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.26-alpha] - 2026-08-11
+
+### Corrigido
+
+- WebUpdater deixa de depender de backup pre-update automatico e nao executa verificacao ou restore de dados durante update;
+- rollback passa a ser explicitamente operacional e registra mutacao do banco e necessidade potencial de restore manual;
+- verificacao e restore usam `/opt/devflow/tmp` root-owned `0700`, eliminando bind source no `/tmp` privado do updater.
+
+### Adicionado
+
+- gerenciamento de backups pelo frontend para Super Admin, com listagem, criacao, verificacao, restore e exclusao;
+- fila HMAC allowlisted, polling, auditoria, rate limit, confirmacoes fortes e lock operacional global;
+- backup de seguranca validado antes de cada restore e catalogo sanitizado com retencao de 30 dias;
+- contrato transacional schema v3 e documentacao da migracao unica exigida pela `0.6.24-alpha`.
+
 ## [0.6.25-alpha] - 2026-08-11
 
 ### Adicionado

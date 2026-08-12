@@ -47,7 +47,7 @@ MFA e opcional por padrao; a troca da senha temporaria continua obrigatoria. Um 
 
 ## Update falhou
 
-Consulte o ultimo `update-report.txt` e log sanitizado. O motor tenta restaurar banco/uploads quando migrados, release, estado, imagens, containers e Nginx isolado. Nao remova a release, snapshot, transacao ou backup anterior antes da analise.
+Consulte o ultimo `update-report.txt` e log sanitizado. O motor tenta somente rollback operacional de release, estado, imagens, containers e Nginx isolado. Ele nao restaura banco/uploads. Se `database_mutated=true`, revise `manual_data_restore_may_be_required` antes de decidir por um restore administrativo.
 
 Se a tentativa terminou com `rollback_status=failed`, nao inicie outro update. Primeiro colete o estado sem imprimir o arquivo de ambiente:
 

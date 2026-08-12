@@ -61,8 +61,10 @@ command -v docker >/dev/null 2>&1 || die 'Docker não está disponível.'
 docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 não está disponível.'
 
 install -d -m 0750 /run/lock/devflow
-exec 9>/run/lock/devflow/update.lock
-flock -n 9 || die 'Outra atualização DevFlow está em andamento.'
+if [[ "${DEVFLOW_OPERATION_LOCK_HELD:-false}" != true ]]; then
+  exec 9>/run/lock/devflow/operations.lock
+  flock -n 9 || die 'Outra operacao DevFlow esta em andamento.'
+fi
 
 load_devflow_env
 validate_runtime_paths
@@ -187,8 +189,6 @@ run_context_health "$OLD_RELEASE_DIR" \
   || die 'Pre-update health da release instalada falhou; atualizacao bloqueada.'
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
   || die 'Banco instalado nao esta saudavel.'
-[[ -x "$SCRIPT_DIR/backup.sh" && -x "$SCRIPT_DIR/verify-backup.sh" ]] \
-  || die 'Motor de backup validado nao esta disponivel.'
 
 TEMP_REMOTE_REPO=
 if [[ "$ROLLBACK_REQUESTED" == false && "$CHECK_ONLY" == true ]]; then
@@ -267,7 +267,7 @@ fi
 UPDATE_TRANSACTION_FILE="$DEVFLOW_STATE_ROOT/update-transaction.json"
 if [[ "$ROLLBACK_REQUESTED" == true ]]; then
   python3 "$SCRIPT_DIR/validate-update-transaction.py" validate "$UPDATE_TRANSACTION_FILE" >/dev/null \
-    || die 'A ultima atualizacao nao possui transacao schema v2 valida.'
+    || die 'A ultima atualizacao nao possui transacao schema v3 valida.'
   [[ "$(installation_state_value result "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" == success ]] \
     || die 'A ultima atualizacao nao possui transacao concluida apta a rollback.'
   CURRENT_VERSION="$OLD_VERSION"
@@ -280,17 +280,12 @@ if [[ "$ROLLBACK_REQUESTED" == true ]]; then
   OLD_VERSION="$(installation_state_value previousVersion "$UPDATE_TRANSACTION_FILE")"
   OLD_SHA="$(installation_state_value previousCommit "$UPDATE_TRANSACTION_FILE")"
   OLD_RELEASE_DIR="$(installation_state_value previousRelease "$UPDATE_TRANSACTION_FILE")"
-  BACKUP_FILE="$(installation_state_value backupPath "$UPDATE_TRANSACTION_FILE")"
   validate_safe_absolute_path "$OLD_RELEASE_DIR" 'Release anterior'
-  validate_safe_absolute_path "$BACKUP_FILE" 'Backup da atualizacao'
   [[ "$OLD_RELEASE_DIR" == "$DEVFLOW_INSTALL_ROOT/releases/"* && -d "$OLD_RELEASE_DIR" ]] \
     || die 'Release anterior registrada esta ausente.'
-  [[ "$BACKUP_FILE" == "$DEVFLOW_INSTALL_ROOT/backups/"* && -s "$BACKUP_FILE" ]] \
-    || die 'Backup da atualizacao esta ausente.'
   CANDIDATE_DIR="$CURRENT_RELEASE_DIR"
 else
   CANDIDATE_DIR="$DEVFLOW_INSTALL_ROOT/releases/$NEW_SHA"
-  BACKUP_FILE=
 fi
 CANDIDATE_TEMP=
 CANDIDATE_CREATED="$ROLLBACK_REQUESTED"
@@ -298,7 +293,7 @@ ROLLBACK_ARMED="$ROLLBACK_REQUESTED"
 MAINTENANCE_ACTIVE=false
 SOURCE_ADVANCED="$ROLLBACK_REQUESTED"
 BACKUP_TIMER_PAUSED=false
-UPDATE_PHASE=backup
+UPDATE_PHASE=prepared
 [[ "$ROLLBACK_REQUESTED" == false ]] || UPDATE_PHASE=manual-rollback
 ROLLBACK_RESULT=not-required
 if [[ "$ROLLBACK_REQUESTED" == false ]]; then
@@ -320,9 +315,9 @@ if [[ "$ROLLBACK_REQUESTED" == false ]]; then
   CANDIDATE_MIGRATION=pending
   CANDIDATE_IMAGE_TAG="candidate-$NEW_SHA"
   FINAL_IMAGE_TAG="release-$NEW_SHA"
-  BACKUP_HASH=pending
   CHANGES_APPLIED=false
   DATABASE_MUTATED=false
+  MANUAL_DATA_RESTORE_MAY_BE_REQUIRED=false
   CANDIDATE_HEALTH_PASSED=false
   RELEASE_PROMOTED=false
   STATE_PROMOTED=false
@@ -339,9 +334,9 @@ else
   CANDIDATE_MIGRATION="$(installation_state_value candidateMigration "$UPDATE_TRANSACTION_FILE")"
   CANDIDATE_IMAGE_TAG="$(installation_state_value candidateImageTag "$UPDATE_TRANSACTION_FILE")"
   FINAL_IMAGE_TAG="$(installation_state_value finalImageTag "$UPDATE_TRANSACTION_FILE")"
-  BACKUP_HASH="$(installation_state_value backupHash "$UPDATE_TRANSACTION_FILE")"
   CHANGES_APPLIED="$(installation_state_value changesApplied "$UPDATE_TRANSACTION_FILE")"
   DATABASE_MUTATED="$(installation_state_value databaseMutated "$UPDATE_TRANSACTION_FILE")"
+  MANUAL_DATA_RESTORE_MAY_BE_REQUIRED="$(installation_state_value manualDataRestoreMayBeRequired "$UPDATE_TRANSACTION_FILE")"
   CANDIDATE_HEALTH_PASSED=true
   RELEASE_PROMOTED=true
   STATE_PROMOTED=true
@@ -398,7 +393,7 @@ write_update_transaction() {
   [[ -r "$validator" ]] || return 1
   {
     printf '{\n'
-    printf '  "schemaVersion": 2,\n'
+    printf '  "schemaVersion": 3,\n'
     printf '  "transactionId": "%s",\n' "$TRANSACTION_ID"
     printf '  "timestamp": "%s",\n' "$TRANSACTION_TIMESTAMP"
     printf '  "phase": "%s",\n' "$UPDATE_PHASE"
@@ -419,10 +414,9 @@ write_update_transaction() {
     printf '  "candidateMigration": "%s",\n' "$CANDIDATE_MIGRATION"
     printf '  "candidateImageTag": "%s",\n' "$CANDIDATE_IMAGE_TAG"
     printf '  "finalImageTag": "%s",\n' "$FINAL_IMAGE_TAG"
-    printf '  "backupPath": "%s",\n' "${BACKUP_FILE:-pending}"
-    printf '  "backupHash": "%s",\n' "$BACKUP_HASH"
     printf '  "changesApplied": %s,\n' "$CHANGES_APPLIED"
     printf '  "databaseMutated": %s,\n' "$DATABASE_MUTATED"
+    printf '  "manualDataRestoreMayBeRequired": %s,\n' "$MANUAL_DATA_RESTORE_MAY_BE_REQUIRED"
     printf '  "candidateHealthPassed": %s,\n' "$CANDIDATE_HEALTH_PASSED"
     printf '  "releasePromoted": %s,\n' "$RELEASE_PROMOTED"
     printf '  "statePromoted": %s,\n' "$STATE_PROMOTED"
@@ -462,7 +456,9 @@ write_update_report() {
     printf 'to_version=%s\n' "$NEW_VERSION"
     printf 'from_commit=%s\n' "$OLD_SHA"
     printf 'to_commit=%s\n' "$NEW_SHA"
-    printf 'backup=%s\n' "${BACKUP_FILE:-none}"
+    printf 'automatic_backup=disabled\n'
+    printf 'database_mutated=%s\n' "$DATABASE_MUTATED"
+    printf 'manual_data_restore_may_be_required=%s\n' "$MANUAL_DATA_RESTORE_MAY_BE_REQUIRED"
     printf 'rollback_status=%s\n' "$rollback_status"
     printf 'log=%s\n' "$UPDATE_LOG"
   } > "$DEVFLOW_STATE_ROOT/update-report.txt"
@@ -529,8 +525,6 @@ rollback_update() {
   log ERROR "Falha na fase $UPDATE_PHASE. Iniciando rollback automático."
   if ! python3 "$SCRIPT_DIR/validate-update-transaction.py" validate "$UPDATE_TRANSACTION_FILE" >/dev/null \
     || [[ "$(installation_state_value previousCommit "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" != "$OLD_SHA" ]] \
-    || [[ "$(installation_state_value backupPath "$UPDATE_TRANSACTION_FILE" 2>/dev/null || true)" != "$BACKUP_FILE" ]] \
-    || [[ "$(sha256sum "$BACKUP_FILE" 2>/dev/null | awk '{print $1}')" != "$BACKUP_HASH" ]] \
     || ! git -C "$SOURCE_DIR" cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
     ROLLBACK_RESULT=failed
     TRANSACTION_RESULT=failed
@@ -580,47 +574,14 @@ rollback_update() {
     return 1
   fi
 
-  UPDATE_PHASE=rollback-database
-  write_update_transaction rollback-database || true
+  UPDATE_PHASE=rollback-data-boundary
+  write_update_transaction rollback-data-boundary || true
   if [[ "$DATABASE_MUTATED" == true ]]; then
-    restore_output="$(CONFIRM_RESTORE='RESTAURAR BACKUP' \
-    DEVFLOW_RESTORE_SKIP_PREBACKUP=true \
-    DEVFLOW_RESTORE_NO_START=true \
-    DEVFLOW_RESTORE_TRANSACTION_FILE="$UPDATE_TRANSACTION_FILE" \
-    DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
-    DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-      "$SCRIPT_DIR/restore.sh" "$BACKUP_FILE" 2>&1)"
-    restore_status=$?
-    printf '%s\n' "$restore_output"
-    if [[ "$restore_status" -ne 0 || "$restore_output" != *'database_restore_completed=true'* ]]; then
-      DATABASE_RESTORED=false
-      ROLLBACK_RESULT=failed
-      TRANSACTION_RESULT=failed
-      ROOT_CAUSE=database-not-restored
-      MANUAL_RECOVERY_REQUIRED=true
-      write_update_transaction rollback-failed || true
-      printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored' 'manualRecoveryRequired=true'
-      log ERROR 'Restauração do banco falhou; health antigo bloqueado e manutencao preservada.'
-      return 1
-    fi
-    DATABASE_RESTORED=true
-
-    set_compose_for "$OLD_RELEASE_DIR"
-    restored_migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
-      'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"' \
-      2>/dev/null || true)"
-    if [[ "$restored_migration" != "$PREVIOUS_MIGRATION" ]]; then
-      DATABASE_RESTORED=false
-      ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=database-migration-mismatch
-      MANUAL_RECOVERY_REQUIRED=true
-      write_update_transaction rollback-failed || true
-      printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored' 'manualRecoveryRequired=true'
-      return 1
-    fi
-    write_update_transaction database-restored \
-      || rollback_failures=$((rollback_failures + 1))
+    MANUAL_DATA_RESTORE_MAY_BE_REQUIRED=true
+    printf '%s\n' 'database_mutated=true' 'manual_data_restore_may_be_required=true'
+    log WARN 'Migrations podem ter alterado dados; nenhum restore automatico foi executado.'
   else
-    printf '%s\n' 'database_restore_skipped=true' 'database_mutated=false'
+    printf '%s\n' 'database_mutated=false' 'manual_data_restore_may_be_required=false'
   fi
 
   UPDATE_PHASE=rollback-release-state
@@ -660,13 +621,6 @@ rollback_update() {
   fi
   up_runtime_services --remove-orphans
   [[ $? -eq 0 ]] || { log ERROR 'Containers anteriores não ficaram saudáveis.'; rollback_failures=$((rollback_failures + 1)); }
-  if [[ "$DATABASE_MUTATED" == true && "$DATABASE_RESTORED" != true ]]; then
-    ROLLBACK_RESULT=failed; TRANSACTION_RESULT=failed; ROOT_CAUSE=database-not-restored
-    MANUAL_RECOVERY_REQUIRED=true
-    write_update_transaction rollback-failed || true
-    printf '%s\n' 'rollback_incomplete=true' 'root_cause=database-not-restored'
-    return 1
-  fi
   DEVFLOW_APP_ROOT="$OLD_RELEASE_DIR" DEVFLOW_UPDATE_DAEMON=false \
     "$OLD_RELEASE_DIR/scripts/health.sh" --internal
   [[ $? -eq 0 ]] || { log ERROR 'Health check interno da release anterior falhou.'; rollback_failures=$((rollback_failures + 1)); }
@@ -777,35 +731,7 @@ PREVIOUS_STATE_HASH="$(sha256sum "$PREVIOUS_STATE_SNAPSHOT" | awk '{print $1}')"
   || die 'Hash do snapshot do estado instalado invalido.'
 write_update_transaction prepared \
   || die 'Não foi possível registrar a identidade transacional da atualização.'
-set_update_status backup
-log INFO 'Criando backup pré-update.'
-BACKUP_OUTPUT="$(DEVFLOW_BACKUP_TRANSACTION_ID="$TRANSACTION_ID" \
-  DEVFLOW_BACKUP_TRANSACTION_TIMESTAMP="$TRANSACTION_TIMESTAMP" \
-  DEVFLOW_BACKUP_PREVIOUS_VERSION="$OLD_VERSION" \
-  DEVFLOW_BACKUP_PREVIOUS_COMMIT="$OLD_SHA" \
-  DEVFLOW_BACKUP_PREVIOUS_MIGRATION="$PREVIOUS_MIGRATION" \
-  DEVFLOW_BACKUP_INSTALLATION_STATE_SHA256="$PREVIOUS_STATE_HASH" \
-  DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" \
-  DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-  BACKUP_ARCHIVE_DIR="$DEVFLOW_INSTALL_ROOT/backups" \
-  BACKUP_PASSPHRASE_FILE="$DEVFLOW_CONFIG_ROOT/backup.passphrase" \
-  "$SCRIPT_DIR/backup.sh")"
-printf '%s\n' "$BACKUP_OUTPUT"
-BACKUP_FILE="$(printf '%s\n' "$BACKUP_OUTPUT" | sed -n 's/^Backup criado: //p' | tail -n1)"
-[[ -n "$BACKUP_FILE" && -s "$BACKUP_FILE" ]] || die 'Backup pré-update não foi criado.'
-BACKUP_HASH="$(sha256sum "$BACKUP_FILE" | awk '{print $1}')"
-[[ "$BACKUP_HASH" =~ ^[0-9a-f]{64}$ ]] || die 'Hash do backup pre-update invalido.'
-DEVFLOW_BACKUP_EXPECTED_TRANSACTION_ID="$TRANSACTION_ID" \
-  DEVFLOW_BACKUP_EXPECTED_TRANSACTION_TIMESTAMP="$TRANSACTION_TIMESTAMP" \
-  DEVFLOW_BACKUP_EXPECTED_VERSION="$OLD_VERSION" \
-  DEVFLOW_BACKUP_EXPECTED_COMMIT="$OLD_SHA" \
-  DEVFLOW_BACKUP_EXPECTED_MIGRATION="$PREVIOUS_MIGRATION" \
-  DEVFLOW_BACKUP_EXPECTED_STATE_SHA256="$PREVIOUS_STATE_HASH" \
-  DEVFLOW_PROJECT_DIR="$OLD_RELEASE_DIR" DEVFLOW_ENV_FILE="$DEVFLOW_ENV_FILE" \
-  "$SCRIPT_DIR/verify-backup.sh" "$BACKUP_FILE"
-write_update_transaction backup-validated \
-  || die 'Identidade do backup nao pode ser vinculada a transacao.'
-log INFO "Backup autenticado e validado: $BACKUP_FILE"
+log WARN 'O update nao cria backup automaticamente; a responsabilidade pelo ponto de restauracao e do Super Admin.'
 
 docker tag "$PREVIOUS_BACKEND_IMAGE_ID" "devflow-backend:rollback-$OLD_SHA"
 docker tag "$PREVIOUS_FRONTEND_IMAGE_ID" "devflow-frontend:rollback-$OLD_SHA"
@@ -884,6 +810,7 @@ stop_runtime_services
 "${DEVFLOW_COMPOSE[@]}" exec -T db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 if [[ "$CANDIDATE_MIGRATION" != "$PREVIOUS_MIGRATION" ]]; then
   DATABASE_MUTATED=true
+  MANUAL_DATA_RESTORE_MAY_BE_REQUIRED=true
 fi
 write_update_transaction migrations-starting \
   || die 'Inicio transacional das migrations nao foi registrado.'

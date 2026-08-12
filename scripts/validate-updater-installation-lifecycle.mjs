@@ -80,7 +80,7 @@ try {
     && finalStage.indexOf('write_installation_state') < finalStage.indexOf('rm -f -- "$INSTALLATION_GATE_FILE"')
     && finalStage.indexOf('rm -f -- "$INSTALLATION_GATE_FILE"') < finalStage.indexOf('commit_app_symlink'));
   check('23 updater accepts no arbitrary command', !daemon.includes('eval ') && !daemon.includes('bash -c')
-    && requestValidator.includes("operation !== 'install-update'") && requestValidator.includes('timingSafeEqual'));
+    && requestValidator.includes('allowedOperations') && requestValidator.includes('timingSafeEqual'));
 
   const fullPassword = resolve(root, '..', 'FullPassword-reference');
   const forbiddenRuntimePaths = new RegExp(`/opt/${'full' + 'password'}|${'full' + 'password'}_${'n' + 'ginx'}`, 'iu');

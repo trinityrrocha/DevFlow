@@ -1,56 +1,37 @@
-# Atualizacao, backup e rollback
+# Atualizacao, backups e rollback
 
-`scripts/update.sh` e o motor oficial e nao interativo. O terminal usa `scripts/update-cli.sh`; o frontend cria somente um pedido `install-update` assinado, validado pela fila privada do `devflow-updater`. Nenhuma camada web implementa download, migration, Compose ou rollback.
+O DevFlow `0.6.26-alpha` separa atualizacao e gestao de backups. `scripts/update.sh` nao cria, verifica, seleciona nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups** antes de atualizar.
 
-## Update
+## WebUpdater
 
-1. bloqueia concorrencia com `flock`;
-2. valida estado isolado schema v3 e checkout canonico;
-3. consulta `origin/main`, versao e changelog;
-4. captura `previous_app_target`, snapshot e hash de `installation.json`, migrations e IDs das imagens anteriores;
-5. cria backup criptografado vinculado ao ID da transacao e valida manifesto, identidade, timestamp e hashes;
-6. prepara release imutavel e imagens `candidate-<commit>`, preservando as anteriores como `rollback-<commit>`;
-7. valida migrations como `devflow`;
-8. ativa manutencao em 80/443;
-9. aplica migrations e registra `databaseMutated=true` antes da execucao quando o alvo difere da migration instalada;
-10. recria `db`, `backend`, `frontend`, `worker` e `edge` conforme a allowlist interna, sem recriar o updater durante seu proprio pedido;
-11. executa o candidate health com versao, commit e migration explicitos, mantendo `installation.json` anterior;
-12. promove atomicamente `/opt/devflow/app`, grava e valida `installation.json`, e executa health instalado interno estrito;
-13. retira manutencao, executa health publico e somente entao confirma a transacao.
+O painel cria um pedido `install-update` assinado. O daemon valida HMAC e allowlist, adquire `/run/lock/devflow/operations.lock` e executa o motor oficial. O fluxo e: pre-health, consulta de versao/changelog, release candidata, build, manutencao HTTP 503, migrations, containers, candidate health, promocao atomica e health final.
 
-Existem tres gates independentes: pre-update health valida a release instalada; candidate health valida a candidata sem consultar sua identidade em `installation.json`; final installed health volta a exigir correspondencia estrita entre configuracao, release, estado, imagens, API e migration.
+O pedido percorre `requests/`, `processing/` e `processed/` ou `failed/`. O status sanitizado fica em `status/`; stdout, ambiente e segredos nunca sao retornados pela API.
 
-O contexto de execução define o gate de borda. A CLI executada no host usa `scripts/health.sh` e exige também os arquivos locais do certificado e o timer systemd. O WebUpdater propaga `DEVFLOW_UPDATE_DAEMON=true` e usa `scripts/health.sh --daemon`: esse modo resolve o IP de `devflow-nginx` na rede `devflow_edge`, exige HTTP 301/308 e valida HTTPS, hostname e cadeia de confiança com `curl --resolve`. Arquivos em `/etc/letsencrypt` e timers do host são reportados como `skipped-host-only`, pois não são montados no updater. O candidate health permanece interno enquanto o proxy de manutenção está ativo.
+## Rollback operacional
 
-Em qualquer falha depois do armamento, o motor mantem HTTP 503, para backend/worker, autentica exclusivamente o backup da transacao e, quando `databaseMutated=true`, restaura banco e uploads antes de tocar na release anterior. Depois restaura atomicamente o symlink, o snapshot exato de `installation.json`, as imagens anteriores e a topologia antiga. O health antigo e bloqueado enquanto `databaseRestored` nao for verdadeiro. Manutencao somente e retirada depois do health publico antigo aprovado; falha de restore termina com `manualRecoveryRequired=true` e ambiente mantido em manutencao.
+Em falha depois da mutacao, o motor tenta restaurar apenas release/symlink, snapshot de `installation.json`, configuracao gerenciada, IDs das imagens e containers anteriores. Ele nao executa down migrations e nao restaura PostgreSQL ou uploads.
 
-`/opt/devflow/state/update-transaction.json` usa schema v2 e registra versoes, commits, releases, migrations, backup/hash, snapshot/hash, IDs/tags de imagens, promocao, restore e estado final. Os unicos resultados finais sao `success`, `rolled-back` ou `failed`; rollback aprovado usa `rollbackStatus=successful`.
+Se uma migration tiver sido iniciada, a transacao schema v3 registra `databaseMutated=true` e `manualDataRestoreMayBeRequired=true`. Se a release anterior nao ficar saudavel com o schema atual, o resultado usa `manualRecoveryRequired=true`, preserva manutencao e nao declara rollback completo. A restauracao de dados exige uma operacao explicita do Super Admin.
 
-O motor aceita somente os remotes `https://github.com/trinityrrocha/DevFlow`, sua variante `.git`, ou `git@github.com:trinityrrocha/DevFlow.git`. Arquivos rastreados alterados bloqueiam o processo com `update_blocked=dirty-worktree`; nenhum `reset --hard`, `clean` ou checkout forcado e usado. A API nao fornece nomes de servicos. O daemon injeta `UPDATE_SERVICES='db backend frontend worker edge'` e a imagem do updater somente deve ser recriada fora do request que ele processa.
+## Backups no painel
 
-Depois que o status do request for `completed` ou `failed`, uma manutencao controlada pode promover o daemon da release ativa. Essa promocao e obrigatoria uma vez ao migrar de uma versao anterior a `0.6.4-alpha`, pois o daemon antigo ainda chamava a interface removida `--request-file`. Nunca execute estes comandos enquanto existir JSON em `processing/`:
+A rota `/settings/backups` e exclusiva do Super Admin. A API lista um catalogo sanitizado gerado pelo daemon e aceita somente IDs hexadecimais opacos. Paths, comandos e argumentos de shell nunca sao recebidos do navegador.
 
-```bash
-sudo docker exec devflow-updater sh -c '! find /var/lib/devflow/updater/processing -maxdepth 1 -name "*.json" -print -quit | grep -q .'
-cd /opt/devflow/app
-sudo docker compose --project-name devflow --env-file /opt/devflow/config/devflow.env build updater
-sudo docker compose --project-name devflow --env-file /opt/devflow/config/devflow.env up -d --no-deps --wait updater
-```
+- `create-backup` chama `scripts/backup.sh`;
+- `verify-backup` chama `scripts/verify-backup.sh`;
+- `restore-backup` exige `RESTAURAR`, cria e valida um backup de seguranca, valida o selecionado, ativa manutencao, chama `scripts/restore.sh` e executa health;
+- `delete-backup` exige `EXCLUIR`, resolve o ID internamente e remove somente o arquivo exato `.dfbackup`.
 
-O operador deve validar `devflow-updater` como `healthy` depois da recriacao. Esse passo ocorre fora do request para que o daemon nunca interrompa a operacao que esta processando.
+Todas usam a fila HMAC, polling e o lock operacional global. A retencao continua controlada por `BACKUP_RETENTION_DAYS`, default 30 dias. O timer `devflow-backup.timer` permanece suportado.
 
-## Interfaces
+`verify-backup.sh` e `restore.sh` usam diretorios root-owned `0700` em `/opt/devflow/tmp`; nenhum bind source depende do `/tmp` privado do container updater.
 
-```bash
-sudo /opt/devflow/app/scripts/update-cli.sh --check
-sudo /opt/devflow/app/scripts/update-cli.sh
-```
+## Compatibilidade com 0.6.24-alpha
 
-O check informa `installed_version`, `installed_commit`, `available_version`, `available_commit` e `update_available`. O CLI usa `/dev/tty`, apresenta changelog e plano, e chama o motor somente apos a opcao `1`. A opcao `2` retorna cancelamento normal sem alteracoes.
+A release `0.6.24-alpha` executa `/opt/devflow/app/scripts/update.sh` antes de promover o checkout remoto e falha na verificacao do backup anterior a essa promocao. O `git fetch` nao substitui o shell em execucao. Assim, uma alteracao publicada agora nao consegue modificar automaticamente esse processo ja instalado.
 
-Pedidos do painel percorrem `requests/`, `processing/` e `processed/` ou `failed/`. O status sanitizado fica em `status/` e usa `pending`, `processing`, `backup`, `maintenance`, `migrations`, `containers`, `health`, `rollback`, `completed` e `failed`. O stdout bruto nunca e retornado pela API.
-
-Instalacoes antigas podem obter a interface atual sem mutar diretamente a aplicacao:
+E necessaria uma unica migracao segura, sem pipe:
 
 ```bash
 wget -O update-devflow.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/update-bootstrap.sh
@@ -58,22 +39,15 @@ chmod +x update-devflow.sh
 sudo ./update-devflow.sh
 ```
 
-O bootstrap usa checkout temporario da `main`, valida remote, commit e versao, executa o novo CLI, remove o temporario e propaga o exit code.
+O bootstrap cria checkout temporario, valida repositorio, commit e contrato de versao, executa o CLI atual e remove o temporario. Depois da promocao, pedidos futuros usam o daemon e o motor novos.
 
-## Backup
-
-O backup contem dump PostgreSQL, uploads, manifesto e checksums dentro de envelope criptografado. A passphrase permanece em `/opt/devflow/config/backup.passphrase` com modo `0600`.
+## CLI
 
 ```bash
+sudo /opt/devflow/app/scripts/update-cli.sh --check
+sudo /opt/devflow/app/scripts/update-cli.sh
 sudo /opt/devflow/app/scripts/backup.sh
-sudo /opt/devflow/app/scripts/verify-backup.sh /opt/devflow/backups/ARQUIVO.dfbackup
+sudo /opt/devflow/app/scripts/verify-backup.sh /opt/devflow/backups/devflow-ARQUIVO.dfbackup
 ```
 
-## Restore
-
-```bash
-sudo env CONFIRM_RESTORE='RESTAURAR BACKUP' \
-  /opt/devflow/app/scripts/restore.sh /opt/devflow/backups/ARQUIVO.dfbackup
-```
-
-A restauracao valida tamanho, caminhos, tipos de arquivo, hashes e envelope antes de alterar banco ou uploads. Sessoes existentes sao revogadas.
+Backups, restores e WebUpdater reais precisam ser homologados pelo usuario na VPS.

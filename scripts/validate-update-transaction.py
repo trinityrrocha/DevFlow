@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and atomically write the DevFlow update transaction schema v2."""
+"""Validate and atomically write the DevFlow update transaction schema v3."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ REQUIRED_KEYS = {
     "previousMigration", "previousInstallationStateBackup", "previousInstallationStateHash",
     "previousImageTag", "previousBackendImageId", "previousFrontendImageId",
     "candidateVersion", "candidateCommit", "candidateRelease", "candidateMigration",
-    "candidateImageTag", "finalImageTag", "backupPath", "backupHash",
-    "changesApplied", "databaseMutated", "candidateHealthPassed", "releasePromoted", "statePromoted",
+    "candidateImageTag", "finalImageTag", "changesApplied", "databaseMutated",
+    "manualDataRestoreMayBeRequired", "candidateHealthPassed", "releasePromoted", "statePromoted",
     "rollbackStarted", "databaseRestored", "releaseRestored", "stateRestored",
     "rollbackHealthPassed", "rollbackStatus", "rootCause", "manualRecoveryRequired",
 }
 BOOLEAN_KEYS = {
-    "changesApplied", "databaseMutated", "candidateHealthPassed", "releasePromoted", "statePromoted",
+    "changesApplied", "databaseMutated", "manualDataRestoreMayBeRequired", "candidateHealthPassed", "releasePromoted", "statePromoted",
     "rollbackStarted", "databaseRestored", "releaseRestored", "stateRestored",
     "rollbackHealthPassed", "manualRecoveryRequired",
 }
@@ -50,8 +50,8 @@ def validate_path(value: object, prefix: str, suffix: str | None = None) -> None
 def validate(document: object) -> dict[str, object]:
     if not isinstance(document, dict) or set(document) != REQUIRED_KEYS:
         fail("keys diverge")
-    if document["schemaVersion"] != 2:
-        fail("schemaVersion must be 2")
+    if document["schemaVersion"] != 3:
+        fail("schemaVersion must be 3")
     if not isinstance(document["transactionId"], str) or not re.fullmatch(r"[0-9a-f]{32}", document["transactionId"]):
         fail("transactionId is invalid")
     if not isinstance(document["timestamp"], str) or not TIMESTAMP.fullmatch(document["timestamp"]):
@@ -69,12 +69,8 @@ def validate(document: object) -> dict[str, object]:
     validate_path(document["previousAppTarget"], "/opt/devflow/releases/")
     validate_path(document["candidateRelease"], "/opt/devflow/releases/")
     validate_path(document["previousInstallationStateBackup"], "/opt/devflow/state/", ".json")
-    if document["backupPath"] != "pending":
-        validate_path(document["backupPath"], "/opt/devflow/backups/", ".dfbackup")
     if not isinstance(document["previousInstallationStateHash"], str) or not SHA256.fullmatch(document["previousInstallationStateHash"]):
         fail("previousInstallationStateHash is invalid")
-    if not isinstance(document["backupHash"], str) or not SHA256.fullmatch(document["backupHash"]):
-        fail("backupHash is invalid")
     for key in ("previousBackendImageId", "previousFrontendImageId"):
         if not isinstance(document[key], str) or not IMAGE_ID.fullmatch(document[key]):
             fail(f"{key} is invalid")
@@ -104,15 +100,13 @@ def validate(document: object) -> dict[str, object]:
             fail("successful transaction has invalid rollback state")
         if not all(document[key] for key in ("changesApplied", "candidateHealthPassed", "releasePromoted", "statePromoted")):
             fail("successful transaction is incomplete")
-        if document["backupPath"] == "pending" or document["backupHash"] == "pending":
-            fail("successful transaction has no authenticated backup")
     if document["result"] == "rolled-back":
         required = ["changesApplied", "rollbackStarted", "releaseRestored", "stateRestored", "rollbackHealthPassed"]
-        if document["databaseMutated"]:
-            required.append("databaseRestored")
         if document["rollbackStatus"] != "successful" or document["manualRecoveryRequired"] \
                 or not all(document[key] for key in required):
             fail("rolled-back transaction is incomplete")
+    if document["databaseMutated"] and not document["manualDataRestoreMayBeRequired"]:
+        fail("database mutation must flag possible manual data restore")
     if document["result"] == "failed" and document["rollbackStatus"] == "failed" \
             and not document["manualRecoveryRequired"]:
         fail("failed rollback must require manual recovery")

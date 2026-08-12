@@ -4,9 +4,9 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.25-alpha**. Esta revisao adiciona temas claro e escuro, alternância acessível no header e login, persistência local e preferência do sistema na primeira visita.
+Versao atual: **0.6.26-alpha**. Esta revisao preserva o tema escuro, simplifica o WebUpdater e adiciona a gestao administrativa de backups pelo frontend.
 
-Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
+Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
 ## Instalacao
 
@@ -60,9 +60,9 @@ sudo /opt/devflow/app/scripts/renew-certificate.sh --dry-run
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 ```
 
-`update.sh` e o motor nao interativo: valida a allowlist de `origin`, usa apenas `fetch`, `checkout main` e `pull --ff-only`, cria e verifica backup, ativa manutencao, aplica todas as migrations pendentes, valida health e executa rollback automatico em falha. A confirmacao manual pertence a `update-cli.sh`; no painel, pertence ao frontend antes da criacao do pedido HMAC. O instalador permanece exclusivo da instalacao inicial.
+`update.sh` e o motor nao interativo: valida a allowlist de `origin`, usa apenas `fetch`, `checkout main` e `pull --ff-only`, ativa manutencao, aplica migrations, valida health e executa rollback operacional em falha. Ele nao cria nem verifica backup automaticamente e nunca restaura PostgreSQL ou uploads. Backups sao geridos em **Sistema > Backups** por pedidos HMAC processados pelo daemon. O instalador permanece exclusivo da instalacao inicial.
 
-Para atualizar uma VPS antiga que ainda possui o CLI defeituoso, baixe o bootstrap sem usar pipe:
+Limitacao de compatibilidade: a release `0.6.24-alpha` executa o motor local antes de promover o checkout novo e falha no backup anterior a essa promocao. Um commit remoto nao consegue modificar um processo que ja esta em execucao. Para essa versao especificamente, e necessaria uma migracao unica pelo bootstrap seguro, sem pipe:
 
 ```bash
 wget -O update-devflow.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/update-bootstrap.sh

@@ -54,12 +54,10 @@ Versao disponivel:
 
 $changelog
 
-A atualizacao realizara automaticamente:
-  - backup validado;
-  - migrations pendentes;
-  - atualizacao dos servicos;
-  - health checks;
-  - rollback em caso de falha.
+A atualizacao podera executar migrations e reiniciar servicos.
+O processo nao cria backup automaticamente.
+Certifique-se de possuir um backup adequado caso deseje um ponto de restauracao.
+O rollback automatico e somente operacional e nao restaura banco ou uploads.
 
 1 - ATUALIZAR DEVFLOW
 2 - CANCELAR
