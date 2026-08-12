@@ -240,8 +240,8 @@ try {
     && install.includes("docker version --format '{{.Server.Version}}')\" 24.0"));
   check('Compose 5.3.1 remains supported', install.includes('docker compose version --short')
     && install.includes('2.20 ou superior'));
-  check('fail-closed mapping is retained', update.includes('candidate_image_validation_status')
-    && update.includes('40|41|43|44|45|46|47|48'));
+  check('fail-closed mapping is retained', update.includes('validate_backend_migration_image')
+    && update.includes("|| die 'Imagem final do backend nao atende ao contrato de migrations.'"));
 
   if (checks.length !== 32) throw new Error(`Expected 32 checks, got ${checks.length}`);
   console.log(`Direct image validation tests passed: ${checks.length} scenarios.`);

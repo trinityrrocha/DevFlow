@@ -9,6 +9,7 @@ const newStage = (index, terminal = false) => ({ code: terminal ? 'DONE' : `STAG
 const emptyWorkflow = { code: '', name: '', task_kind: 'BOTH', is_default: false, stages: [newStage(0), newStage(1, true)] };
 const emptyCatalogs = { environments: { code: '', name: '' }, priorities: { code: '', name: '', weight: 1 }, taskTypes: { code: '', name: '', applicable_kind: 'BOTH' } };
 const UPDATE_NOTICE_KEY = 'devflow:update-completed';
+const UPDATE_ACTIVE_KEY = 'devflow:update-active';
 
 export default function Settings({ section = 'catalogs' }) {
   const { user } = useAuth();
@@ -32,6 +33,7 @@ export default function Settings({ section = 'catalogs' }) {
   useEffect(() => {
     if (window.sessionStorage.getItem(UPDATE_NOTICE_KEY)) {
       window.sessionStorage.removeItem(UPDATE_NOTICE_KEY);
+      window.sessionStorage.removeItem(UPDATE_ACTIVE_KEY);
       setNotice('Atualizacao concluida. O DevFlow voltou a ficar disponivel.');
     }
   }, []);
@@ -48,7 +50,7 @@ export default function Settings({ section = 'catalogs' }) {
     try { await operation(); await loadCatalogs(); setNotice(message); } catch (requestError) { setError(errorMessage(requestError)); } finally { setSaving(false); }
   };
 
-  const titles = { mfa: ['Politica de autenticacao multifator', 'Defina a obrigatoriedade do segundo fator sem alterar configuracoes existentes.'], catalogs: ['Catalogos configuraveis', 'Ambientes, prioridades e tipos de tarefa da empresa ativa.'], workflows: ['Fluxos configuraveis', 'Etapas, responsabilidades e requisitos do ciclo de desenvolvimento.'], smtp: ['Servidor SMTP', 'Consulte a configuracao sanitizada do servidor de e-mail e envie uma mensagem de teste.'], updates: ['Atualizacoes', 'Solicitacoes assinadas para o mecanismo transacional de atualizacao.'] };
+  const titles = { mfa: ['Politica de autenticacao multifator', 'Defina a obrigatoriedade do segundo fator sem alterar configuracoes existentes.'], catalogs: ['Catalogos configuraveis', 'Ambientes, prioridades e tipos de tarefa da empresa ativa.'], workflows: ['Fluxos configuraveis', 'Etapas, responsabilidades e requisitos do ciclo de desenvolvimento.'], smtp: ['Servidor SMTP', 'Consulte a configuracao sanitizada do servidor de e-mail e envie uma mensagem de teste.'], updates: ['Atualizacoes', 'Solicitacoes assinadas para o WebUpdater do DevFlow.'] };
   return <div className="space-y-7"><header><h1 className="text-2xl font-bold">{titles[section][0]}</h1><p className="mt-1 text-sm text-slate-500">{titles[section][1]}</p></header>{error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}{notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div>}
     {section === 'updates' && <UpdateSettings capabilities={capabilities} queued={queued} saving={saving} mutate={mutate} setQueued={setQueued} />}
     {section === 'smtp' && <SmtpSettings />}
@@ -61,12 +63,12 @@ export default function Settings({ section = 'catalogs' }) {
 function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
   const [updateStatus, setUpdateStatus] = useState(null);
   const [isRebooting, setIsRebooting] = useState(false);
-  const [showBackupWarning, setShowBackupWarning] = useState(false);
   useEffect(() => {
     if (!queued?.id) return undefined;
     let disposed = false;
     let requestInFlight = false;
     let reloadStarted = false;
+    const startedAt = Date.now();
     let interval;
     const stopPolling = () => {
       if (interval) window.clearInterval(interval);
@@ -82,9 +84,18 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
       if (disposed || requestInFlight || reloadStarted) return;
       requestInFlight = true;
       try {
+        if (Date.now() - startedAt > 20 * 60 * 1000) {
+          stopPolling();
+          window.sessionStorage.removeItem(UPDATE_ACTIVE_KEY);
+          setUpdateStatus({ state: 'failed', message: 'O tempo limite de acompanhamento foi atingido. Consulte o diagnostico do servidor.' });
+          return;
+        }
         if (isRebooting) {
           const response = await api.get('/health', { timeout: 3000 });
-          if (!disposed && response.status === 200) reloadApplication();
+          if (!disposed && response.status === 200) {
+            setIsRebooting(false);
+            setUpdateStatus((current) => ({ ...(current || {}), state: 'processing', message: 'Servicos restabelecidos. Confirmando o resultado...' }));
+          }
           return;
         }
         const { data } = await api.get(`/operations/update/requests/${queued.id}`, { timeout: 5000 });
@@ -97,6 +108,7 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
         }
         if (outcome.shouldStop) {
           stopPolling();
+          window.sessionStorage.removeItem(UPDATE_ACTIVE_KEY);
           setUpdateStatus({
             ...outcome.status,
             state: 'failed',
@@ -120,6 +132,7 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
           }));
         } else {
           stopPolling();
+          window.sessionStorage.removeItem(UPDATE_ACTIVE_KEY);
           setUpdateStatus({ state: 'failed', message: 'Nao foi possivel consultar o estado da atualizacao. Verifique os logs.' });
         }
       } finally {
@@ -135,18 +148,16 @@ function UpdateSettings({ capabilities, queued, saving, mutate, setQueued }) {
   const requestActive = queued?.id && !['completed', 'failed'].includes(updateStatus?.state);
   const canUpdate = capabilities.executionAvailable && capabilities.updateAvailable && !requestActive;
   const continueUpdate = () => {
-    setShowBackupWarning(false);
-    const message = `Atualizar o DevFlow de ${capabilities.installedVersion} para ${capabilities.availableVersion}?\n\nA atualizacao podera executar migrations e reiniciar servicos. Certifique-se de possuir um backup adequado caso deseje um ponto de restauracao.`;
+    const message = 'Uma nova versao do DevFlow sera instalada.\nDurante a atualizacao alguns servicos poderao ser reiniciados.\n\nRecomendamos possuir um backup recente antes de atualizar.';
     if (!window.confirm(message)) return;
     mutate(async () => {
       const { data } = await api.post('/operations/update/requests');
+      window.sessionStorage.setItem(UPDATE_ACTIVE_KEY, data.id);
       setIsRebooting(false);
       setQueued(data); setUpdateStatus({ state: 'pending', message: 'Atualizacao aguardando processamento.' });
     }, 'Pedido de atualizacao enfileirado.');
   };
-  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacao do sistema"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.installedCommit}</p></div><div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p><p className="mt-1 break-all text-xs text-slate-400">{capabilities.availableCommit}</p></div></div><div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-800"><p className="text-sm font-medium">Changelog</p><pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600 dark:text-slate-300">{capabilities.changelog || 'Nao foi possivel consultar o changelog agora.'}</pre></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Atualizacoes podem modificar o banco de dados. Um backup recente e recomendado antes de continuar. O rollback automatico e apenas operacional e nao restaura PostgreSQL ou uploads.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{isRebooting && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Reiniciando servicos...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={() => setShowBackupWarning(true)}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Solicitar atualizacao</button></div></div></Section>
-    {showBackupWarning && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-xl rounded-xl bg-white p-6 shadow-2xl dark:bg-slate-900"><h2 className="text-lg font-bold">Backup recomendado</h2><p className="mt-4 text-sm">Antes de atualizar, recomendamos criar um backup atual do DevFlow.</p><p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-300">O processo de atualizacao nao cria backup automaticamente.</p><div className="mt-6 flex flex-wrap justify-end gap-3"><button type="button" className="btn-secondary" onClick={() => setShowBackupWarning(false)}>Cancelar</button><a className="btn-secondary" href="/settings/backups">Ir para Backups</a><button type="button" className="btn-primary" onClick={continueUpdate}>Continuar atualizacao</button></div></div></div>}
-    </div>;
+  return <div className="space-y-6"><Section icon={RefreshCw} title="Atualizacoes do DevFlow"><div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"><p className="text-xs uppercase tracking-wide text-slate-500">Versao instalada</p><p className="mt-1 font-semibold">{capabilities.installedVersion}</p></div><div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"><p className="text-xs uppercase tracking-wide text-slate-500">Versao disponivel</p><p className="mt-1 font-semibold">{capabilities.availableVersion}</p></div></div>{!capabilities.updateAvailable && <p className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Seu DevFlow esta atualizado.</p>}<div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Recomendamos possuir um backup recente antes de atualizar. O WebUpdater nao cria nem exige backup automatico.</div>{updateStatus && <div className={`rounded-lg border p-4 text-sm ${updateStatus.state === 'failed' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300' : updateStatus.state === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'}`}><strong>{updateStatus.state}</strong><p className="mt-1">{updateStatus.message}</p>{isRebooting && updateStatus.state !== 'failed' && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Reiniciando servicos...</p>}</div>}<div className="flex justify-end"><button type="button" disabled={!canUpdate || saving} className="btn-primary" onClick={continueUpdate}>{saving || (updateStatus && !['completed', 'failed'].includes(updateStatus.state)) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Atualizar DevFlow</button></div></div></Section></div>;
 }
 
 function MfaSettings({ policy, selected, setSelected, saving, mutate, setPolicy }) {

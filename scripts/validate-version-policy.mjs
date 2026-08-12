@@ -66,8 +66,7 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-migration-image-permissions.mjs'), '// migration permission tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-updater-request.mjs'), '// updater request fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-update-workflow.mjs'), '// updater workflow fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-update-transaction.py'), '# update transaction validator fixture\n');
-  writeFileSync(resolve(directory, 'scripts/validate-update-transaction.mjs'), '// update transaction tests fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-webupdater-refactor.mjs'), '// updater refactor fixture\n');
   writeFileSync(resolve(directory, 'scripts/write-update-status.mjs'), '// updater status fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-shell-syntax.mjs'), '// shell syntax fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-bootstrap-interface.mjs'), '// bootstrap interface fixture\n');
@@ -96,7 +95,7 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.27-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.28-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
   writeFixture(patchFixture, '0.6.25-alpha');

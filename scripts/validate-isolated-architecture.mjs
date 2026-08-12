@@ -82,12 +82,10 @@ check('25 updater queue rejects shell input and validates HMAC', requestValidato
   && !daemon.includes('eval ') && !daemon.includes('bash -c'));
 check('26 updater delegates only to official operational scripts', daemon.includes('scripts/update.sh')
   && daemon.includes('scripts/backup-operation.sh') && !daemon.includes('install.sh'));
-check('27 update remains transactional without automatic data backup', ['rollback_update', 'health.sh', 'manual_data_restore_may_be_required'].every((token) => update.includes(token))
-  && !update.slice(update.indexOf("log WARN 'O update nao cria backup")).includes('"$SCRIPT_DIR/backup.sh"'));
-check('28 updater is not recreated during its own request', update.includes('up_runtime_services --force-recreate --remove-orphans')
-  && update.includes('local services=(db backend frontend)')
-  && update.includes('services=(db backend worker frontend)')
-  && update.includes('[[ "$INTERNAL_MODE" == false ]] || return 0'));
+check('27 update keeps small rollback without automatic data backup', ['rollback_runtime', 'run_context_health', 'MANUAL_RECOVERY_REQUIRED'].every((token) => update.includes(token))
+  && !update.includes('"$SCRIPT_DIR/backup.sh"'));
+check('28 updater is not recreated during its own request', update.includes('db backend worker frontend edge')
+  && !update.includes('up -d --wait --no-deps --force-recreate updater'));
 check('29 uninstall is scoped and never prunes globally', !uninstall.includes('system prune')
   && uninstall.includes('certbot delete --non-interactive --cert-name "$DEVFLOW_DOMAIN"'));
 check('30 no Full Password runtime coupling remains', sources.every(([path, source]) => path === 'scripts/validate-isolated-architecture.mjs'

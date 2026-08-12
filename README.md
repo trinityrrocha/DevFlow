@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.27-alpha**. Esta revisao corrige o contrato de estados e mensagens das operacoes de backup e remove o script inline incompatível com a CSP estrita.
+Versao atual: **0.6.28-alpha**. Esta revisao substitui o WebUpdater transacional complexo por um fluxo Docker Compose curto, inspirado no atualizador funcional do Full Password.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
@@ -60,9 +60,9 @@ sudo /opt/devflow/app/scripts/renew-certificate.sh --dry-run
 sudo /opt/devflow/app/scripts/uninstall.sh --keep-data
 ```
 
-`update.sh` e o motor nao interativo: valida a allowlist de `origin`, usa apenas `fetch`, `checkout main` e `pull --ff-only`, ativa manutencao, aplica migrations, valida health e executa rollback operacional em falha. Ele nao cria nem verifica backup automaticamente e nunca restaura PostgreSQL ou uploads. Backups sao geridos em **Sistema > Backups** por pedidos HMAC processados pelo daemon. O instalador permanece exclusivo da instalacao inicial.
+`update.sh` e o motor nao interativo: valida a allowlist de `origin`, faz `fetch`, `checkout main` e `pull --ff-only` em checkout isolado, constroi somente imagens allowlisted, aplica migrations, sobe `db/backend/worker/frontend/edge` e valida o health. O updater em execucao nao e recriado durante o pedido. Nao existe gate de changelog, backup automatico ou container de manutencao no WebUpdater. Em falha apos mutacao, um rollback operacional pequeno restaura a tag normal `release-<commit>`, o symlink, o estado e os containers anteriores; migrations nao recebem down automatico.
 
-Limitacao de compatibilidade: a release `0.6.24-alpha` executa o motor local antes de promover o checkout novo e falha no backup anterior a essa promocao. Um commit remoto nao consegue modificar um processo que ja esta em execucao. Para essa versao especificamente, e necessaria uma migracao unica pelo bootstrap seguro, sem pipe:
+Limitacao de compatibilidade: a release `0.6.26-alpha` chama `render_runtime_nginx_config` dentro do updater logo depois do fast-forward. Esse container nao monta `/etc/letsencrypt`; o comando retorna 1 e o motor antigo inicia rollback antes do build. Como o shell antigo ja esta em execucao e nao carrega um motor remoto antes desse ponto, e necessaria uma migracao unica pelo bootstrap seguro, sem pipe:
 
 ```bash
 wget -O update-devflow.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/update-bootstrap.sh

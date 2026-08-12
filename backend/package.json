@@ -1,6 +1,6 @@
 {
   "name": "@devflow/backend",
-  "version": "0.6.27-alpha",
+  "version": "0.6.28-alpha",
   "private": true,
   "main": "src/server.js",
   "scripts": {

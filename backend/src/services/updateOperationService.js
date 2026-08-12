@@ -38,19 +38,23 @@ async function getUpdateCapabilities() {
   let checkAvailable = false;
   if (env.UPDATE_API_ENABLED) {
     try {
-      const [versionText, commitText, changelogText] = await Promise.all([
+      const [versionText, commitText] = await Promise.all([
         fetchPublicText(`${RAW_MAIN}/VERSION`),
-        fetchPublicText(`${REPOSITORY_API}/commits/main`),
-        fetchPublicText(`${RAW_MAIN}/CHANGELOG.md`)
+        fetchPublicText(`${REPOSITORY_API}/commits/main`)
       ]);
       availableVersion = versionText.trim();
       availableCommit = JSON.parse(commitText).sha;
       if (!/^[0-9a-f]{40}$/.test(availableCommit) || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(availableVersion)) throw new Error('identity');
-      changelog = changelogSection(changelogText, availableVersion);
-      if (!changelog) throw new Error('changelog');
       checkAvailable = true;
     } catch {
       checkAvailable = false;
+    }
+    if (checkAvailable) {
+      try {
+        changelog = changelogSection(await fetchPublicText(`${RAW_MAIN}/CHANGELOG.md`), availableVersion);
+      } catch {
+        changelog = '';
+      }
     }
   }
   const queueReady = updaterQueueReady();
@@ -65,7 +69,7 @@ async function getUpdateCapabilities() {
     availableCommit,
     updateAvailable: checkAvailable && availableCommit !== env.DEVFLOW_RELEASE_COMMIT,
     changelog,
-    safeguards: ['backup-manual-recomendado', 'manutencao-http-503', 'rollback-operacional'],
+    safeguards: ['backup-manual-recomendado', 'rollback-operacional-simples'],
     operations: UPDATE_OPERATIONS,
     transport: 'signed-private-queue'
   });

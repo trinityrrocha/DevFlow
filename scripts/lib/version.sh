@@ -175,7 +175,7 @@ devflow_validate_checkout_version_consistency() {
     scripts/renew-certificate.sh scripts/updater-daemon.sh \
     scripts/update-cli.sh scripts/update-bootstrap.sh scripts/write-update-status.mjs \
     scripts/validate-updater-request.mjs scripts/validate-update-workflow.mjs \
-    scripts/validate-update-transaction.py scripts/validate-update-transaction.mjs \
+    scripts/validate-webupdater-refactor.mjs \
     scripts/validate-shell-syntax.mjs \
     scripts/validate-bootstrap-interface.mjs scripts/validate-updater-installation-lifecycle.mjs \
     scripts/validate-auth-state-recovery.mjs \
@@ -211,8 +211,7 @@ devflow_validate_git_tree_version_consistency() {
     scripts/repair-installation-state.sh \
     scripts/renew-certificate.sh scripts/updater-daemon.sh scripts/update-cli.sh \
     scripts/update-bootstrap.sh scripts/write-update-status.mjs scripts/validate-updater-request.mjs \
-    scripts/validate-update-workflow.mjs scripts/validate-update-transaction.py \
-    scripts/validate-update-transaction.mjs \
+    scripts/validate-update-workflow.mjs scripts/validate-webupdater-refactor.mjs \
     scripts/validate-shell-syntax.mjs scripts/validate-bootstrap-interface.mjs \
     scripts/validate-updater-installation-lifecycle.mjs scripts/validate-auth-state-recovery.mjs \
     scripts/resolve-compose-image.py scripts/validate-isolated-architecture.mjs \

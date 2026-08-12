@@ -58,21 +58,20 @@ check('12 daemon reports host-only certificate skips as passing', ['certificate_
   'certificate_expiration_file_check skipped-host-only', 'certificate_renewal_timer skipped-host-only']
   .every((token) => daemonBlock.includes(token)));
 check('13 manual pre-update selects host health', update.includes('if [[ "$INTERNAL_MODE" == true ]]; then')
-  && update.includes('else\n    "$release/scripts/health.sh" "$@"') && update.includes('run_context_health "$OLD_RELEASE_DIR"'));
+  && update.includes('else\n    "$release/scripts/health.sh"') && update.includes('run_context_health "$OLD_RELEASE_DIR"'));
 check('14 WebUpdater selects daemon health', daemon.includes('DEVFLOW_UPDATE_DAEMON=true')
   && daemon.includes('DEVFLOW_UPDATE_INTERNAL=true')
   && update.includes('DEVFLOW_UPDATE_DAEMON=true "$release/scripts/health.sh" --daemon'));
-check('15 candidate health keeps identity and migration gates', update.includes('scripts/health.sh" --candidate')
-  && health.includes('candidate_version_match') && health.includes('candidate_commit_match')
-  && health.includes('candidate_migration_match'));
-check('16 final WebUpdater health uses the contextual daemon gate', update.includes('UPDATE_PHASE=health-public')
-  && update.indexOf('run_context_health "$CANDIDATE_DIR"') > update.indexOf('UPDATE_PHASE=health-public'));
+check('15 release health keeps identity and migration gates', update.includes('write_installation_state')
+  && health.includes('installed_commit') && health.includes('report PASS migration'));
+check('16 final WebUpdater health uses the contextual daemon gate', update.includes('CURRENT_STEP=final-health')
+  && update.indexOf('run_context_health "$NEW_RELEASE_DIR"') > update.indexOf('CURRENT_STEP=final-health'));
 check('17 signed HMAC request contract remains active', updateService.includes("createHmac('sha256'")
   && requestValidator.includes('timingSafeEqual') && requestValidator.includes('allowedOperations'));
 check('18 queue lifecycle and roots remain unchanged', ['/requests', '/processing', '/processed', '/failed', '/status']
   .every((suffix) => daemon.includes(`$REQUEST_ROOT${suffix}`)));
-check('19 updater service allowlist remains unchanged', daemon.includes("UPDATE_SERVICES='db backend frontend worker edge'")
-  && !daemon.includes("UPDATE_SERVICES='db backend frontend worker edge updater'"));
+check('19 updater service allowlist remains fixed', update.includes('db backend worker frontend edge')
+  && !update.includes('db backend worker frontend edge updater'));
 check('20 updater receives no sensitive host mount', !updaterMounts.some((mount) => mount.startsWith('/etc/letsencrypt'))
   && !updaterMounts.some((mount) => mount.includes('/etc/systemd')) && !compose.services.updater.network_mode);
 

@@ -10,29 +10,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INTERNAL_ONLY=false
 QUIET=false
-CANDIDATE_MODE=false
 DAEMON_MODE="${DEVFLOW_UPDATE_DAEMON:-false}"
-EXPECTED_VERSION_ARG=
-EXPECTED_COMMIT_ARG=
-EXPECTED_MIGRATION_ARG=
-REQUESTED_IMAGE_TAG="${DEVFLOW_IMAGE_TAG:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --internal) INTERNAL_ONLY=true; shift ;;
     --daemon) DAEMON_MODE=true; shift ;;
-    --candidate) CANDIDATE_MODE=true; INTERNAL_ONLY=true; shift ;;
-    --expected-version) [[ -n "${2:-}" ]] || die '--expected-version exige valor.'; EXPECTED_VERSION_ARG="$2"; shift 2 ;;
-    --expected-commit) [[ -n "${2:-}" ]] || die '--expected-commit exige valor.'; EXPECTED_COMMIT_ARG="$2"; shift 2 ;;
-    --expected-migration) [[ -n "${2:-}" ]] || die '--expected-migration exige valor.'; EXPECTED_MIGRATION_ARG="$2"; shift 2 ;;
     --quiet) QUIET=true; shift ;;
-    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal|--daemon|--candidate --expected-version V --expected-commit SHA --expected-migration FILE] [--quiet]'; exit 0 ;;
+    --help|-h) echo 'Uso: sudo scripts/health.sh [--internal|--daemon] [--quiet]'; exit 0 ;;
     *) die "Opcao desconhecida: $1" ;;
   esac
 done
 
 [[ "$DAEMON_MODE" == true || "$DAEMON_MODE" == false ]] \
   || die 'DEVFLOW_UPDATE_DAEMON deve ser true ou false.'
-[[ "$DAEMON_MODE" == false || "$INTERNAL_ONLY" == false || "$CANDIDATE_MODE" == true ]] \
+[[ "$DAEMON_MODE" == false || "$INTERNAL_ONLY" == false ]] \
   || die '--daemon e --internal nao podem ser combinados.'
 
 require_linux
@@ -42,20 +33,6 @@ validate_runtime_paths
 load_installation_state "$DEVFLOW_STATE_ROOT/installation.json" \
   || die 'Estado instalado schema v3 ausente ou invalido.'
 [[ "$DEVFLOW_INSTALLATION_STATE_MODE" == isolated ]] || die 'Somente o modo isolado e suportado.'
-
-if [[ "$CANDIDATE_MODE" == true ]]; then
-  devflow_semver_is_valid "$EXPECTED_VERSION_ARG" || die 'Versao candidata esperada invalida.'
-  [[ "$EXPECTED_COMMIT_ARG" =~ ^[0-9a-f]{40}$ ]] || die 'Commit candidato esperado invalido.'
-  [[ "$EXPECTED_MIGRATION_ARG" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] || die 'Migration candidata esperada invalida.'
-  DEVFLOW_VERSION="$EXPECTED_VERSION_ARG"
-  DEVFLOW_RELEASE_COMMIT="$EXPECTED_COMMIT_ARG"
-  [[ "$REQUESTED_IMAGE_TAG" == "candidate-$EXPECTED_COMMIT_ARG" ]] \
-    || die 'Tag da imagem candidata esperada invalida.'
-  DEVFLOW_IMAGE_TAG="$REQUESTED_IMAGE_TAG"
-  export DEVFLOW_VERSION DEVFLOW_RELEASE_COMMIT DEVFLOW_IMAGE_TAG
-elif [[ -n "$EXPECTED_VERSION_ARG$EXPECTED_COMMIT_ARG$EXPECTED_MIGRATION_ARG" ]]; then
-  die 'Expectativas explicitas sao permitidas somente com --candidate.'
-fi
 
 DEVFLOW_APP_ROOT="${DEVFLOW_APP_ROOT:-$DEVFLOW_INSTALL_ROOT/app}"
 DEVFLOW_INSTALLED_SOURCE_DIR="${DEVFLOW_INSTALLED_SOURCE_DIR:-$DEVFLOW_INSTALL_ROOT/source}"
@@ -75,11 +52,6 @@ CONFIGURED_COMMIT="${DEVFLOW_RELEASE_COMMIT:-unknown}"
 EXPECTED_VERSION="$DEVFLOW_INSTALLATION_STATE_VERSION"
 EXPECTED_COMMIT="$DEVFLOW_INSTALLATION_STATE_COMMIT"
 EXPECTED_MIGRATION="$DEVFLOW_INSTALLATION_STATE_MIGRATION"
-if [[ "$CANDIDATE_MODE" == true ]]; then
-  EXPECTED_VERSION="$EXPECTED_VERSION_ARG"
-  EXPECTED_COMMIT="$EXPECTED_COMMIT_ARG"
-  EXPECTED_MIGRATION="$EXPECTED_MIGRATION_ARG"
-fi
 if [[ "$CONFIGURED_VERSION" == "$EXPECTED_VERSION" ]]; then
   report PASS configured_version "$CONFIGURED_VERSION"
 else
@@ -90,19 +62,10 @@ if [[ "$CONFIGURED_COMMIT" == "$EXPECTED_COMMIT" ]]; then
 else
   report FAIL configured_commit "$CONFIGURED_COMMIT"
 fi
-if [[ "$CANDIDATE_MODE" == true ]]; then
-  report PASS candidate_version_match "$EXPECTED_VERSION"
-  report PASS candidate_commit_match "$EXPECTED_COMMIT"
-else
-  report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
-fi
+report PASS installed_commit "$DEVFLOW_INSTALLATION_STATE_COMMIT"
 
 for tuple in backend:backend_image worker:worker_image frontend:frontend_image db:db_image edge:nginx_image updater:updater_image; do
   service="${tuple%%:*}"; key="${tuple##*:}"
-  if [[ "$service" == updater && "$CANDIDATE_MODE" == true ]]; then
-    report PASS "$key" preserved-current-request
-    continue
-  fi
   if [[ "$service" == updater ]]; then
     updater_container_id="$(docker ps --filter 'name=^/devflow-updater$' --format '{{.ID}}' | head -n1)"
     updater_image_id="$(docker inspect --format '{{.Image}}' "$updater_container_id" 2>/dev/null || true)"
@@ -134,11 +97,7 @@ for tuple in db:db backend:backend worker:worker frontend:frontend updater:updat
   service="${tuple%%:*}"
   key="${tuple##*:}"
   if [[ "$service" == edge && "$INTERNAL_ONLY" == true ]]; then
-    report PASS "$key" skipped-maintenance
-    continue
-  fi
-  if [[ "$service" == updater && "$CANDIDATE_MODE" == true ]]; then
-    report PASS "$key" preserved-current-request
+    report PASS "$key" skipped-internal
     continue
   fi
   container_id="$("${DEVFLOW_COMPOSE[@]}" ps -q "$service" 2>/dev/null || true)"
@@ -181,9 +140,6 @@ migration="$("${DEVFLOW_COMPOSE[@]}" exec -T db sh -c \
   2>/dev/null || true)"
 [[ -n "$migration" && "$migration" == "$EXPECTED_MIGRATION" ]] \
   && report PASS migration "$migration" || report FAIL migration "${migration:-missing}"
-if [[ "$CANDIDATE_MODE" == true && "$migration" == "$EXPECTED_MIGRATION" ]]; then
-  report PASS candidate_migration_match "$migration"
-fi
 
 api_payload="$("${DEVFLOW_COMPOSE[@]}" exec -T backend node -e \
   "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)process.exit(1);process.stdout.write(await r.text())}).catch(()=>process.exit(1))" \
@@ -263,14 +219,7 @@ fi
 
 overall=healthy
 [[ "$failures" -eq 0 ]] || overall=unhealthy
-if [[ "$CANDIDATE_MODE" == true ]]; then
-  printf '%s\n' \
-    "candidate_backend_healthy=$([[ "$RESULT_BACKEND" == healthy ]] && echo true || echo false)" \
-    "candidate_frontend_healthy=$([[ "$RESULT_FRONTEND" == healthy ]] && echo true || echo false)" \
-    "candidate_worker_healthy=$([[ "$RESULT_WORKER" == healthy ]] && echo true || echo false)" \
-    "candidate_internal_health=$overall"
-fi
-if [[ "$DAEMON_MODE" == true && "$CANDIDATE_MODE" == false ]]; then
+if [[ "$DAEMON_MODE" == true ]]; then
   printf '%s\n' "daemon_runtime_health=$overall"
 fi
 printf '%s\n' \

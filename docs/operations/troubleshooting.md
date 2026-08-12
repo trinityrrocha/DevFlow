@@ -55,19 +55,14 @@ Se a tentativa terminou com `rollback_status=failed`, nao inicie outro update. P
 sudo /opt/devflow/app/scripts/version.sh
 sudo /opt/devflow/app/scripts/health.sh || true
 sudo python3 /opt/devflow/app/scripts/validate-installation-state.py validate /opt/devflow/state/installation.json || true
-sudo python3 /opt/devflow/app/scripts/validate-update-transaction.py validate /opt/devflow/state/update-transaction.json || true
 sudo python3 - <<'PY'
 import json
 from pathlib import Path
-for name in ('installation.json', 'update-transaction.json'):
+for name in ('installation.json',):
     path = Path('/opt/devflow/state') / name
     if path.is_file():
         data = json.loads(path.read_text())
-        allowed = ('installedVersion', 'installedCommit', 'migration', 'phase', 'result',
-                   'previousVersion', 'previousCommit', 'previousMigration',
-                   'candidateVersion', 'candidateCommit', 'candidateMigration',
-                   'backupPath', 'backupHash', 'databaseMutated', 'databaseRestored',
-                   'rollbackStatus', 'rootCause', 'manualRecoveryRequired')
+        allowed = ('installedVersion', 'installedCommit', 'migration', 'applicationHealthy')
         print(name, {key: data[key] for key in allowed if key in data})
 PY
 sudo docker ps --filter name=devflow --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'

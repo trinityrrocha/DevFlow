@@ -1,39 +1,36 @@
 # Atualizacao, backups e rollback
 
-O DevFlow `0.6.27-alpha` separa atualizacao e gestao de backups. `scripts/update.sh` nao cria, verifica, seleciona nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups** antes de atualizar.
+O DevFlow `0.6.28-alpha` usa um WebUpdater Docker Compose simples, baseado no fluxo operacional do Full Password. Backups continuam independentes: `scripts/update.sh` nao cria, verifica, exige nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups**.
 
-## WebUpdater
+## Fluxo do WebUpdater
 
-O painel cria um pedido `install-update` assinado. O daemon valida HMAC e allowlist, adquire `/run/lock/devflow/operations.lock` e executa o motor oficial. O fluxo e: pre-health, consulta de versao/changelog, release candidata, build, manutencao HTTP 503, migrations, containers, candidate health, promocao atomica e health final.
+1. O frontend envia um pedido `install-update` autenticado, autorizado para Super Admin e protegido por CSRF.
+2. O backend grava JSON atomico com HMAC, nonce e ID em `requests/`.
+3. O daemon valida assinatura, replay e allowlist, move para `processing/` e adquire `/run/lock/devflow/operations.lock`.
+4. `update.sh` executa pre-health e consulta `origin/main` em checkout isolado com `git fetch`, `git checkout main` e `git pull --ff-only`.
+5. A release final `releases/<commit>` e criada; backend, frontend e a proxima imagem do updater recebem somente `release-<commit>`.
+6. O contrato das migrations e validado antes de parar writers. Backend, worker, frontend e edge sao parados pelo menor intervalo pratico.
+7. O banco sobe, migrations rodam sob o mesmo lock e `db/backend/worker/frontend/edge` sobem com `--wait`.
+8. O estado instalado, o symlink e o health confirmam a identidade. Somente entao o checkout operacional recebe fast-forward para o mesmo commit.
+9. O pedido termina em `processed/`; qualquer falha termina em `failed/`.
 
-O pedido percorre `requests/`, `processing/` e `processed/` ou `failed/`. O status sanitizado fica em `status/`; stdout, ambiente e segredos nunca sao retornados pela API.
+O changelog e apenas informativo. Sua ausencia, formato invalido ou secao incompleta nao altera deteccao, build, migrations, health, sucesso ou falha. A tela mostra somente versao instalada, versao disponivel e o botao de update.
 
-## Rollback operacional
+## Rollback operacional pequeno
 
-Em falha depois da mutacao, o motor tenta restaurar apenas release/symlink, snapshot de `installation.json`, configuracao gerenciada, IDs das imagens e containers anteriores. Ele nao executa down migrations e nao restaura PostgreSQL ou uploads.
+Antes de qualquer mutacao, as imagens instaladas recebem a tag normal `release-<commit-antigo>` e `installation.json` e copiado com modo `0600`. Se uma etapa posterior falhar, o motor restaura o symlink, as tres variaveis gerenciadas, o estado e `db/backend/worker/frontend/edge` usando essa tag normal. Tags `rollback-*` e `candidate-*` antigas sao removidas quando nao estao em uso.
 
-Se uma migration tiver sido iniciada, a transacao schema v3 registra `databaseMutated=true` e `manualDataRestoreMayBeRequired=true`. Se a release anterior nao ficar saudavel com o schema atual, o resultado usa `manualRecoveryRequired=true`, preserva manutencao e nao declara rollback completo. A restauracao de dados exige uma operacao explicita do Super Admin.
+Se uma tentativa legada ja tiver deixado `/opt/devflow/source` adiante da release instalada, o rollback constroi um checkout limpo temporario no commit antigo, troca os diretorios por rename atomico e so remove a copia adiantada depois de confirmar branch `main` e commit. Nao usa `git reset --hard`, `git clean` ou force checkout.
 
-## Backups no painel
+Nao existe down migration automatico. Se migrations chegaram a iniciar, `update-report.txt` registra `manualRecoveryRequired=true`; o operador deve avaliar compatibilidade de dados antes de um restore administrativo. O rollback nunca afirma restauracao integral do banco ou de uploads.
 
-A rota `/settings/backups` e exclusiva do Super Admin. A API lista um catalogo sanitizado gerado pelo daemon e aceita somente IDs hexadecimais opacos. Paths, comandos e argumentos de shell nunca sao recebidos do navegador.
+O container `devflow-maintenance` permanece disponivel para restore de backup, mas nao participa do WebUpdater. Durante o curto restart, o browser tolera 404/502/503/reset, consulta `/api/health` ate o backend voltar e depois retorna ao status do pedido. O polling de notificacoes fica pausado somente enquanto o pedido de update esta ativo.
 
-- `create-backup` chama `scripts/backup.sh`;
-- `verify-backup` chama `scripts/verify-backup.sh`;
-- `restore-backup` exige `RESTAURAR`, cria e valida um backup de seguranca, valida o selecionado, ativa manutencao, chama `scripts/restore.sh` e executa health;
-- `delete-backup` exige `EXCLUIR`, resolve o ID internamente e remove somente o arquivo exato `.dfbackup`.
+## Compatibilidade com 0.6.26-alpha
 
-Todas usam a fila HMAC, polling e o lock operacional global. A retencao continua controlada por `BACKUP_RETENTION_DAYS`, default 30 dias. O timer `devflow-backup.timer` permanece suportado.
+O motor antigo executa, depois do `git pull`, `render_runtime_nginx_config`. A funcao valida `/etc/letsencrypt` no filesystem do updater, embora o Compose 0.6.26 monte certificados apenas no Nginx. O retorno 1 aciona o trap. `write_update_transaction rollback-started` sobrescreve `UPDATE_PHASE`, por isso o log mostra incorretamente `rollback-started` em vez da fase original `source`.
 
-O catalogo possui contrato proprio: backups usam apenas `available` ou `verified`; a fila usa `pending`, `processing`, `completed` ou `failed`, com fases internas adicionais. A reconciliacao de auditoria e isolada da leitura do catalogo, portanto um pedido historico invalido nao impede a listagem, enquanto um catalogo realmente corrompido continua falhando fechado.
-
-`verify-backup.sh` e `restore.sh` usam diretorios root-owned `0700` em `/opt/devflow/tmp`; nenhum bind source depende do `/tmp` privado do container updater.
-
-## Compatibilidade com 0.6.24-alpha
-
-A release `0.6.24-alpha` executa `/opt/devflow/app/scripts/update.sh` antes de promover o checkout remoto e falha na verificacao do backup anterior a essa promocao. O `git fetch` nao substitui o shell em execucao. Assim, uma alteracao publicada agora nao consegue modificar automaticamente esse processo ja instalado.
-
-E necessaria uma unica migracao segura, sem pipe:
+O processo 0.6.26 ja carregou o script antigo e nao consulta um motor remoto antes desse erro. Portanto, a primeira passagem exige o bootstrap unico abaixo; pedidos posteriores funcionam pelo painel:
 
 ```bash
 wget -O update-devflow.sh https://raw.githubusercontent.com/trinityrrocha/DevFlow/main/scripts/update-bootstrap.sh
@@ -41,15 +38,17 @@ chmod +x update-devflow.sh
 sudo ./update-devflow.sh
 ```
 
-O bootstrap cria checkout temporario, valida repositorio, commit e contrato de versao, executa o CLI atual e remove o temporario. Depois da promocao, pedidos futuros usam o daemon e o motor novos.
+Nao use `curl | bash`. O bootstrap clona uma copia temporaria, valida repositorio, commit e contrato de versao e executa o motor novo. A homologacao real na VPS permanece responsabilidade do usuario.
+
+## Backups no painel
+
+As operacoes `create-backup`, `verify-backup`, `restore-backup` e `delete-backup` continuam usando a fila HMAC e o mesmo lock global. Restore possui fluxo proprio com manutencao e backup de seguranca. Essa funcionalidade nao foi alterada pela refatoracao do WebUpdater.
 
 ## CLI
 
 ```bash
 sudo /opt/devflow/app/scripts/update-cli.sh --check
 sudo /opt/devflow/app/scripts/update-cli.sh
-sudo /opt/devflow/app/scripts/backup.sh
-sudo /opt/devflow/app/scripts/verify-backup.sh /opt/devflow/backups/devflow-ARQUIVO.dfbackup
+sudo /opt/devflow/app/scripts/version.sh --all --refresh
+sudo /opt/devflow/app/scripts/health.sh
 ```
-
-Backups, restores e WebUpdater reais precisam ser homologados pelo usuario na VPS.

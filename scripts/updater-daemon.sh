@@ -89,7 +89,7 @@ while true; do
   operation_status=0
   if [[ "$operation" == install-update ]]; then
     DEVFLOW_OPERATION_LOCK_HELD=true DEVFLOW_UPDATE_DAEMON=true DEVFLOW_UPDATE_INTERNAL=true \
-      DEVFLOW_UPDATE_STATUS_FILE="$status_file" UPDATE_SERVICES='db backend frontend worker edge' \
+      DEVFLOW_UPDATE_STATUS_FILE="$status_file" \
       "$APP_DIR/app/scripts/update.sh" >>"$log_file" 2>&1 || operation_status=$?
   elif [[ "$operation" != invalid ]]; then
     DEVFLOW_OPERATION_STATUS_FILE="$status_file" "$APP_DIR/app/scripts/backup-operation.sh" \

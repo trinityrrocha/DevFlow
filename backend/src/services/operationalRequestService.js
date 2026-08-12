@@ -9,7 +9,7 @@ const OPERATIONS = Object.freeze([
 ]);
 const OPERATION_STATES = Object.freeze([
   'pending', 'processing', 'backup', 'maintenance', 'migrations', 'containers',
-  'health', 'rollback', 'completed', 'failed'
+  'health', 'rollback', 'rolling-back', 'completed', 'failed'
 ]);
 const PROCESSING_STATES = Object.freeze(OPERATION_STATES.filter((state) => !['pending', 'completed', 'failed'].includes(state)));
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -20,6 +20,7 @@ const DEFAULT_STATE_MESSAGES = Object.freeze({
   backup: 'Backup de seguranca em andamento.', maintenance: 'Modo de manutencao ativo.',
   migrations: 'Migrations em processamento.', containers: 'Servicos em atualizacao.',
   health: 'Validando a saude da aplicacao.', rollback: 'Rollback operacional em andamento.',
+  'rolling-back': 'Rollback operacional em andamento.',
   completed: 'Operacao concluida com sucesso.', failed: 'Operacao interrompida. Consulte o diagnostico do servidor.'
 });
 const OPERATION_MESSAGES = Object.freeze({

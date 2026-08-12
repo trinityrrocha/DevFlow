@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.28-alpha] - 2026-08-12
+
+- refatora o WebUpdater seguindo o fluxo simples e funcional do Full Password;
+- remove changelog, backup e manutencao HTTP dos gates de atualizacao;
+- elimina release/imagem candidata e tags permanentes de rollback;
+- preserva HMAC, nonce, replay protection, fila privada, lock, migrations e health;
+- corrige a identidade instalada para usar `installation.json` e a release ativa;
+- torna o polling do frontend resiliente a restart e pausa notificacoes durante update;
+- adiciona fixture de regressao 0.6.26-alpha para 0.6.27-alpha e contrato local com 38 cenarios.
+
 ## [0.6.27-alpha] - 2026-08-11
 
 ### Corrigido

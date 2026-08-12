@@ -12,8 +12,7 @@ Contrato operacional reutilizavel:
   check-update       consulta a release disponivel
   download-update    baixa e valida a candidata em checkout temporario isolado
   validate-update    repete a validacao integral sem instalar
-  install-update     executa a atualizacao transacional
-  rollback-update    restaura release e backup da ultima atualizacao
+  install-update     executa a atualizacao Docker Compose
 EOF
 }
 
@@ -28,11 +27,6 @@ case "$operation" in
   install-update)
     export DEVFLOW_UPDATE_OPERATION=install-update
     exec "$SCRIPT_DIR/update.sh" "$@"
-    ;;
-  rollback-update)
-    [[ $# -eq 0 ]] || { printf '%s\n' 'rollback-update nao aceita parametros.' >&2; exit 2; }
-    export DEVFLOW_UPDATE_OPERATION=rollback-update
-    exec "$SCRIPT_DIR/update.sh" --rollback
     ;;
   --help|-h) usage ;;
   *) printf 'Operacao desconhecida: %s\n' "$operation" >&2; usage >&2; exit 2 ;;

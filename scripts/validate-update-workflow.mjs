@@ -20,19 +20,19 @@ const check = (name, condition) => {
   if (!condition) throw new Error(`operational-workflow-check-failed:${name}`);
   process.stdout.write(`ok ${++passed} - ${name}\n`);
 };
-const updateMutation = update.slice(update.indexOf("log WARN 'O update nao cria backup"));
+const updateMutation = update.slice(update.indexOf('CURRENT_STEP=prepare'));
 
 check('1 request web protegido', backupRoutes.includes('requireAuth, requireSuperAdmin'));
 check('2 HMAC preservado', service.includes("createHmac('sha256'"));
 check('3 fila privada atomica', service.includes("flag: 'wx'") && service.includes('renameSync(temporary, destination)'));
 check('4 daemon valida e despacha allowlist', daemon.includes('validate-updater-request.mjs') && daemon.includes('create-backup|verify-backup|restore-backup|delete-backup'));
-check('5 pre-health antes da release', update.indexOf('Pre-update health') < update.indexOf('UPDATE_PHASE=release'));
-check('6 deteccao de update e changelog', update.includes('available_version=') && update.includes('CHANGELOG_SECTION'));
+check('5 pre-health antes da release', update.indexOf('Pre-update health') < update.indexOf('CURRENT_STEP=prepare-release'));
+check('6 deteccao por VERSION e commit sem gate de changelog', update.includes('available_version=') && !update.includes('CHANGELOG_SECTION'));
 check('7 update nao cria backup automatico', !updateMutation.includes('"$SCRIPT_DIR/backup.sh"'));
 check('8 update nao verifica backup automatico', !updateMutation.includes('"$SCRIPT_DIR/verify-backup.sh"'));
-check('9 release candidata validada', update.includes('candidate-healthy') && update.includes('CANDIDATE_IMAGE_TAG'));
-check('10 promocao atomica', update.includes('replace_devflow_app_symlink_atomically "$CANDIDATE_DIR"'));
-check('11 health final interno e publico', update.includes('UPDATE_PHASE=health-installed-internal') && update.includes('UPDATE_PHASE=health-public'));
+check('9 release final validada', update.includes('compose_image_matches_release') && update.includes('NEW_IMAGE_TAG="release-$NEW_SHA"'));
+check('10 ativacao atomica', update.includes('replace_devflow_app_symlink_atomically "$NEW_RELEASE_DIR"'));
+check('11 health final no contexto operacional', update.includes('CURRENT_STEP=final-health') && update.includes('run_context_health "$NEW_RELEASE_DIR"'));
 check('12 listagem por catalogo sanitizado', backupService.includes('BACKUP_FILENAME') && backupService.includes('isSymbolicLink'));
 check('13 criacao usa script oficial', backupOperation.includes('"$SCRIPT_DIR/backup.sh"'));
 check('14 falha operacional vai para failed', daemon.includes('FAILED_DIR/$name'));
@@ -51,7 +51,7 @@ check('26 eventos de auditoria', ['BACKUP_CREATED', 'BACKUP_VERIFIED', 'BACKUP_R
 check('27 lock operacional global', daemon.includes('/run/lock/devflow/operations.lock') && read('scripts/backup.sh').includes('/run/lock/devflow/operations.lock'));
 check('28 retencao exibida', frontend.includes('Retencao automatica:') && backupService.includes('BACKUP_RETENTION_DAYS'));
 check('29 namespace compartilhado sem /tmp privado', verify.includes('TEMP_ROOT=/opt/devflow/tmp') && !verify.includes('${TMPDIR:-/tmp}'));
-check('30 aviso de backup sem gate', settings.includes('O processo de atualizacao nao cria backup automaticamente.') && !settings.includes('backupAge'));
+check('30 aviso de backup sem gate', settings.includes('O WebUpdater nao cria nem exige backup automatico.') && !settings.includes('backupAge'));
 check('31 polling operacional', frontend.includes('window.setInterval(poll, 4000)'));
 check('32 restore temp tambem compartilhado', restore.includes('TEMP_ROOT=/opt/devflow/tmp'));
 

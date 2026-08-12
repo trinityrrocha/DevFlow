@@ -23,10 +23,10 @@ describe('gestao de backups e alerta de update', () => {
   });
 
   it('mostra o aviso de backup sem impor gate por idade ou quantidade', () => {
-    expect(settings).toContain('Antes de atualizar, recomendamos criar um backup atual do DevFlow.');
-    expect(settings).toContain('O processo de atualizacao nao cria backup automaticamente.');
-    expect(settings).toContain('Ir para Backups');
-    expect(settings).toContain('Continuar atualizacao');
+    expect(settings).toContain('Recomendamos possuir um backup recente antes de atualizar.');
+    expect(settings).toContain('O WebUpdater nao cria nem exige backup automatico.');
+    expect(settings).toContain('Atualizar DevFlow');
+    expect(settings).not.toContain('Ir para Backups');
     expect(settings).not.toContain('backupAge');
   });
 });

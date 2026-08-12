@@ -118,12 +118,12 @@ try {
   check('initial installation validates permissions', install.includes('validate_backend_migration_image "$backend_image"'));
   check('resume reuses the initial installation gate', install.includes('--resume')
     && install.includes('CURRENT_INSTALL_STAGE=05-images'));
-  check('update validates permissions before maintenance', update.indexOf('validate_backend_migration_image')
-    < update.indexOf('UPDATE_PHASE=maintenance'));
-  check('update validates before promotion', update.indexOf('validate_backend_migration_image')
-    < update.indexOf('UPDATE_PHASE=promotion'));
-  check('rollback remains armed for update failures', update.includes('rollback_update')
-    && update.includes('ROLLBACK_ARMED=true'));
+  check('update validates permissions before stopping writers', update.indexOf('validate_backend_migration_image')
+    < update.indexOf('CURRENT_STEP=stop-writers'));
+  check('update validates before activation', update.indexOf('validate_backend_migration_image')
+    < update.indexOf('CURRENT_STEP=activate'));
+  check('rollback is armed only after runtime mutation starts', update.includes('rollback_runtime')
+    && update.includes('MUTATION_STARTED=true'));
   check('ARM64 remains supported by platform gate', common.includes('aarch64|arm64) DEVFLOW_ARCH=arm64'));
   check('Alpine BusyBox build avoids find -printf', dockerfile.startsWith('FROM node:22-alpine')
     && dockerfile.includes('find /database/migrations -maxdepth 1') && !dockerfile.includes('find -printf'));

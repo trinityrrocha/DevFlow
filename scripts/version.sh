@@ -17,31 +17,41 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 Uso: scripts/version.sh [--installed|--available|--all] [--refresh]
 
---installed  mostra versão e commit instalados (padrão)
---available  mostra versão e commit disponíveis em origin/main
+--installed  mostra versao e commit da release ativa (padrao)
+--available  mostra versao e commit disponiveis em origin/main
 --all        mostra ambos
 --refresh    executa fetch somente leitura antes de consultar origin/main
 EOF
       exit 0
       ;;
-    *) die "Opção desconhecida: $1" ;;
+    *) die "Opcao desconhecida: $1" ;;
   esac
 done
 
 installed_version=unknown
 installed_commit=unknown
-if [[ -r "$DEVFLOW_ENV_FILE" ]]; then
-  load_devflow_env
+if [[ -r "$DEVFLOW_ENV_FILE" ]]; then load_devflow_env; fi
+if [[ -r "$DEVFLOW_STATE_ROOT/installation.json" ]]; then
+  load_installation_state "$DEVFLOW_STATE_ROOT/installation.json" \
+    || die 'A identidade da release instalada nao pode ser comprovada.'
+  active_release="$(readlink -f "$DEVFLOW_INSTALL_ROOT/app" 2>/dev/null || true)"
+  valid_devflow_release_target "$active_release" \
+    || die 'A identidade da release instalada nao pode ser comprovada.'
+  active_commit="$(tr -d '\r\n' < "$active_release/.devflow-release")"
+  active_version="$(devflow_read_version_file "$active_release/VERSION" 2>/dev/null || true)"
+  [[ "$active_commit" == "$DEVFLOW_INSTALLATION_STATE_COMMIT" \
+    && "$active_version" == "$DEVFLOW_INSTALLATION_STATE_VERSION" ]] \
+    || die 'A identidade da release instalada nao pode ser comprovada.'
+  [[ -d "$DEVFLOW_INSTALL_ROOT/source/.git" ]] \
+    && git -C "$DEVFLOW_INSTALL_ROOT/source" cat-file -e "$active_commit^{commit}" 2>/dev/null \
+    || die 'O commit da release instalada nao existe no checkout operacional.'
+  installed_version="$active_version"
+  installed_commit="$active_commit"
 fi
-if [[ -d "$DEVFLOW_INSTALL_ROOT/source/.git" ]]; then
-  resolve_installed_release_identity "$DEVFLOW_INSTALL_ROOT/source" main >/dev/null \
-    || die 'A identidade da release instalada não pôde ser comprovada.'
-  installed_version="$INSTALLED_VERSION"
-  installed_commit="$INSTALLED_COMMIT"
-fi
-[[ "$installed_version" == unknown ]] || devflow_semver_is_valid "$installed_version" || die 'Versão instalada inválida.'
+[[ "$installed_version" == unknown ]] || devflow_semver_is_valid "$installed_version" \
+  || die 'Versao instalada invalida.'
 [[ "$installed_commit" == unknown || "$installed_commit" =~ ^[0-9a-f]{40}$ ]] \
-  || die 'Commit instalado inválido.'
+  || die 'Commit instalado invalido.'
 
 available_version=unknown
 available_commit=unknown
@@ -52,8 +62,10 @@ if [[ "$MODE" != installed ]]; then
   fi
   if [[ -n "$source_dir" && -d "$source_dir/.git" ]]; then
     remote_url="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
-    [[ "$remote_url" == 'https://github.com/trinityrrocha/DevFlow.git' ]] \
-      || die 'O remote origin não corresponde ao HTTPS público de trinityrrocha/DevFlow.'
+    case "$remote_url" in
+      'https://github.com/trinityrrocha/DevFlow'|'https://github.com/trinityrrocha/DevFlow.git'|'git@github.com:trinityrrocha/DevFlow.git') ;;
+      *) die 'O remote origin nao corresponde a trinityrrocha/DevFlow.' ;;
+    esac
     if [[ "$REFRESH" == true ]]; then
       GIT_TERMINAL_PROMPT=0 git -C "$source_dir" fetch --quiet origin main
     fi
@@ -61,18 +73,14 @@ if [[ "$MODE" != installed ]]; then
     available_version="$(devflow_validate_git_tree_version_consistency "$source_dir" "$available_commit" 2>/dev/null || true)"
     [[ -n "$available_version" ]] || available_version=unknown
     [[ -n "$available_commit" ]] || available_commit=unknown
-    devflow_semver_is_valid "$available_version" || die 'Versão disponível inválida ou inconsistente.'
-    [[ "$available_commit" =~ ^[0-9a-f]{40}$ ]] || die 'Commit disponível inválido.'
+    devflow_semver_is_valid "$available_version" || die 'Versao disponivel invalida ou inconsistente.'
+    [[ "$available_commit" =~ ^[0-9a-f]{40}$ ]] || die 'Commit disponivel invalido.'
   fi
 fi
 
 case "$MODE" in
-  installed)
-    printf 'installed_version=%s\ninstalled_commit=%s\n' "$installed_version" "$installed_commit"
-    ;;
-  available)
-    printf 'available_version=%s\navailable_commit=%s\n' "$available_version" "$available_commit"
-    ;;
+  installed) printf 'installed_version=%s\ninstalled_commit=%s\n' "$installed_version" "$installed_commit" ;;
+  available) printf 'available_version=%s\navailable_commit=%s\n' "$available_version" "$available_commit" ;;
   all)
     printf 'installed_version=%s\ninstalled_commit=%s\navailable_version=%s\navailable_commit=%s\n' \
       "$installed_version" "$installed_commit" "$available_version" "$available_commit"

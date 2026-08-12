@@ -30,12 +30,12 @@ version="$(devflow_validate_checkout_version_consistency "$TEMP_ROOT/release")" 
 
 status=0
 DEVFLOW_UPDATE_BOOTSTRAP_RELEASE="$TEMP_ROOT/release" \
+  DEVFLOW_SOURCE_DIR="${DEVFLOW_SOURCE_DIR:-/opt/devflow/source}" \
   "$TEMP_ROOT/release/scripts/update-cli.sh" "$@" || status=$?
 if [[ "$status" -eq 0 && "${1:-}" != --check ]]; then
   printf '%s\n' \
-    'Bootstrap concluido. Se a instalacao anterior era menor que 0.6.4-alpha,' \
-    'promova o container updater fora de qualquer request conforme:' \
-    'docs/infrastructure/update-backup-rollback.md'
+    'Bootstrap de compatibilidade concluido.' \
+    'Os proximos ciclos devem ser solicitados em Sistema > Atualizacoes.'
 fi
 cleanup
 TEMP_ROOT=

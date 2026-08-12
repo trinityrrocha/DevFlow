@@ -4,7 +4,7 @@ import { basename, dirname, resolve } from 'node:path';
 
 const ALLOWED_STATES = new Set([
   'pending', 'processing', 'backup', 'maintenance', 'migrations',
-  'containers', 'health', 'rollback', 'completed', 'failed'
+  'containers', 'health', 'rollback', 'rolling-back', 'completed', 'failed'
 ]);
 const ALLOWED_OPERATIONS = new Set([
   'install-update', 'create-backup', 'verify-backup', 'restore-backup', 'delete-backup'
@@ -18,6 +18,7 @@ const SAFE_STATE_MESSAGES = Object.freeze({
   containers: 'Servicos da aplicacao em atualizacao.',
   health: 'Validando a saude da aplicacao.',
   rollback: 'Rollback operacional em andamento.',
+  'rolling-back': 'Rollback operacional em andamento.',
   completed: 'Operacao concluida com sucesso.',
   failed: 'Operacao interrompida. Consulte o diagnostico do servidor.'
 });

@@ -20,6 +20,7 @@ export default function DashboardLayout({ children }) {
   const navigation = visibleNavigation(user);
 
   const refreshNotifications = async () => {
+    if (window.sessionStorage.getItem('devflow:update-active')) return;
     try {
       const response = await api.get('/notifications');
       setNotifications(response.data);

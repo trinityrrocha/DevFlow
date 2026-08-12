@@ -30,18 +30,16 @@ check('dry-run precedes persistent directories', install.indexOf('if [[ "$MODE" 
 check('old parameters fail explicitly', install.includes('foi descontinuado') && install.includes('--proxy-mode'));
 check('updater has exclusive lock', update.includes('flock -n'));
 check('updater checks canonical remote', update.includes('trinityrrocha/DevFlow'));
-check('updater check exposes version and changelog', update.includes('installed_version=') && update.includes('CHANGELOG_SECTION'));
-check('updater does not create or verify automatic backup', !update.slice(update.indexOf("log WARN 'O update nao cria backup")).includes('"$SCRIPT_DIR/backup.sh"')
-  && !update.slice(update.indexOf("log WARN 'O update nao cria backup")).includes('"$SCRIPT_DIR/verify-backup.sh"'));
-check('updater enters maintenance', update.includes('enter_maintenance'));
+check('updater check exposes installed and available versions without changelog gate', update.includes('installed_version=') && !update.includes('CHANGELOG_SECTION'));
+check('updater does not create or verify automatic backup', !update.includes('"$SCRIPT_DIR/backup.sh"')
+  && !update.includes('"$SCRIPT_DIR/verify-backup.sh"'));
+check('updater avoids maintenance container', !update.includes('enter_maintenance') && !update.includes('devflow-maintenance'));
 check('updater applies migrations', update.includes('run_devflow_migrations'));
-check('updater validates internal and external health', update.includes('health.sh" --internal')
-  && update.includes('health.sh" --candidate')
-  && health.includes('EXPECTED_VERSION_ARG')
-  && health.includes('skipped-maintenance')
+check('updater validates contextual final health', update.includes('run_context_health "$NEW_RELEASE_DIR"')
+  && health.includes('DEVFLOW_INSTALLATION_STATE_VERSION')
   && !health.includes('DEVFLOW_HEALTH_ALLOW_PENDING_VERSION'));
-check('updater performs operational rollback without data restore', update.includes('rollback_update')
-  && !update.slice(update.indexOf('rollback_update()'), update.indexOf('update_failed()')).includes('restore.sh'));
+check('updater performs operational rollback without data restore', update.includes('rollback_runtime')
+  && !update.slice(update.indexOf('rollback_runtime()'), update.indexOf('update_failed()')).includes('restore.sh'));
 check('restore supports coordinated rollback', restore.includes('DEVFLOW_RESTORE_NO_START'));
 check('all update entrypoints delegate to single motor', operation.includes('exec "$SCRIPT_DIR/update.sh"')
   && updateCli.includes('ENGINE="$SCRIPT_DIR/update.sh"') && daemon.includes('scripts/update.sh') && !daemon.includes('install.sh'));

@@ -23,7 +23,6 @@ check_output="$($ENGINE --check)"
 installed_version="$(printf '%s\n' "$check_output" | sed -n 's/^installed_version=//p' | tail -n1)"
 available_version="$(printf '%s\n' "$check_output" | sed -n 's/^available_version=//p' | tail -n1)"
 update_available="$(printf '%s\n' "$check_output" | sed -n 's/^update_available=//p' | tail -n1)"
-changelog="$(printf '%s\n' "$check_output" | sed -n '/^changelog_begin$/,/^changelog_end$/p' | sed '1d;$d')"
 
 if [[ "$update_available" == false ]]; then
   cat >/dev/tty <<EOF
@@ -52,11 +51,9 @@ Versao instalada:
 Versao disponivel:
   $available_version
 
-$changelog
-
 A atualizacao podera executar migrations e reiniciar servicos.
-O processo nao cria backup automaticamente.
-Certifique-se de possuir um backup adequado caso deseje um ponto de restauracao.
+Recomendamos possuir um backup recente antes de atualizar.
+O processo nao cria nem exige backup automaticamente.
 O rollback automatico e somente operacional e nao restaura banco ou uploads.
 
 1 - ATUALIZAR DEVFLOW
@@ -69,7 +66,7 @@ while true; do
   case "$choice" in
     1)
       "$ENGINE"
-      installed_version="$($SCRIPT_DIR/version.sh --value)"
+      installed_version="$($SCRIPT_DIR/version.sh --installed | sed -n 's/^installed_version=//p')"
       cat >/dev/tty <<EOF
 ============================================================
  DEVFLOW ATUALIZADO COM SUCESSO

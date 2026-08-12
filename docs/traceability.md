@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.27-alpha`
+## Instalacao isolada `0.6.28-alpha`
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|
@@ -168,14 +168,13 @@
 | Cronometro | codigos PostgreSQL conhecidos convertidos em 400/409 pelo `taskTimingService.js` |
 | Update pelo painel | POST com MFA e polling de `/api/health` a cada cinco segundos |
 
-| Update transacional | Evidencia |
+| WebUpdater simples | Evidencia |
 |---|---|
-| Candidate health | `health.sh --candidate` com versao, commit, migration, API, worker e imagens explicitos |
-| Promocao atomica | symlink, state schema v3, health instalado interno e health publico em ordem |
-| Backup autenticado | manifesto `devflow-backup-v2`, ID da transacao e hashes de backup/snapshot |
-| Rollback de banco | restore pre-update obrigatorio antes do health antigo quando migrations mutaram o banco |
-| Imagens e worker | tags `candidate-*`/`rollback-*`, IDs anteriores e remocao do worker ausente na topologia antiga |
-| Testes | `validate-update-transaction.mjs`, 40 cenarios e fixture 0.5.5 -> 0.6.4 |
+| Fluxo | `update.sh`: pre-health, checkout isolado, fetch/checkout/pull, build, migrations, Compose e health |
+| Identidade | release imutavel, tag `release-<commit>`, symlink e `installation.json` coerentes |
+| Rollback | restaura tag normal anterior; sem down migration e com `manualRecoveryRequired` quando aplicavel |
+| Updater | nao e recriado durante o pedido; daemon conclui a movimentacao para processed/failed |
+| Testes | `validate-webupdater-refactor.mjs`, 38 cenarios e fixture 0.6.26 -> 0.6.27 |
 
 | Fase 4 | Evidencia |
 |---|---|

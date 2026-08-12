@@ -476,7 +476,7 @@ validate_backend_migration_image() {
       'backend_image_validation_status=runtime-error' \
       'image_validation_container_failed=false' \
       'docker_exit_code=not-run' \
-      'root_cause=candidate-image-inspect-failed'
+      'root_cause=release-image-inspect-failed'
     return 42
   fi
   if [[ -n "$expected_image_id" && "$actual_image_id" != "$expected_image_id" ]]; then
@@ -484,7 +484,7 @@ validate_backend_migration_image() {
       'backend_image_validation_status=runtime-error' \
       'image_validation_container_failed=false' \
       'docker_exit_code=not-run' \
-      'root_cause=candidate-image-identity-mismatch' \
+      'root_cause=release-image-identity-mismatch' \
       "validated_image_id=$actual_image_id"
     return 42
   fi
@@ -516,7 +516,7 @@ validate_backend_migration_image() {
       'backend_image_validation_status=runtime-error' \
       'image_validation_container_failed=false' \
       "docker_exit_code=$docker_exit_code" \
-      'root_cause=candidate-image-reference-changed' \
+      'root_cause=release-image-reference-changed' \
       "validated_image_id=$actual_image_id"
     rm -rf -- "$validation_root"
     return 42
