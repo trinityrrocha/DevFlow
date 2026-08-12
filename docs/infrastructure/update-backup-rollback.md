@@ -1,6 +1,6 @@
 # Atualizacao, backups e rollback
 
-O DevFlow `0.6.26-alpha` separa atualizacao e gestao de backups. `scripts/update.sh` nao cria, verifica, seleciona nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups** antes de atualizar.
+O DevFlow `0.6.27-alpha` separa atualizacao e gestao de backups. `scripts/update.sh` nao cria, verifica, seleciona nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups** antes de atualizar.
 
 ## WebUpdater
 
@@ -24,6 +24,8 @@ A rota `/settings/backups` e exclusiva do Super Admin. A API lista um catalogo s
 - `delete-backup` exige `EXCLUIR`, resolve o ID internamente e remove somente o arquivo exato `.dfbackup`.
 
 Todas usam a fila HMAC, polling e o lock operacional global. A retencao continua controlada por `BACKUP_RETENTION_DAYS`, default 30 dias. O timer `devflow-backup.timer` permanece suportado.
+
+O catalogo possui contrato proprio: backups usam apenas `available` ou `verified`; a fila usa `pending`, `processing`, `completed` ou `failed`, com fases internas adicionais. A reconciliacao de auditoria e isolada da leitura do catalogo, portanto um pedido historico invalido nao impede a listagem, enquanto um catalogo realmente corrompido continua falhando fechado.
 
 `verify-backup.sh` e `restore.sh` usam diretorios root-owned `0700` em `/opt/devflow/tmp`; nenhum bind source depende do `/tmp` privado do container updater.
 

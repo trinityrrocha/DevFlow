@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.26-alpha**. Esta revisao preserva o tema escuro, simplifica o WebUpdater e adiciona a gestao administrativa de backups pelo frontend.
+Versao atual: **0.6.27-alpha**. Esta revisao corrige o contrato de estados e mensagens das operacoes de backup e remove o script inline incompatível com a CSP estrita.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

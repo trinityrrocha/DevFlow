@@ -13,6 +13,7 @@ describe('gestao de backups e alerta de update', () => {
     expect(page).toContain('Verificando...');
     expect(page).toContain('Restaurando...');
     expect(page).toContain('Excluindo...');
+    expect(page).toContain("setMessage({ type: 'success', text: data.message })");
   });
 
   it('exige confirmacoes fortes para restore e delete', () => {

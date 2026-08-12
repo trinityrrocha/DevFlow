@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-11. Versao: `0.6.26-alpha`.
+Data de corte: 2026-08-11. Versao: `0.6.27-alpha`.
+
+Revisao 0.6.27 implementada localmente: estados do catalogo de backup e estados operacionais foram separados; a reconciliacao de auditoria passou a isolar pedidos historicos invalidos sem mascarar catalogos corrompidos; mensagens terminais sao especificas por operacao. O bootstrap de tema agora e um recurso estatico same-origin executado no `head`, mantendo a CSP `script-src 'self'` sem `unsafe-inline`. A VPS permanece pendente de homologacao do usuario.
 
 Revisao 0.6.25 implementada localmente: ThemeContext controla light/dark sem backend, persiste somente valores permitidos em `devflow-theme`, segue `prefers-color-scheme` sem escolha manual e aplica o tema antes do primeiro paint. Header, login, componentes globais e utilities legadas receberam cobertura escura indigo/slate. A tela de login foi verificada no navegador local em desktop e mobile; a navegacao autenticada e a VPS ainda dependem de homologacao do usuario.
 

@@ -359,7 +359,7 @@ fi
 
 set_update_status() {
   local state="$1"
-  [[ -z "$UPDATE_STATUS_FILE" ]] || node "$SCRIPT_DIR/write-update-status.mjs" "$UPDATE_STATUS_FILE" "$state"
+  [[ -z "$UPDATE_STATUS_FILE" ]] || node "$SCRIPT_DIR/write-update-status.mjs" "$UPDATE_STATUS_FILE" "$state" install-update
 }
 set_update_status processing
 

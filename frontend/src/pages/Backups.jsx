@@ -25,7 +25,7 @@ export default function Backups() {
         if (disposed) return;
         setOperation(data);
         if (data.status === 'completed') {
-          setMessage({ type: 'success', text: data.operation === 'create-backup' ? 'Backup criado com sucesso.' : 'Operacao concluida com sucesso.' });
+          setMessage({ type: 'success', text: data.message });
           await load();
         } else if (data.status === 'failed') setMessage({ type: 'error', text: data.error || 'A operacao falhou. Consulte os logs.' });
       } catch {

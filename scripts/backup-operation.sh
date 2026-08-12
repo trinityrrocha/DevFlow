@@ -15,7 +15,7 @@ case "$OPERATION" in
 esac
 [[ "$STATUS_FILE" == /var/lib/devflow/updater/status/*.json ]] || { echo 'Status operacional invalido.' >&2; exit 2; }
 
-status() { node "$SCRIPT_DIR/write-update-status.mjs" "$STATUS_FILE" "$1"; }
+status() { node "$SCRIPT_DIR/write-update-status.mjs" "$STATUS_FILE" "$1" "$OPERATION"; }
 resolve_backup() { node "$SCRIPT_DIR/resolve-backup-id.mjs" "$BACKUP_ROOT" "$BACKUP_ID"; }
 project_env=(DEVFLOW_PROJECT_DIR=/opt/devflow/app DEVFLOW_ENV_FILE=/opt/devflow/config/devflow.env DEVFLOW_OPERATION_LOCK_HELD=true)
 

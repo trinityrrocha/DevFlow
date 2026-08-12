@@ -1,9 +1,41 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const env = require('../config/env');
 const { AppError } = require('../utils/errors');
 
 const BACKUP_FILENAME = /^devflow-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.dfbackup$/;
 const BACKUP_ID = /^[0-9a-f]{32}$/;
+const BACKUP_STATES = Object.freeze(['available', 'verified']);
+const optionalString = (value, pattern) => value === null || (typeof value === 'string' && (!pattern || pattern.test(value)));
+
+function parseBackupEntry(backup) {
+  const valid = backup && typeof backup === 'object' && !Array.isArray(backup)
+    && BACKUP_ID.test(backup.id)
+    && BACKUP_FILENAME.test(backup.filename)
+    && crypto.createHash('sha256').update(backup.filename).digest('hex').slice(0, 32) === backup.id
+    && Number.isSafeInteger(backup.sizeBytes) && backup.sizeBytes >= 0
+    && typeof backup.createdAt === 'string' && Number.isFinite(Date.parse(backup.createdAt))
+    && BACKUP_STATES.includes(backup.status)
+    && optionalString(backup.applicationVersion, /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/)
+    && optionalString(backup.applicationCommit, /^[0-9a-f]{40}$/)
+    && optionalString(backup.databaseMigration, /^[0-9]{3}_[A-Za-z0-9_]+\.sql$/)
+    && optionalString(backup.format, /^devflow-backup-v[12]$/)
+    && optionalString(backup.verifiedAt)
+    && (backup.verifiedAt === null || Number.isFinite(Date.parse(backup.verifiedAt)));
+  if (!valid) throw new Error('backup-schema');
+  return Object.freeze({
+    id: backup.id,
+    filename: backup.filename,
+    createdAt: backup.createdAt,
+    sizeBytes: backup.sizeBytes,
+    status: backup.status,
+    applicationVersion: backup.applicationVersion,
+    applicationCommit: backup.applicationCommit,
+    databaseMigration: backup.databaseMigration,
+    format: backup.format,
+    verifiedAt: backup.verifiedAt
+  });
+}
 
 function readCatalog({ filesystem = fs, catalogFile = env.DEVFLOW_BACKUP_CATALOG_FILE } = {}) {
   try {
@@ -11,22 +43,7 @@ function readCatalog({ filesystem = fs, catalogFile = env.DEVFLOW_BACKUP_CATALOG
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) throw new Error('unsafe');
     const catalog = JSON.parse(filesystem.readFileSync(catalogFile, 'utf8'));
     if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.backups)) throw new Error('schema');
-    return catalog.backups.filter((backup) => BACKUP_ID.test(backup.id)
-      && BACKUP_FILENAME.test(backup.filename)
-      && Number.isSafeInteger(backup.sizeBytes) && backup.sizeBytes >= 0
-      && typeof backup.createdAt === 'string')
-      .map((backup) => Object.freeze({
-        id: backup.id,
-        filename: backup.filename,
-        createdAt: backup.createdAt,
-        sizeBytes: backup.sizeBytes,
-        status: backup.status === 'verified' ? 'verified' : 'available',
-        applicationVersion: typeof backup.applicationVersion === 'string' ? backup.applicationVersion : null,
-        applicationCommit: typeof backup.applicationCommit === 'string' ? backup.applicationCommit : null,
-        databaseMigration: typeof backup.databaseMigration === 'string' ? backup.databaseMigration : null,
-        format: typeof backup.format === 'string' ? backup.format : null,
-        verifiedAt: typeof backup.verifiedAt === 'string' ? backup.verifiedAt : null
-      }));
+    return catalog.backups.map(parseBackupEntry);
   } catch (error) {
     if (error?.code === 'ENOENT') return [];
     throw new AppError('BACKUP_CATALOG_INVALID', 'Catalogo seguro de backups indisponivel.', 503);
@@ -44,4 +61,7 @@ function listBackups(options) {
   return Object.freeze({ retentionDays: env.BACKUP_RETENTION_DAYS, backups: readCatalog(options) });
 }
 
-module.exports = { BACKUP_FILENAME, BACKUP_ID, readCatalog, assertBackupExists, listBackups };
+module.exports = {
+  BACKUP_FILENAME, BACKUP_ID, BACKUP_STATES, parseBackupEntry,
+  readCatalog, assertBackupExists, listBackups
+};

@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.26-alpha`
+## Instalacao isolada `0.6.27-alpha`
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|

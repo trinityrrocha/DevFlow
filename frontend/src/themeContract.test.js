@@ -10,6 +10,7 @@ const css = read('src/index.css');
 const login = read('src/pages/Login.jsx');
 const main = read('src/main.jsx');
 const html = read('index.html');
+const themeBootstrap = read('public/theme-bootstrap.js');
 
 describe('contrato visual do tema', () => {
   it('11 exibe o botao de tema no header autenticado', () => {
@@ -115,7 +116,8 @@ describe('contrato visual do tema', () => {
       expect(page).toMatch(/className=/);
       expect(css).toContain('Compatibilidade visual para componentes legados');
       expect(main).toContain('<ThemeProvider>');
-      expect(html).toContain("'devflow-theme'");
+      expect(html).toContain('src="/theme-bootstrap.js"');
+      expect(themeBootstrap).toContain("'devflow-theme'");
     });
   }
 });

@@ -121,7 +121,7 @@ describe('fila privada de atualizacao', () => {
     for (const entry of directories) fs.mkdirSync(entry.directory, { recursive: true });
     fs.mkdirSync(statusDirectory, { recursive: true });
     const options = { directories, statusDirectory };
-    const request = { schemaVersion: 3, id, operation: 'install-update', requestedAt: '2026-08-09T22:00:00.000Z' };
+    const request = { schemaVersion: 3, id, action: 'operation', operation: 'install-update', requestedAt: '2026-08-09T22:00:00.000Z' };
 
     try {
       fs.writeFileSync(path.join(directories[0].directory, `${id}.json`), JSON.stringify(request));

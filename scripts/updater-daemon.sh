@@ -84,7 +84,7 @@ while true; do
     install-update|create-backup|verify-backup|restore-backup|delete-backup) ;;
     *) operation=invalid ;;
   esac
-  node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" processing
+  node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" processing "$operation"
   log "Processando solicitacao validada: $request_id"
   operation_status=0
   if [[ "$operation" == install-update ]]; then
@@ -99,13 +99,13 @@ while true; do
   fi
   node "$APP_DIR/app/scripts/write-backup-catalog.mjs" /opt/devflow/backups "$REQUEST_ROOT/backup-catalog.json" || true
   if [[ "$operation_status" -eq 0 ]]; then
-    node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" completed || true
+    node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" completed "$operation" || true
     mv -- "$processing" "$PROCESSED_DIR/$name"
     mv -- "$log_file" "$PROCESSED_DIR/$request_id.log"
     log "Solicitacao concluida: $request_id"
   else
     status="$operation_status"
-    node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" failed || true
+    node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" failed "$operation" || true
     mv -- "$processing" "$FAILED_DIR/$name"
     mv -- "$log_file" "$FAILED_DIR/$request_id.log"
     log "Solicitacao falhou: $request_id status=$status"

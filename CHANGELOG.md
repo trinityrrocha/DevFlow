@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.27-alpha] - 2026-08-11
+
+### Corrigido
+
+- listagem de backups deixa de ser bloqueada por pedidos operacionais historicos invalidos durante a reconciliacao de auditoria;
+- estados de backup (`available`/`verified`) e estados da fila passam a possuir contratos independentes e validacao estrita;
+- status terminal passa a informar a operacao concluida, incluindo criacao, verificacao, restore, exclusao e update;
+- bootstrap do tema foi movido para arquivo estatico same-origin, preservando o primeiro paint sem violar `script-src 'self'`.
+
+### Testes
+
+- fixtures cobrem catalogo `available`, catalogo corrompido, mensagens terminais, pedido historico invalido, ciclo simulado de exclusao e ausencia de JavaScript inline.
+
 ## [0.6.26-alpha] - 2026-08-11
 
 ### Corrigido

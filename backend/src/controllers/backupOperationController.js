@@ -1,9 +1,10 @@
 const { listBackups, assertBackupExists } = require('../services/backupOperationService');
 const {
   assertQueueReady, createSignedRequest, persistRequest, getRequestStatus, backupIsInActiveOperation,
-  queueDirectories
+  queueDirectories, REQUEST_ID_PATTERN
 } = require('../services/operationalRequestService');
 const { recordAudit } = require('../services/auditService');
+const { safeLogError } = require('../utils/safeLogger');
 const { AppError } = require('../utils/errors');
 const db = require('../config/database');
 const fs = require('node:fs');
@@ -14,15 +15,33 @@ const REQUESTED_AUDIT = Object.freeze({
   'restore-backup': 'BACKUP_RESTORE_REQUESTED', 'delete-backup': 'BACKUP_DELETE_REQUESTED'
 });
 
-async function reconcileTerminalAudits(req) {
-  const terminalDirectories = queueDirectories().filter((entry) => ['completed', 'failed'].includes(entry.status));
+const BACKUP_OPERATIONS = new Set(['create-backup', 'verify-backup', 'restore-backup', 'delete-backup']);
+
+async function reconcileTerminalAudits(req, {
+  filesystem = fs,
+  directories = queueDirectories(),
+  statusDirectory,
+  statusReader = (id) => getRequestStatus(id, { filesystem, directories, statusDirectory }),
+  auditRecorder = recordTerminalAudit,
+  errorLogger = safeLogError
+} = {}) {
+  const terminalDirectories = directories.filter((entry) => ['completed', 'failed'].includes(entry.status));
   const ids = terminalDirectories.flatMap((entry) => {
-    try { return fs.readdirSync(entry.directory).filter((name) => /^[0-9a-f-]{36}\.json$/.test(name)).slice(-100).map((name) => path.basename(name, '.json')); }
+    try {
+      return filesystem.readdirSync(entry.directory)
+        .map((name) => path.basename(name, '.json'))
+        .filter((id) => REQUEST_ID_PATTERN.test(id))
+        .slice(-100);
+    }
     catch { return []; }
   });
   for (const id of [...new Set(ids)]) {
-    const state = getRequestStatus(id);
-    if (state.operation !== 'install-update') await recordTerminalAudit(req, state);
+    try {
+      const state = statusReader(id);
+      if (BACKUP_OPERATIONS.has(state.operation)) await auditRecorder(req, state);
+    } catch (error) {
+      errorLogger('Reconciliacao de auditoria operacional ignorou item historico invalido.', error);
+    }
   }
 }
 
@@ -80,4 +99,4 @@ async function status(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { getBackups, create, verify, restore, remove, status };
+module.exports = { getBackups, create, verify, restore, remove, status, reconcileTerminalAudits };
