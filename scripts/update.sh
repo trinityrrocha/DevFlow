@@ -8,6 +8,8 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/compose-images.sh
 . "$SCRIPT_DIR/lib/compose-images.sh"
+# shellcheck source=lib/operational-permissions.sh
+. "$SCRIPT_DIR/lib/operational-permissions.sh"
 
 CHECK_ONLY=false
 EXPECTED_UPDATE_VERSION=
@@ -61,6 +63,10 @@ if [[ "${DEVFLOW_OPERATION_LOCK_HELD:-false}" != true ]]; then
 fi
 
 load_devflow_env
+if ! devflow_ops_gid_is_valid "${DEVFLOW_OPS_GID:-}"; then
+  devflow_resolve_runtime_ops_gid || die 'Nao foi possivel derivar o GID operacional do backend instalado.'
+  set_managed_env_value DEVFLOW_OPS_GID "$DEVFLOW_OPS_GID"
+fi
 validate_runtime_paths
 [[ "$DEVFLOW_INSTALL_ROOT" == /opt/devflow ]] || die 'Diretorio instalado inesperado.'
 check_capacity "$DEVFLOW_INSTALL_ROOT"
@@ -107,6 +113,8 @@ INSTALLED_REPOSITORY="$DEVFLOW_CANONICAL_REPOSITORY_URL"
 export DEVFLOW_APP_ROOT DEVFLOW_INSTALLED_SOURCE_DIR DEVFLOW_IDENTITY_RELEASE_ROOT \
   INSTALLED_COMMIT INSTALLED_VERSION INSTALLED_REF INSTALLED_REPOSITORY
 compose_files
+devflow_reconcile_operational_artifacts "$DEVFLOW_INSTALL_ROOT/updater" "$DEVFLOW_OPS_GID" \
+  || die 'Falha ao reconciliar permissoes operacionais antes da atualizacao.'
 
 run_context_health() {
   local release="$1"

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { chownSync, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { atomicWriteOperationalJson } from './lib/operational-files.mjs';
 
 const [backupArgument, destinationArgument] = process.argv.slice(2);
 const fail = (message) => { process.stderr.write(`backup-catalog-failed:${message}\n`); process.exit(2); };
@@ -34,7 +35,4 @@ for (const filename of readdirSync(backupRoot)) {
   });
 }
 backups.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-const temporary = `${destination}.${process.pid}.tmp`;
-writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), backups })}\n`, { flag: 'wx', mode: 0o600 });
-chownSync(temporary, 100, 100);
-renameSync(temporary, destination);
+atomicWriteOperationalJson(destination, { schemaVersion: 1, generatedAt: new Date().toISOString(), backups });

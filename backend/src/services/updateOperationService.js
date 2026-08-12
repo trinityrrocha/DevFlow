@@ -1,7 +1,7 @@
 const env = require('../config/env');
 const {
   queueReady, assertQueueReady, createSignedRequest: createOperationalRequest,
-  writeStatus, getRequestStatus, queueDirectories, STATES
+  getRequestStatus, queueDirectories, STATES
 } = require('./operationalRequestService');
 
 const UPDATE_ENGINE = 'scripts/update.sh';
@@ -88,7 +88,6 @@ module.exports = {
   updaterQueueReady,
   assertUpdaterQueueReady,
   createSignedRequest,
-  writeStatus,
   getRequestStatus,
   getUpdateQueueDirectories,
   UPDATE_ENGINE,

@@ -1,6 +1,6 @@
 # Roadmap inicial
 
-## Marco `0.6.28-alpha`
+## Marco `0.6.29-alpha`
 
 - homologar a gestao administrativa de backups e o WebUpdater sem backup pre-update;
 - validar restore com backup de seguranca na VPS;

@@ -80,7 +80,8 @@ describe('fila privada de atualizacao', () => {
     expect(queueService).toContain('filesystem.writeFileSync(temporary');
     expect(queueService).toContain('filesystem.renameSync(temporary, destination)');
     expect(controller).toContain("console.log('[UPDATER_QUEUE] Arquivo de solicitação gravado em:', destination)");
-    expect(queueService.indexOf("statusWriter(request.id")).toBeLessThan(queueService.indexOf('filesystem.renameSync'));
+    expect(queueService).toContain('mode: 0o640');
+    expect(queueService).not.toContain('statusWriter(request.id');
     expect(environment).toContain("DEVFLOW_UPDATER_QUEUE_DIR: z.string().refine(path.isAbsolute");
     expect(environment).toContain("DEVFLOW_UPDATER_STATUS_DIR: z.string().refine(path.isAbsolute");
     expect(environment).toContain("default('/var/lib/devflow/updater/requests')");
@@ -96,21 +97,16 @@ describe('fila privada de atualizacao', () => {
   it('grava e promove o JSON no diretorio absoluto compartilhado', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-updater-mounted-root-'));
     const queueDirectory = path.join(root, 'requests');
-    const statusDirectory = path.join(root, 'status');
     const request = createSignedRequest('admin@example.com');
     try {
+      fs.mkdirSync(queueDirectory, { recursive: true });
       const destination = persistUpdateRequest(request, {
-        queueDirectory,
-        statusDirectory,
-        statusWriter: (id, state) => {
-          fs.mkdirSync(statusDirectory, { recursive: true });
-          fs.writeFileSync(path.join(statusDirectory, `${id}.json`), JSON.stringify({ id, state }));
-        }
+        queueDirectory
       });
       expect(destination).toBe(path.join(queueDirectory, `${request.id}.json`));
       expect(JSON.parse(fs.readFileSync(destination, 'utf8'))).toMatchObject({ id: request.id, signature: request.signature });
       expect(fs.readdirSync(queueDirectory)).toEqual([`${request.id}.json`]);
-      expect(fs.existsSync(path.join(statusDirectory, `${request.id}.json`))).toBe(true);
+      if (process.platform !== 'win32') expect(fs.statSync(destination).mode & 0o777).toBe(0o640);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

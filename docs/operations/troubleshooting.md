@@ -1,5 +1,18 @@
 # Troubleshooting
 
+## Operacao de backup permanece em processamento com HTTP 503
+
+Verifique sem expor o conteudo dos arquivos:
+
+```bash
+grep '^DEVFLOW_OPS_GID=' /opt/devflow/config/devflow.env
+stat -c '%U:%G %a %n' /opt/devflow/updater /opt/devflow/updater/status
+find /opt/devflow/updater/status -maxdepth 1 -type f -name '*.json' -printf '%u:%g %m %p\n'
+docker exec devflow-backend id
+```
+
+O esperado e diretorio `root:<ops> 2750`, status `root:<ops> 0640` e o GID operacional presente nos grupos do backend. Nao aplique `chmod 777`; execute a atualizacao oficial ou o diagnostico para reconciliar somente a allowlist.
+
 ## Portas 80/443 ocupadas
 
 O instalador imprime `port=` e `owner=` e encerra sem alteracoes. Libere as portas manualmente ou use outra VPS. Nao altere containers de terceiros pelo instalador.

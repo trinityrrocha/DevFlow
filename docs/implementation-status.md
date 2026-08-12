@@ -1,6 +1,6 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-12. Versao: `0.6.28-alpha`.
+Data de corte: 2026-08-12. Versao: `0.6.29-alpha`.
 
 Revisao 0.6.27 implementada localmente: estados do catalogo de backup e estados operacionais foram separados; a reconciliacao de auditoria passou a isolar pedidos historicos invalidos sem mascarar catalogos corrompidos; mensagens terminais sao especificas por operacao. O bootstrap de tema agora e um recurso estatico same-origin executado no `head`, mantendo a CSP `script-src 'self'` sem `unsafe-inline`. A VPS permanece pendente de homologacao do usuario.
 

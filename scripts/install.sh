@@ -7,6 +7,7 @@ CHECKOUT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/lib/compose-images.sh"
 . "$SCRIPT_DIR/lib/install-transaction.sh"
+. "$SCRIPT_DIR/lib/operational-permissions.sh"
 
 MODE=check
 MODE_EXPLICIT=false
@@ -363,6 +364,7 @@ DEVFLOW_UPLOADS_PATH=$DEVFLOW_INSTALL_ROOT/storage/uploads
 DEVFLOW_CERTIFICATE_PATH=/etc/letsencrypt
 DEVFLOW_NGINX_CONFIG_PATH=$DEVFLOW_CONFIG_ROOT/nginx/nginx.runtime.conf
 DEVFLOW_UPDATER_ROOT=$DEVFLOW_INSTALL_ROOT/updater
+DEVFLOW_OPS_GID=$DEVFLOW_OPS_GID
 DB_HOST=db
 DB_PORT=5432
 DB_USER=devflow_user
@@ -405,6 +407,7 @@ migrate_partial_configuration() {
   set_managed_env_value DEVFLOW_CERTIFICATE_PATH /etc/letsencrypt
   set_managed_env_value DEVFLOW_NGINX_CONFIG_PATH "$DEVFLOW_CONFIG_ROOT/nginx/nginx.runtime.conf"
   set_managed_env_value DEVFLOW_UPDATER_ROOT "$DEVFLOW_INSTALL_ROOT/updater"
+  set_managed_env_value DEVFLOW_OPS_GID "$DEVFLOW_OPS_GID"
   devflow_env_key_has_value UPDATE_REQUEST_SECRET "$DEVFLOW_ENV_FILE" \
     || set_managed_env_value UPDATE_REQUEST_SECRET "$(openssl rand -hex 48)"
   set_managed_env_value UPDATE_API_ENABLED true
@@ -753,11 +756,13 @@ trap installation_failed ERR EXIT INT TERM
 
 [[ "$BASE_PACKAGES_NEEDED" == false ]] || install_base_dependencies
 ensure_docker
+devflow_ensure_host_ops_group || die 'Nao foi possivel criar ou validar o grupo host devflow-ops sem conflito de GID.'
 install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONFIG_ROOT/nginx" \
   "$DEVFLOW_STATE_ROOT" "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" "$DEVFLOW_INSTALL_ROOT/releases" \
   "$DEVFLOW_INSTALL_ROOT/storage/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads" \
   /run/lock/devflow
-install -d -m 0700 "$DEVFLOW_INSTALL_ROOT/updater"
+devflow_reconcile_operational_artifacts "$DEVFLOW_INSTALL_ROOT/updater" "$DEVFLOW_OPS_GID" \
+  || die 'Nao foi possivel preparar o contrato de permissoes da fila operacional.'
 install -d -m 0700 "$DEVFLOW_INSTALL_ROOT/tmp"
 INSTALL_LOG="$DEVFLOW_LOG_ROOT/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 if [[ -t 1 && -w /dev/tty ]]; then exec 3>/dev/tty; CREDENTIAL_TTY_AVAILABLE=true; fi

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-umask 077
+umask 0027
 
 APP_DIR="${APP_DIR:-/opt/devflow}"
+. "$APP_DIR/app/scripts/lib/operational-permissions.sh"
 REQUEST_ROOT="${DEVFLOW_UPDATER_ROOT:-/var/lib/devflow/updater}"
 REQUEST_DIR="$REQUEST_ROOT/requests"
 PROCESSING_DIR="$REQUEST_ROOT/processing"
@@ -16,11 +17,12 @@ LAST_CATALOG_REFRESH=0
 
 log() { printf '%s [DevFlow Updater] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 updater_processing_blocked() { [[ -e "$INSTALLATION_GATE_FILE" ]]; }
-mkdir -p "$REQUEST_DIR" "$PROCESSING_DIR" "$PROCESSED_DIR" "$FAILED_DIR" "$STATUS_DIR"
+devflow_resolve_runtime_ops_gid || { log 'GID operacional indisponivel; daemon recusou iniciar.'; exit 1; }
+devflow_reconcile_operational_artifacts "$REQUEST_ROOT" "$DEVFLOW_OPS_GID" \
+  || { log 'Contrato de permissoes operacional invalido; daemon recusou iniciar.'; exit 1; }
 mkdir -p /run/lock/devflow
-chown -R 100:100 "$REQUEST_ROOT"
-chmod 0700 "$REQUEST_ROOT" "$REQUEST_DIR" "$PROCESSING_DIR" "$PROCESSED_DIR" "$FAILED_DIR" "$STATUS_DIR"
 touch "$REQUEST_ROOT/daemon.ready"
+chown root:root "$REQUEST_ROOT/daemon.ready"
 chmod 0600 "$REQUEST_ROOT/daemon.ready"
 node "$APP_DIR/app/scripts/write-backup-catalog.mjs" /opt/devflow/backups "$REQUEST_ROOT/backup-catalog.json" || true
 
@@ -29,6 +31,8 @@ for interrupted in "$PROCESSING_DIR"/*.json; do
   interrupted_name="${interrupted##*/}"
   interrupted_id="${interrupted_name%.json}"
   mv -- "$interrupted" "$REQUEST_DIR/$interrupted_name"
+  chown root:"$DEVFLOW_OPS_GID" "$REQUEST_DIR/$interrupted_name"
+  chmod 0640 "$REQUEST_DIR/$interrupted_name"
   node "$APP_DIR/app/scripts/write-update-status.mjs" "$STATUS_DIR/$interrupted_id.json" pending || true
 done
 log 'Daemon iniciado; fila privada pronta.'
@@ -67,12 +71,19 @@ while true; do
   log_file="$PROCESSING_DIR/$request_id.log"
   status_file="$STATUS_DIR/$request_id.json"
   mv -- "$request" "$processing"
+  chown root:"$DEVFLOW_OPS_GID" "$processing"
+  chmod 0640 "$processing"
+  : > "$log_file"
+  chown root:root "$log_file"
+  chmod 0600 "$log_file"
   validation_output="$PROCESSING_DIR/$request_id.validation"
   if ! node "$APP_DIR/app/scripts/validate-updater-request.mjs" "$processing" "$request_id" "$REQUEST_ROOT" >"$validation_output" 2>"$log_file"; then
     rm -f -- "$validation_output"
     node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" failed || true
     mv -- "$processing" "$FAILED_DIR/$name"
     mv -- "$log_file" "$FAILED_DIR/$request_id.log"
+    chmod 0640 "$FAILED_DIR/$name"
+    chmod 0600 "$FAILED_DIR/$request_id.log"
     log "Solicitacao invalida recusada: $request_id"
     flock -u 8
     continue
@@ -102,12 +113,16 @@ while true; do
     node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" completed "$operation" || true
     mv -- "$processing" "$PROCESSED_DIR/$name"
     mv -- "$log_file" "$PROCESSED_DIR/$request_id.log"
+    chmod 0640 "$PROCESSED_DIR/$name"
+    chmod 0600 "$PROCESSED_DIR/$request_id.log"
     log "Solicitacao concluida: $request_id"
   else
     status="$operation_status"
     node "$APP_DIR/app/scripts/write-update-status.mjs" "$status_file" failed "$operation" || true
     mv -- "$processing" "$FAILED_DIR/$name"
     mv -- "$log_file" "$FAILED_DIR/$request_id.log"
+    chmod 0640 "$FAILED_DIR/$name"
+    chmod 0600 "$FAILED_DIR/$request_id.log"
     log "Solicitacao falhou: $request_id status=$status"
   fi
   flock -u 8

@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.28-alpha**. Esta revisao substitui o WebUpdater transacional complexo por um fluxo Docker Compose curto, inspirado no atualizador funcional do Full Password.
+Versao atual: **0.6.29-alpha**. Esta revisao estabelece um contrato de GID e permissoes minimas entre o backend non-root e o updater root, preservando o WebUpdater Docker Compose simples.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

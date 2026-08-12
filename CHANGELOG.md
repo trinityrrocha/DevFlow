@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.29-alpha] - 2026-08-12
+
+- corrige o `EACCES` entre updater root e backend non-root por um GID operacional compartilhado e persistido;
+- grava status e catalogo atomicamente como `root:<ops-gid> 0640`, preservando logs internos em `0600`;
+- cria diretorios setgid com privilegio minimo, reconcilia somente artefatos allowlisted e cobre o ciclo com 25 testes locais;
+- mantem o polling do frontend dependente do retorno terminal real, sem mascarar indisponibilidade permanente.
+
 ## [0.6.28-alpha] - 2026-08-12
 
 - refatora o WebUpdater seguindo o fluxo simples e funcional do Full Password;

@@ -58,6 +58,8 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/lib/version.sh'), '# fixture uses the tested library externally\n');
   writeFileSync(resolve(directory, 'scripts/lib/compose-images.sh'), '# compose image fixture\n');
   writeFileSync(resolve(directory, 'scripts/lib/install-transaction.sh'), '# transaction fixture\n');
+  writeFileSync(resolve(directory, 'scripts/lib/operational-permissions.sh'), '# operational permissions fixture\n');
+  writeFileSync(resolve(directory, 'scripts/lib/operational-files.mjs'), '// operational atomic files fixture\n');
   writeFileSync(resolve(directory, 'scripts/resolve-compose-image.py'), '# resolver fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-isolated-architecture.mjs'), '// isolated tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/audit-compose-command.mjs'), '// compose audit fixture\n');
@@ -67,6 +69,7 @@ const writeFixture = (directory, version, { frontendVersion = version } = {}) =>
   writeFileSync(resolve(directory, 'scripts/validate-updater-request.mjs'), '// updater request fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-update-workflow.mjs'), '// updater workflow fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-webupdater-refactor.mjs'), '// updater refactor fixture\n');
+  writeFileSync(resolve(directory, 'scripts/validate-operational-permissions.mjs'), '// operational permissions tests fixture\n');
   writeFileSync(resolve(directory, 'scripts/write-update-status.mjs'), '// updater status fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-shell-syntax.mjs'), '// shell syntax fixture\n');
   writeFileSync(resolve(directory, 'scripts/validate-bootstrap-interface.mjs'), '// bootstrap interface fixture\n');
@@ -95,7 +98,7 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.28-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.29-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
   writeFixture(patchFixture, '0.6.25-alpha');

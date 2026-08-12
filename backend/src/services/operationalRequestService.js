@@ -89,23 +89,14 @@ function createSignedRequest({ actorEmail, operation, backupId = null }) {
   return request;
 }
 
-function writeStatus(id, state, requestedAt = new Date().toISOString(), operation = 'install-update') {
-  if (!OPERATION_STATES.includes(state)) throw new AppError('OPERATION_STATUS_INVALID', 'Estado operacional invalido.', 500);
-  fs.mkdirSync(env.DEVFLOW_UPDATER_STATUS_DIR, { recursive: true, mode: 0o700 });
-  const destination = path.join(env.DEVFLOW_UPDATER_STATUS_DIR, `${id}.json`);
-  const temporary = path.join(env.DEVFLOW_UPDATER_STATUS_DIR, `.${id}.${process.pid}.tmp`);
-  fs.writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 1, id, operation, state, message: operationMessage(operation, state), requestedAt, updatedAt: new Date().toISOString() })}\n`, { flag: 'wx', mode: 0o600 });
-  fs.renameSync(temporary, destination);
-}
-
-function persistRequest(request, { filesystem = fs, queueDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR, statusWriter = writeStatus } = {}) {
+function persistRequest(request, { filesystem = fs, queueDirectory = env.DEVFLOW_UPDATER_QUEUE_DIR } = {}) {
   const destination = path.join(queueDirectory, `${request.id}.json`);
   const temporary = path.join(queueDirectory, `.${request.id}.${process.pid}.tmp`);
   try {
-    filesystem.mkdirSync(queueDirectory, { recursive: true, mode: 0o700 });
-    filesystem.chmodSync(queueDirectory, 0o700);
-    filesystem.writeFileSync(temporary, `${JSON.stringify(request)}\n`, { flag: 'wx', mode: 0o600 });
-    statusWriter(request.id, 'pending', request.requestedAt, request.operation);
+    const queue = filesystem.lstatSync(queueDirectory);
+    if (!queue.isDirectory() || queue.isSymbolicLink()) throw Object.assign(new Error('unsafe-queue'), { code: 'EACCES' });
+    filesystem.writeFileSync(temporary, `${JSON.stringify(request)}\n`, { flag: 'wx', mode: 0o640 });
+    filesystem.chmodSync(temporary, 0o640);
     filesystem.renameSync(temporary, destination);
   } catch (error) {
     filesystem.rmSync(temporary, { force: true });
@@ -178,6 +169,6 @@ function backupIsInActiveOperation(backupId, { filesystem = fs, queueDirectory =
 module.exports = {
   OPERATIONS, STATES: OPERATION_STATES, OPERATION_STATES, OPERATION_MESSAGES,
   REQUEST_ID_PATTERN, BACKUP_ID_PATTERN, queueReady, assertQueueReady,
-  createSignedRequest, writeStatus, persistRequest, getRequestStatus, queueDirectories,
+  createSignedRequest, persistRequest, getRequestStatus, queueDirectories,
   backupIsInActiveOperation, operationMessage, requestOperation
 };

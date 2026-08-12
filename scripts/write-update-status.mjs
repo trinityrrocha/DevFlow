@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+import { atomicWriteOperationalJson } from './lib/operational-files.mjs';
 
 const ALLOWED_STATES = new Set([
   'pending', 'processing', 'backup', 'maintenance', 'migrations',
@@ -56,7 +57,6 @@ const payload = {
   requestedAt: previous.requestedAt || now,
   updatedAt: now
 };
-mkdirSync(dirname(absolute), { recursive: true, mode: 0o700 });
-const temporary = `${absolute}.${process.pid}.tmp`;
-writeFileSync(temporary, `${JSON.stringify(payload)}\n`, { flag: 'wx', mode: 0o600 });
-renameSync(temporary, absolute);
+const parent = lstatSync(dirname(absolute));
+if (!parent.isDirectory() || parent.isSymbolicLink()) fail('status-directory');
+try { atomicWriteOperationalJson(absolute, payload); } catch { fail('atomic-write'); }

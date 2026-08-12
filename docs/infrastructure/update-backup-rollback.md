@@ -1,6 +1,6 @@
 # Atualizacao, backups e rollback
 
-O DevFlow `0.6.28-alpha` usa um WebUpdater Docker Compose simples, baseado no fluxo operacional do Full Password. Backups continuam independentes: `scripts/update.sh` nao cria, verifica, exige nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups**.
+O DevFlow `0.6.29-alpha` usa um WebUpdater Docker Compose simples, baseado no fluxo operacional do Full Password. Backups continuam independentes: `scripts/update.sh` nao cria, verifica, exige nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups**.
 
 ## Fluxo do WebUpdater
 

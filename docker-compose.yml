@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 20
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: database
     networks: [devflow_internal]
 
@@ -29,13 +29,13 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.28-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.29-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.29-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
@@ -44,6 +44,10 @@ services:
       DEVFLOW_UPDATER_QUEUE_DIR: /var/lib/devflow/updater/requests
       DEVFLOW_UPDATER_STATUS_DIR: /var/lib/devflow/updater/status
       DEVFLOW_BACKUP_CATALOG_FILE: /var/lib/devflow/updater/backup-catalog.json
+      DEVFLOW_OPS_GID: ${DEVFLOW_OPS_GID:-101}
+    group_add:
+      # 101 e somente a ponte de compatibilidade com a imagem 0.6.28; instalacoes novas persistem um GID descoberto.
+      - "${DEVFLOW_OPS_GID:-101}"
     expose: ["3000"]
     volumes:
       - ${DEVFLOW_UPLOADS_PATH:-/opt/devflow/storage/uploads}:/var/lib/devflow/uploads
@@ -58,7 +62,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: backend
     networks: [devflow_internal, devflow_edge]
 
@@ -70,7 +74,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.28-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.29-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     depends_on:
@@ -84,7 +88,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: frontend
     networks: [devflow_edge]
 
@@ -96,7 +100,7 @@ services:
     env_file:
       - ${DEVFLOW_ENV_FILE:-.env}
     environment:
-      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      DEVFLOW_VERSION: ${DEVFLOW_VERSION:-0.6.29-alpha}
       DEVFLOW_RELEASE_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
       DB_HOST: db
       DB_PORT: 5432
@@ -110,7 +114,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: email-worker
     networks: [devflow_internal]
 
@@ -134,7 +138,7 @@ services:
       retries: 12
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: proxy
     networks: [devflow_edge]
 
@@ -145,7 +149,7 @@ services:
       context: .
       dockerfile: docker/updater/Dockerfile
       args:
-        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.28-alpha}
+        DEVFLOW_BUILD_VERSION: ${DEVFLOW_VERSION:-0.6.29-alpha}
         DEVFLOW_BUILD_COMMIT: ${DEVFLOW_RELEASE_COMMIT:-unknown}
     restart: unless-stopped
     command: ["bash", "/opt/devflow/app/scripts/updater-daemon.sh"]
@@ -154,6 +158,9 @@ services:
     environment:
       APP_DIR: /opt/devflow
       DEVFLOW_UPDATER_ROOT: /var/lib/devflow/updater
+      DEVFLOW_OPS_GID: ${DEVFLOW_OPS_GID:-101}
+    group_add:
+      - "${DEVFLOW_OPS_GID:-101}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/devflow:/opt/devflow
@@ -167,7 +174,7 @@ services:
       start_period: 15s
     security_opt: ["no-new-privileges:true"]
     labels:
-      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.28-alpha}
+      org.opencontainers.image.version: ${DEVFLOW_VERSION:-0.6.29-alpha}
       devflow.component: updater
     networks: [devflow_internal, devflow_edge]
 

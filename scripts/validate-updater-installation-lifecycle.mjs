@@ -23,14 +23,13 @@ const activation = install.match(/activate_candidate_app_symlink\(\) \{[\s\S]*?\
 const rollback = install.match(/restore_previous_app_symlink\(\) \{[\s\S]*?\n\}/u)?.[0] || '';
 const stage14 = install.slice(install.indexOf('CURRENT_INSTALL_STAGE=14-nginx-https'), install.indexOf('CURRENT_INSTALL_STAGE=15-super-admin'));
 const finalStage = install.slice(install.indexOf('CURRENT_INSTALL_STAGE=16-final-health-state'));
-const gateFunctionStart = daemon.indexOf('updater_processing_blocked()');
-const gateFunctionEnd = daemon.indexOf('\nmkdir -p', gateFunctionStart);
-if (gateFunctionStart < 0 || gateFunctionEnd < 0) throw new Error('Updater gate helper was not found.');
+const gateHelper = daemon.match(/updater_processing_blocked\(\) \{[^\n]+\}/u)?.[0] || '';
+if (!gateHelper) throw new Error('Updater gate helper was not found.');
 
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-updater-lifecycle-'));
 const helper = resolve(temporary, 'gate-helper.sh');
 const gate = resolve(temporary, 'installation-in-progress');
-writeFileSync(helper, `${daemon.slice(gateFunctionStart, gateFunctionEnd)}\n`);
+writeFileSync(helper, `${gateHelper}\n`);
 const runGate = () => spawnSync(bash, ['-c', 'INSTALLATION_GATE_FILE="$1"; source "$2"; updater_processing_blocked', '_', gate, helper], { encoding: 'utf8' });
 
 try {

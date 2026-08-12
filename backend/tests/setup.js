@@ -12,3 +12,4 @@ process.env.UPDATE_REQUEST_SECRET = 'u'.repeat(64);
 process.env.UPDATE_API_ENABLED = 'true';
 process.env.DEVFLOW_UPDATER_QUEUE_DIR = '/tmp/devflow-updater-test/requests';
 process.env.DEVFLOW_UPDATER_STATUS_DIR = '/tmp/devflow-updater-test/status';
+process.env.DEVFLOW_OPS_GID = '101';
