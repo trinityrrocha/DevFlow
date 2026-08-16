@@ -1,9 +1,18 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.29-alpha`
+## Instalacao isolada `0.6.30-alpha`
 
 - Contrato de fila/status entre backend e updater: `docs/architecture/operational-filesystem-permissions.md`.
 - Regressao obrigatoria de ownership/permissoes: `scripts/validate-operational-permissions.mjs`.
+
+| Revisao 0.6.30 | Evidencia |
+|---|---|
+| Timelines tecnicas | `CentralTimeline.jsx` e `timeline.js` separam Backend/Frontend em um eixo unico e alternam Historico por indice |
+| Download seguro | `resolveBackupDownload` valida catalogo, ID, raiz real, arquivo regular, tamanho e streaming autenticado |
+| Lista de tarefas | `taskPresentation.jsx` centraliza tipos/icones e os grupos `ACTIVE/PAUSED` e `COMPLETED/CANCELED` |
+| Dashboard | `dashboardDetails` usa join da tarefa vinculada e `COUNT(*) OVER()` com paginacao, sem N+1 |
+| Historico de usuario | backend limita 21 e o modal pagina sete itens sem recriacao |
+| GitHub | migration 015 adiciona `technical_area` e reinicializa snapshots para formula v3 |
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|

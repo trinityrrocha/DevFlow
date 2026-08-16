@@ -1,10 +1,11 @@
 # Roadmap inicial
 
-## Marco `0.6.29-alpha`
+## Marco `0.6.30-alpha`
 
-- homologar a gestao administrativa de backups e o WebUpdater sem backup pre-update;
-- validar restore com backup de seguranca na VPS;
-- confirmar rollback operacional sem afirmacao de restore de dados.
+- homologar download de backup com arquivo real e permissoes `root:devflow-ops 0640` na VPS;
+- validar timelines, tabs de tarefas, SMTP e drill-down do Dashboard com dados reais em desktop/mobile e tema claro/escuro;
+- aplicar a migration 015 e confirmar a recomposicao dos snapshots de metricas;
+- manter restore, update e rollback operacional sob homologacao separada.
 
 ## Marco `0.6.25-alpha`
 

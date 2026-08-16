@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-12. Versao: `0.6.29-alpha`.
+Data de corte: 2026-08-16. Versao: `0.6.30-alpha`.
+
+Revisao 0.6.30 implementada localmente: timelines técnicas usam um eixo central com lados Backend/Frontend; Histórico alterna por índice sem alterar a ordenação cronológica; o stepper perdeu o card externo. Backups podem ser transmitidos por endpoint Super Admin usando catálogo sanitizado, raiz canônica, arquivo regular, tamanho validado e streaming. Lista de tarefas, SMTP, histórico administrativo e Dashboard receberam os novos contratos de UX, com detalhes paginados em uma consulta SQL por indicador. Navegador autenticado, PostgreSQL/Docker reais e VPS permanecem pendentes de homologação do usuário.
 
 Revisao 0.6.27 implementada localmente: estados do catalogo de backup e estados operacionais foram separados; a reconciliacao de auditoria passou a isolar pedidos historicos invalidos sem mascarar catalogos corrompidos; mensagens terminais sao especificas por operacao. O bootstrap de tema agora e um recurso estatico same-origin executado no `head`, mantendo a CSP `script-src 'self'` sem `unsafe-inline`. A VPS permanece pendente de homologacao do usuario.
 

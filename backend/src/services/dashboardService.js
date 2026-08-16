@@ -9,7 +9,9 @@ async function calculateGeneral(client, companyId) {
               COUNT(*) FILTER (WHERE state='PAUSED')::integer AS paused_tasks,
               COUNT(*) FILTER (WHERE kind='BUG')::integer AS total_bugs,
               COUNT(*) FILTER (WHERE kind='BUG' AND state='COMPLETED')::integer AS resolved_bugs,
-              COUNT(*) FILTER (WHERE kind='BUG' AND state NOT IN ('COMPLETED','CANCELED'))::integer AS pending_bugs
+              COUNT(*) FILTER (WHERE kind='BUG' AND state NOT IN ('COMPLETED','CANCELED'))::integer AS pending_bugs,
+              COUNT(*) FILTER (WHERE kind='BUG' AND related_task_id IS NOT NULL AND bug_area IN ('BACKEND','BOTH') AND EXISTS (SELECT 1 FROM tasks parent WHERE parent.id=tasks.related_task_id AND parent.company_id=tasks.company_id AND parent.deleted_at IS NULL))::integer AS backend_bugs,
+              COUNT(*) FILTER (WHERE kind='BUG' AND related_task_id IS NOT NULL AND bug_area IN ('FRONTEND','BOTH') AND EXISTS (SELECT 1 FROM tasks parent WHERE parent.id=tasks.related_task_id AND parent.company_id=tasks.company_id AND parent.deleted_at IS NULL))::integer AS frontend_bugs
        FROM tasks WHERE company_id=$1 AND deleted_at IS NULL`,
       [companyId]
     ),
@@ -196,11 +198,11 @@ async function refreshCompany(companyId) {
         generated_at: new Date().toISOString(),
         general,
         priority_weights: Object.fromEntries(weights.rows.map((row) => [row.code, Number(row.weight)])),
-        formula_version: 2
+        formula_version: 3
       };
       await client.query(
         `INSERT INTO company_metric_snapshots (company_id,payload,formula_version,calculated_at)
-         VALUES ($1,$2,2,CURRENT_TIMESTAMP)
+         VALUES ($1,$2,3,CURRENT_TIMESTAMP)
          ON CONFLICT (company_id) DO UPDATE SET payload=EXCLUDED.payload,
            formula_version=EXCLUDED.formula_version,calculated_at=CURRENT_TIMESTAMP`,
         [companyId, payload]
@@ -258,14 +260,16 @@ async function dashboard(user) {
               COUNT(*) FILTER (WHERE t.state='PAUSED')::integer AS paused_tasks,
               COUNT(*) FILTER (WHERE t.kind='BUG')::integer AS total_bugs,
               COUNT(*) FILTER (WHERE t.kind='BUG' AND t.state='COMPLETED')::integer AS resolved_bugs,
-              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.state NOT IN ('COMPLETED','CANCELED'))::integer AS pending_bugs
+              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.state NOT IN ('COMPLETED','CANCELED'))::integer AS pending_bugs,
+              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.related_task_id IS NOT NULL AND t.bug_area IN ('BACKEND','BOTH') AND EXISTS (SELECT 1 FROM tasks parent WHERE parent.id=t.related_task_id AND parent.company_id=t.company_id AND parent.deleted_at IS NULL))::integer AS backend_bugs,
+              COUNT(*) FILTER (WHERE t.kind='BUG' AND t.related_task_id IS NOT NULL AND t.bug_area IN ('FRONTEND','BOTH') AND EXISTS (SELECT 1 FROM tasks parent WHERE parent.id=t.related_task_id AND parent.company_id=t.company_id AND parent.deleted_at IS NULL))::integer AS frontend_bugs
        FROM tasks t JOIN workflow_stages s ON s.id=t.current_stage_id WHERE ${visible}`,
       [companyId, user.id]
     )).rows[0];
     return {
       generated_at: new Date().toISOString(),
       general: { ...counts, average_completion_seconds: 0, average_by_stage: [], distributions: { priority: [], environment: [], kind: [] } },
-      priority_weights: {}, formula_version: 2, developers: [],
+      priority_weights: {}, formula_version: 3, developers: [],
       refresh: { status: 'FILTERED' }
     };
   }
@@ -282,12 +286,12 @@ async function dashboard(user) {
     generated_at: null,
     general: {
       total_tasks: 0, completed_tasks: 0, active_tasks: 0, paused_tasks: 0,
-      total_bugs: 0, resolved_bugs: 0, pending_bugs: 0,
+      total_bugs: 0, resolved_bugs: 0, pending_bugs: 0, backend_bugs: 0, frontend_bugs: 0,
       average_completion_seconds: 0, average_by_stage: [],
       distributions: { priority: [], environment: [], kind: [] }
     },
     priority_weights: {},
-    formula_version: 2
+    formula_version: 3
   };
   return {
     ...payload,
@@ -296,4 +300,59 @@ async function dashboard(user) {
   };
 }
 
-module.exports = { calculateGeneral, calculateDevelopers, refreshCompany, refreshPending, dashboard };
+const DETAIL_FILTERS = Object.freeze({
+  total_tasks: 'TRUE',
+  completed_tasks: "t.state='COMPLETED'",
+  active_tasks: "t.state='ACTIVE'",
+  paused_tasks: "t.state='PAUSED'",
+  total_bugs: "t.kind='BUG'",
+  resolved_bugs: "t.kind='BUG' AND t.state='COMPLETED'",
+  pending_bugs: "t.kind='BUG' AND t.state NOT IN ('COMPLETED','CANCELED')",
+  backend_bugs: "t.kind='BUG' AND t.related_task_id IS NOT NULL AND t.bug_area IN ('BACKEND','BOTH') AND parent.deleted_at IS NULL",
+  frontend_bugs: "t.kind='BUG' AND t.related_task_id IS NOT NULL AND t.bug_area IN ('FRONTEND','BOTH') AND parent.deleted_at IS NULL"
+});
+
+async function dashboardDetails(user, metric, { page = 1, limit = 20 } = {}) {
+  const metricFilter = DETAIL_FILTERS[metric];
+  if (!metricFilter) return null;
+  const administrator = user.is_super_admin === true || user.roles?.includes('ADMIN') || user.permissions?.includes('tasks.manage');
+  const values = [user.company_id];
+  let visibility = 'TRUE';
+  if (!administrator) {
+    values.push(user.id);
+    visibility = `(
+      ((UPPER(stage.code)='ROADMAP' OR LOWER(TRIM(stage.name))='roadmap') AND t.created_by=$2)
+      OR ((UPPER(stage.code)<>'ROADMAP' AND LOWER(TRIM(stage.name))<>'roadmap') AND (
+        $2::uuid IN (t.created_by,t.requester_id,t.backend_assignee_id,t.frontend_assignee_id)
+        OR EXISTS (SELECT 1 FROM project_responsibles pr WHERE pr.company_id=t.company_id AND pr.project_id=t.project_id AND pr.user_id=$2)
+      ))
+    )`;
+  }
+  const safePage = Math.max(1, page);
+  const safeLimit = Math.min(50, Math.max(1, limit));
+  values.push(safeLimit, (safePage - 1) * safeLimit);
+  const limitParam = `$${values.length - 1}`;
+  const offsetParam = `$${values.length}`;
+  const side = metric === 'backend_bugs' ? "'BACKEND'" : metric === 'frontend_bugs' ? "'FRONTEND'" : 'NULL::text';
+  const assignee = metric === 'backend_bugs' ? 'backend_user.name' : metric === 'frontend_bugs' ? 'frontend_user.name' : 'NULL::text';
+  const result = await db.query(
+    `SELECT COUNT(*) OVER()::integer AS total,
+            CASE WHEN t.kind='BUG' AND parent.id IS NOT NULL THEN parent.id ELSE t.id END AS task_id,
+            CASE WHEN t.kind='BUG' AND parent.id IS NOT NULL THEN 'DF-' || LPAD(parent.task_number::text,6,'0') ELSE 'DF-' || LPAD(t.task_number::text,6,'0') END AS task_code,
+            t.id AS record_id,'DF-' || LPAD(t.task_number::text,6,'0') AS record_code,
+            t.title,t.kind,t.state,${side} AS side,${assignee} AS assignee_name,
+            CASE WHEN parent.id IS NOT NULL THEN parent.title ELSE NULL END AS related_task_title
+     FROM tasks t
+     JOIN workflow_stages stage ON stage.id=t.current_stage_id
+     LEFT JOIN tasks parent ON parent.id=t.related_task_id AND parent.company_id=t.company_id
+     LEFT JOIN users backend_user ON backend_user.id=parent.backend_assignee_id
+     LEFT JOIN users frontend_user ON frontend_user.id=parent.frontend_assignee_id
+     WHERE t.company_id=$1 AND t.deleted_at IS NULL AND (${metricFilter}) AND (${visibility})
+     ORDER BY t.created_at DESC,t.id DESC LIMIT ${limitParam} OFFSET ${offsetParam}`,
+    values
+  );
+  const total = Number(result.rows[0]?.total || 0);
+  return { metric, items: result.rows.map(({ total: _total, ...item }) => item), pagination: { page: safePage, limit: safeLimit, total, total_pages: Math.ceil(total / safeLimit) } };
+}
+
+module.exports = { DETAIL_FILTERS, calculateGeneral, calculateDevelopers, refreshCompany, refreshPending, dashboard, dashboardDetails };

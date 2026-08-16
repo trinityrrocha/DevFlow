@@ -22,6 +22,8 @@ O Compose inclui esse numero, e nao o nome, em `group_add` de `backend` e `updat
 | `status/` | `root:<ops>` | `2750` | le status | escreve |
 | request/status JSON | `root:<ops>` apos consumo | `0640` | le | le/escreve |
 | `backup-catalog.json` | `root:<ops>` | `0640` | le | escreve |
+| raiz `backups/` | `root:<ops>` | `0750` | atravessa em bind read-only | administra |
+| `devflow-*.dfbackup` | `root:<ops>` | `0640` | le por endpoint Super Admin | cria/verifica/restaura/exclui |
 | logs e validacoes | `root:root` | `0600` | sem acesso | escreve |
 
 O bit setgid nos diretorios garante heranca do grupo. Nenhum caminho usa `0777`, o backend continua non-root e nao recebe Docker socket.
@@ -37,7 +39,7 @@ Na instalacao, no inicio do daemon e antes de cada update, a reconciliacao perco
 - `backup-catalog.json`;
 - logs e validacoes apenas para reafirmar `root:root 0600`.
 
-Backups, configuracoes, secrets, anexos e o restante de `/opt/devflow` nao sao alterados. O escritor da release nova repete essa reconciliacao restrita para permitir que o proprio ciclo 0.6.28 → 0.6.29 corrija artefatos antigos antes de publicar o status terminal.
+Para suportar download administrativo, o daemon reconcilia adicionalmente apenas a raiz `/opt/devflow/backups` e arquivos regulares que correspondam ao padrão fechado `devflow-????????T??????Z-????????.dfbackup`. Configuracoes, secrets, anexos e o restante de `/opt/devflow` nao sao alterados. O escritor da release nova repete a reconciliacao operacional para permitir que o proprio ciclo corrija artefatos antigos antes de publicar o status terminal.
 
 ## Full Password
 

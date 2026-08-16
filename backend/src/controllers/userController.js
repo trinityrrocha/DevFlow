@@ -67,7 +67,7 @@ async function getUser(req, res) {
   const history = await db.query(
     `SELECT operation,new_values,created_at FROM audit_events
      WHERE company_id=$1 AND entity_type='USER' AND entity_id=$2
-     ORDER BY created_at DESC LIMIT 20`,
+     ORDER BY created_at DESC LIMIT 21`,
     [req.user.company_id, req.params.id]
   );
   res.json({ user: withAccessLevel(user), history: history.rows });

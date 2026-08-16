@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const path = require('node:path');
 const env = require('../config/env');
 const { AppError } = require('../utils/errors');
 
@@ -61,7 +62,32 @@ function listBackups(options) {
   return Object.freeze({ retentionDays: env.BACKUP_RETENTION_DAYS, backups: readCatalog(options) });
 }
 
+function resolveBackupDownload(id, {
+  filesystem = fs,
+  catalogFile = env.DEVFLOW_BACKUP_CATALOG_FILE,
+  backupRoot = env.DEVFLOW_BACKUP_DIR
+} = {}) {
+  const backup = assertBackupExists(id, { filesystem, catalogFile });
+  try {
+    const canonicalRoot = filesystem.realpathSync(backupRoot);
+    const rootStat = filesystem.lstatSync(canonicalRoot);
+    if (!rootStat.isDirectory()) throw new Error('backup-root-not-directory');
+    const candidate = path.resolve(canonicalRoot, backup.filename);
+    if (path.dirname(candidate) !== canonicalRoot) throw new Error('backup-path-outside-root');
+    const candidateStat = filesystem.lstatSync(candidate);
+    if (!candidateStat.isFile() || candidateStat.isSymbolicLink()) throw new Error('backup-file-unsafe');
+    const canonicalFile = filesystem.realpathSync(candidate);
+    const fileStat = filesystem.lstatSync(canonicalFile);
+    if (path.dirname(canonicalFile) !== canonicalRoot || !fileStat.isFile()) throw new Error('backup-file-unsafe');
+    if (fileStat.size !== backup.sizeBytes) throw new Error('backup-size-mismatch');
+    return Object.freeze({ backup, file: canonicalFile, size: fileStat.size });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('BACKUP_FILE_UNAVAILABLE', 'Arquivo de backup indisponivel para download.', 404);
+  }
+}
+
 module.exports = {
   BACKUP_FILENAME, BACKUP_ID, BACKUP_STATES, parseBackupEntry,
-  readCatalog, assertBackupExists, listBackups
+  readCatalog, assertBackupExists, listBackups, resolveBackupDownload
 };

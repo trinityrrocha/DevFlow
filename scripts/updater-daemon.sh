@@ -20,6 +20,12 @@ updater_processing_blocked() { [[ -e "$INSTALLATION_GATE_FILE" ]]; }
 devflow_resolve_runtime_ops_gid || { log 'GID operacional indisponivel; daemon recusou iniciar.'; exit 1; }
 devflow_reconcile_operational_artifacts "$REQUEST_ROOT" "$DEVFLOW_OPS_GID" \
   || { log 'Contrato de permissoes operacional invalido; daemon recusou iniciar.'; exit 1; }
+if [[ -d /opt/devflow/backups && ! -L /opt/devflow/backups ]]; then
+  chgrp "$DEVFLOW_OPS_GID" /opt/devflow/backups
+  chmod 0750 /opt/devflow/backups
+  find /opt/devflow/backups -maxdepth 1 -type f -name 'devflow-????????T??????Z-????????.dfbackup' \
+    -exec chgrp "$DEVFLOW_OPS_GID" {} + -exec chmod 0640 {} +
+fi
 mkdir -p /run/lock/devflow
 touch "$REQUEST_ROOT/daemon.ready"
 chown root:root "$REQUEST_ROOT/daemon.ready"

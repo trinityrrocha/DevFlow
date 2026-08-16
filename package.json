@@ -1,6 +1,6 @@
 {
   "name": "devflow",
-  "version": "0.6.29-alpha",
+  "version": "0.6.30-alpha",
   "private": true,
   "workspaces": [
     "backend",

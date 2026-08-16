@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.30-alpha] - 2026-08-16
+
+### Adicionado
+
+- download autenticado de backups por streaming, com resolução por catálogo, raiz canônica, proteção contra traversal/symlink e bind mount somente leitura;
+- timelines técnicas de Testes, GitHub e Anexos nos lados Backend/Frontend, além de Histórico alternado sem reordenação visual;
+- abas Abertas/Concluídas, ícones centralizados por tipo e indicadores acessíveis de cronômetro na lista de tarefas;
+- cards Bugs Backend/Frontend e drill-down paginado dos indicadores operacionais do Dashboard, atribuindo o bug ao responsável da tarefa vinculada;
+- classificação persistente `technical_area` para anotações GitHub pela migration 015.
+
+### Alterado
+
+- stepper de etapas sem card externo e com menor ocupação vertical;
+- SMTP reorganizado em três linhas responsivas, com visibilidade controlada da senha;
+- histórico administrativo limitado a 21 eventos, paginado de sete em sete dentro do modal;
+- backups criptografados permanecem restritos, agora com leitura `0640` exclusiva ao grupo operacional usado pelo backend.
+
+### Validado localmente
+
+- cobertura de segurança de download, contratos de timeline, ciclo de tarefas, dashboard sem N+1, SMTP e paginação de usuários;
+- homologação visual autenticada e operação real na VPS permanecem dependentes do ambiente do usuário.
+
 ## [0.6.29-alpha] - 2026-08-12
 
 - corrige o `EACCES` entre updater root e backend non-root por um GID operacional compartilhado e persistido;

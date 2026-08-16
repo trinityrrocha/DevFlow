@@ -41,6 +41,7 @@ if [[ "${DEVFLOW_OPERATION_LOCK_HELD:-false}" != true ]]; then
   flock -n 8 || { echo 'Outra operacao DevFlow esta em andamento.' >&2; exit 1; }
 fi
 ARCHIVE_DIR="${BACKUP_ARCHIVE_DIR:-/opt/devflow/backups}"
+BACKUP_READ_GID="${DEVFLOW_OPS_GID:-}"
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/opt/devflow/config/backup.passphrase}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 UPLOAD_SOURCE="${DEVFLOW_UPLOADS_PATH:-devflow_devflow_uploads}"
@@ -49,6 +50,7 @@ compose_files
 
 [[ -r "$PASSPHRASE_FILE" ]] || { echo "Passphrase de backup não encontrada em $PASSPHRASE_FILE." >&2; exit 1; }
 [[ "$ARCHIVE_DIR" = /* && "$ARCHIVE_DIR" != "/" ]] || { echo "Diretório de backup inválido." >&2; exit 1; }
+[[ "$BACKUP_READ_GID" =~ ^[1-9][0-9]{0,9}$ ]] || { echo "GID de leitura dos backups inválido." >&2; exit 1; }
 [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "Retenção inválida." >&2; exit 1; }
 if [[ "$UPLOAD_SOURCE" == /* ]]; then
   resolved_uploads="$(realpath -m "$UPLOAD_SOURCE")"
@@ -60,6 +62,8 @@ else
 fi
 
 mkdir -p -- "$ARCHIVE_DIR"
+chgrp "$BACKUP_READ_GID" "$ARCHIVE_DIR"
+chmod 0750 "$ARCHIVE_DIR"
 TEMP_DIR="$(mktemp -d "$ARCHIVE_DIR/.devflow-backup.XXXXXX")"
 cleanup() { rm -rf -- "$TEMP_DIR"; }
 trap cleanup EXIT
@@ -108,7 +112,8 @@ fi
   backend node scripts/cryptoEnvelope.js encrypt /work/payload.tar.gz "/work/$archive_name"
 
 mv -- "$TEMP_DIR/$archive_name" "$ARCHIVE_DIR/$archive_name"
-chmod 600 "$ARCHIVE_DIR/$archive_name"
+chgrp "$BACKUP_READ_GID" "$ARCHIVE_DIR/$archive_name"
+chmod 0640 "$ARCHIVE_DIR/$archive_name"
 find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'devflow-*.dfbackup' -mtime "+$RETENTION_DAYS" -delete
 if [[ -d "$ARCHIVE_DIR/.metadata" && ! -L "$ARCHIVE_DIR/.metadata" ]]; then
   find "$ARCHIVE_DIR/.metadata" -maxdepth 1 -type f -name '*.json' -mtime "+$RETENTION_DAYS" -delete

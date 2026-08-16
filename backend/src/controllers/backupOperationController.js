@@ -1,4 +1,4 @@
-const { listBackups, assertBackupExists } = require('../services/backupOperationService');
+const { listBackups, assertBackupExists, resolveBackupDownload } = require('../services/backupOperationService');
 const {
   assertQueueReady, createSignedRequest, persistRequest, getRequestStatus, backupIsInActiveOperation,
   queueDirectories, REQUEST_ID_PATTERN
@@ -9,6 +9,7 @@ const { AppError } = require('../utils/errors');
 const db = require('../config/database');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pipeline } = require('node:stream');
 
 const REQUESTED_AUDIT = Object.freeze({
   'create-backup': 'BACKUP_CREATE_REQUESTED', 'verify-backup': 'BACKUP_VERIFY_REQUESTED',
@@ -48,6 +49,22 @@ async function reconcileTerminalAudits(req, {
 async function getBackups(req, res, next) {
   try { await reconcileTerminalAudits(req); res.json(listBackups()); }
   catch (error) { next(error); }
+}
+
+async function download(req, res, next) {
+  try {
+    const resolved = resolveBackupDownload(req.params.id);
+    await recordAudit({ req, operation: 'BACKUP_DOWNLOADED', entityType: 'SYSTEM_BACKUP', entityId: resolved.backup.id, newValues: { backupId: resolved.backup.id, filename: resolved.backup.filename }, strict: true });
+    const encoded = encodeURIComponent(resolved.backup.filename);
+    res.status(200);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(resolved.size));
+    res.setHeader('Content-Disposition', `attachment; filename="${resolved.backup.filename}"; filename*=UTF-8''${encoded}`);
+    pipeline(fs.createReadStream(resolved.file), res, (error) => {
+      if (error && !res.headersSent) next(error);
+      else if (error) safeLogError('Falha no streaming de backup.', error);
+    });
+  } catch (error) { next(error); }
 }
 
 async function queue(req, res, next, operation, backupId = null) {
@@ -99,4 +116,4 @@ async function status(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { getBackups, create, verify, restore, remove, status, reconcileTerminalAudits };
+module.exports = { getBackups, download, create, verify, restore, remove, status, reconcileTerminalAudits };

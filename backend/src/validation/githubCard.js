@@ -13,6 +13,7 @@ const codeContent = z.string()
   .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_CODE_BYTES, 'O codigo excede o limite de 200 KB.');
 
 const githubFields = {
+  technical_area: z.enum(['BACKEND', 'FRONTEND', 'BOTH']).optional(),
   title: z.string().trim().min(2).max(160).optional(),
   repository_url: optionalUrl,
   branch: z.string().trim().max(255).nullable().optional(),

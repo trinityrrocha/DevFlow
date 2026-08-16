@@ -11,6 +11,7 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
   const list = read('src/pages/Tasks.jsx');
   const editor = read('src/components/CodeEditor.jsx');
   const monaco = read('src/services/monaco.js');
+  const timeline = read('src/components/CentralTimeline.jsx');
   const frontendPackage = JSON.parse(read('package.json'));
 
   it('usa um unico toggle reativo sem botao Cancelar', () => {
@@ -39,10 +40,12 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
 
   it('renderiza QA e anexos em timelines centralizadas com dimensoes exatas', () => {
     expect(detail).toContain('Registrar Novo Teste');
-    expect(detail).toContain('max-w-[490px]');
+    expect(detail).toContain('max-w-[calc(100vw-3rem)]');
     expect(detail).toContain('w-[490px]');
     expect(detail).toContain('h-[171px] w-[490px]');
-    expect(detail).toContain('relative mx-auto w-[538px] border-l border-slate-200');
+    expect(detail).toContain('<CentralTimeline');
+    expect(timeline).toContain("md:grid-cols-[minmax(0,1fr)_40px_minmax(0,1fr)]");
+    expect(timeline).toContain('data-timeline-side={side}');
     expect(detail).toContain('aria-labelledby="task-test-title"');
     for (const field of ['validated_profiles', 'environment', 'backend_info', 'frontend_info', 'testing_notes']) expect(detail).toContain(field);
     expect(detail).toContain('<CheckboxGroup legend="Ambiente"');
@@ -53,10 +56,12 @@ describe('experiencia de tarefas e anotacoes GitHub', () => {
     expect(detail).toContain('qaComponentOptions(form.frontend_info)');
     expect(detail).toContain("body.append('sourceSection', 'testes')");
     expect(detail).toContain("body.append('sourceSection', 'comentarios')");
-    expect(detail).toContain("body.append('sourceSection', 'geral')");
+    expect(detail).toContain("body.append('sourceSection', sourceSection)");
+    expect(detail).toContain('<option value="backend">Backend</option>');
+    expect(detail).toContain('<option value="frontend">Frontend</option>');
     expect(detail).toContain('attachmentSourceLabel(item.source_section)');
-    expect(detail).toContain('const orderedTests = [...data.tests].sort');
-    expect(detail).toContain('new Date(b.created_at) - new Date(a.created_at)');
+    expect(detail).toContain('const orderedTests = qaTimelineItems(data.tests)');
+    expect(read('src/utils/timeline.js')).toContain('new Date(b.created_at) - new Date(a.created_at)');
   });
 
   it('remove os perfis proibidos das opções selecionáveis de QA', () => {

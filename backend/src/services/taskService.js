@@ -201,6 +201,8 @@ async function listTasks(user, filters) {
     )`);
   }
   if (filters.state) add('t.state=?', filters.state);
+  if (filters.lifecycle === 'open') conditions.push("t.state IN ('ACTIVE','PAUSED')");
+  if (filters.lifecycle === 'completed') conditions.push("t.state IN ('COMPLETED','CANCELED')");
   if (filters.stage) add('(s.id::text=? OR s.code=?)', filters.stage);
   if (filters.kind) add('t.kind=?', filters.kind);
   if (filters.priority) add('(p.id::text=? OR p.code=?)', filters.priority);
@@ -1015,11 +1017,11 @@ async function saveGithub(req, taskId, payload, cardId = null) {
       const value = (field) => Object.prototype.hasOwnProperty.call(payload, field) ? payload[field] : before[field];
       github = (await client.query(
         `UPDATE task_github_metadata SET
-           title=$4,repository_url=$5,branch=$6,commit_sha=$7,pull_request_url=$8,
-           release=$9,notes_code=$10,file_name=$11,language=$12,code_content=$13,
-           explanation=$14,updated_by=$15,updated_at=CURRENT_TIMESTAMP
+           technical_area=$4,title=$5,repository_url=$6,branch=$7,commit_sha=$8,pull_request_url=$9,
+           release=$10,notes_code=$11,file_name=$12,language=$13,code_content=$14,
+           explanation=$15,updated_by=$16,updated_at=CURRENT_TIMESTAMP
          WHERE id=$1 AND task_id=$2 AND company_id=$3 AND deleted_at IS NULL RETURNING *`,
-        [cardId, taskId, companyId, value('title'), value('repository_url'), value('branch'),
+        [cardId, taskId, companyId, value('technical_area'), value('title'), value('repository_url'), value('branch'),
           value('commit_sha'), value('pull_request_url'), value('release'), value('notes_code'),
           value('file_name'), value('language'), value('code_content'), value('explanation'), req.user.id]
       )).rows[0];
@@ -1027,11 +1029,11 @@ async function saveGithub(req, taskId, payload, cardId = null) {
       const title = payload.title || payload.file_name || 'Anotacao GitHub';
       github = (await client.query(
         `INSERT INTO task_github_metadata (
-           company_id,task_id,title,repository_url,branch,commit_sha,pull_request_url,
+           company_id,task_id,technical_area,title,repository_url,branch,commit_sha,pull_request_url,
            release,notes_code,file_name,language,code_content,explanation,created_by,author_id,
            stage_id,updated_by
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$15,$14) RETURNING *`,
-        [companyId, taskId, title, payload.repository_url || null, payload.branch || null,
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$15) RETURNING *`,
+        [companyId, taskId, payload.technical_area || 'BOTH', title, payload.repository_url || null, payload.branch || null,
           payload.commit_sha || null, payload.pull_request_url || null, payload.release || null,
           payload.notes_code || null, payload.file_name || null, payload.language || 'plaintext',
           payload.code_content || null, payload.explanation || null, req.user.id, task.current_stage_id]

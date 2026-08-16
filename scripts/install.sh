@@ -761,6 +761,8 @@ install -d -m 0750 "$DEVFLOW_INSTALL_ROOT" "$DEVFLOW_CONFIG_ROOT" "$DEVFLOW_CONF
   "$DEVFLOW_STATE_ROOT" "$DEVFLOW_LOG_ROOT" "$DEVFLOW_INSTALL_ROOT/backups" "$DEVFLOW_INSTALL_ROOT/releases" \
   "$DEVFLOW_INSTALL_ROOT/storage/postgres" "$DEVFLOW_INSTALL_ROOT/storage/uploads" \
   /run/lock/devflow
+chgrp "$DEVFLOW_OPS_GID" "$DEVFLOW_INSTALL_ROOT/backups"
+chmod 0750 "$DEVFLOW_INSTALL_ROOT/backups"
 devflow_reconcile_operational_artifacts "$DEVFLOW_INSTALL_ROOT/updater" "$DEVFLOW_OPS_GID" \
   || die 'Nao foi possivel preparar o contrato de permissoes da fila operacional.'
 install -d -m 0700 "$DEVFLOW_INSTALL_ROOT/tmp"

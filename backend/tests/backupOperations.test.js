@@ -2,11 +2,12 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readCatalog, assertBackupExists, listBackups } = require('../src/services/backupOperationService');
+const { readCatalog, assertBackupExists, listBackups, resolveBackupDownload } = require('../src/services/backupOperationService');
 const {
   createSignedRequest, backupIsInActiveOperation, getRequestStatus, operationMessage
 } = require('../src/services/operationalRequestService');
 const { reconcileTerminalAudits } = require('../src/controllers/backupOperationController');
+const { requireSuperAdmin } = require('../src/middleware/authMiddleware');
 
 describe('gestao administrativa de backups', () => {
   const filename = 'devflow-20260811T220000Z-deadbeef.dfbackup';
@@ -63,6 +64,59 @@ describe('gestao administrativa de backups', () => {
       catch (error) { if (error.code !== 'EPERM') throw error; }
       fs.writeFileSync(target, JSON.stringify({ schemaVersion: 1, backups: [{ id, filename: '../../secret', sizeBytes: 1, createdAt: 'now', status: 'available' }] }));
       expect(() => readCatalog({ catalogFile: target })).toThrow(expect.objectContaining({ code: 'BACKUP_CATALOG_INVALID' }));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('resolve download somente dentro da raiz canonica e preserva o arquivo correto', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-backup-download-'));
+    try {
+      const catalogFile = makeCatalog(root);
+      const backupRoot = path.join(root, 'backups');
+      fs.mkdirSync(backupRoot);
+      const backupFile = path.join(backupRoot, filename);
+      fs.writeFileSync(backupFile, Buffer.alloc(1024, 7));
+      expect(resolveBackupDownload(id, { catalogFile, backupRoot })).toMatchObject({
+        backup: { id, filename }, file: fs.realpathSync(backupFile), size: 1024
+      });
+      expect(() => resolveBackupDownload('../etc/passwd', { catalogFile, backupRoot }))
+        .toThrow(expect.objectContaining({ code: 'BACKUP_ID_INVALID', status: 400 }));
+      expect(() => resolveBackupDownload('0'.repeat(32), { catalogFile, backupRoot }))
+        .toThrow(expect.objectContaining({ code: 'BACKUP_NOT_FOUND', status: 404 }));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('nega download administrativo para usuario sem privilegio de Super Admin', () => {
+    let denied;
+    requireSuperAdmin({ user: { is_super_admin: false } }, {}, (error) => { denied = error; });
+    expect(denied).toMatchObject({ code: 'SUPER_ADMIN_REQUIRED', status: 403 });
+  });
+
+  it('recusa symlink e arquivo cujo tamanho diverge do catalogo', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-backup-download-unsafe-'));
+    try {
+      const catalogFile = makeCatalog(root);
+      const backupRoot = path.join(root, 'backups');
+      fs.mkdirSync(backupRoot);
+      const backupFile = path.join(backupRoot, filename);
+      fs.writeFileSync(backupFile, 'adulterado');
+      expect(() => resolveBackupDownload(id, { catalogFile, backupRoot }))
+        .toThrow(expect.objectContaining({ code: 'BACKUP_FILE_UNAVAILABLE', status: 404 }));
+      fs.rmSync(backupFile);
+      const outside = path.join(root, 'outside.dfbackup');
+      fs.writeFileSync(outside, Buffer.alloc(1024));
+      try {
+        fs.symlinkSync(outside, backupFile);
+        expect(() => resolveBackupDownload(id, { catalogFile, backupRoot }))
+          .toThrow(expect.objectContaining({ code: 'BACKUP_FILE_UNAVAILABLE' }));
+      } catch (error) { if (error.code !== 'EPERM') throw error; }
+      fs.rmSync(backupFile, { force: true });
+      const inside = path.join(backupRoot, 'other.dfbackup');
+      fs.writeFileSync(inside, Buffer.alloc(1024));
+      try {
+        fs.symlinkSync(inside, backupFile);
+        expect(() => resolveBackupDownload(id, { catalogFile, backupRoot }))
+          .toThrow(expect.objectContaining({ code: 'BACKUP_FILE_UNAVAILABLE' }));
+      } catch (error) { if (error.code !== 'EPERM') throw error; }
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -185,6 +239,10 @@ describe('gestao administrativa de backups', () => {
     const daemon = fs.readFileSync(path.resolve(__dirname, '../../scripts/updater-daemon.sh'), 'utf8');
     const app = fs.readFileSync(path.resolve(__dirname, '../src/app.js'), 'utf8');
     expect(routes).toContain('requireAuth, requireSuperAdmin');
+    expect(routes).toContain("router.get('/:id/download', controller.download)");
+    expect(controller).toContain("res.setHeader('Content-Disposition'");
+    expect(controller).toContain('pipeline(fs.createReadStream(resolved.file), res');
+    expect(controller).not.toContain('readFileSync(resolved.file');
     expect(routes).toContain('sensitiveLimiter');
     expect(controller).toContain("confirmation !== 'RESTAURAR'");
     expect(controller).toContain("confirmation !== 'EXCLUIR'");

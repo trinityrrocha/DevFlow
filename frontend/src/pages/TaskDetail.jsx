@@ -6,10 +6,12 @@ import api, { errorMessage } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
 import StagePrerequisiteChecklist from '../components/StagePrerequisiteChecklist';
+import CentralTimeline from '../components/CentralTimeline';
 import { formatDate, formatDuration, label } from '../utils/formatters';
 import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
 import { CODE_LANGUAGES, codeLanguageLabel, resolveCodeLanguage } from '../utils/codeLanguages';
 import useEditorTheme from '../hooks/useEditorTheme';
+import { attachmentTimelineItems, githubTimelineItems, historyTimelineItems, qaTimelineItems } from '../utils/timeline';
 
 const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
@@ -130,7 +132,7 @@ export default function TaskDetail() {
         </div>
       </header>
 
-      <section className="card overflow-x-auto p-5"><WorkflowStepper stages={workflowStages} current={task.current_stage_id} state={task.state} /></section>
+      <section className="-mt-2 overflow-x-auto py-1" aria-label="Etapas da tarefa"><WorkflowStepper stages={workflowStages} current={task.current_stage_id} state={task.state} /></section>
 
       {!isRoadmapStage && <section className={`card p-5 ${task.is_overdue ? 'border-red-300' : ''}`} aria-label={`Tempos da etapa ${task.stage_name}`}>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">{[
@@ -317,7 +319,7 @@ function Tests({ data, user, mutate }) {
     || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const canRegisterTest = canOperate;
   const canChangeTest = (test) => canApprove || test.author_id === user.id;
-  const orderedTests = [...data.tests].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const orderedTests = qaTimelineItems(data.tests);
   const profileOptions = [...QA_ACCESS_PROFILES, ...systemProfiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile.name)).map((profile) => [profile.name, profile.name]), ...form.validated_profiles.filter((profile) => !QA_EXCLUDED_PROFILES.has(profile)).map((profile) => [profile, profile])]
     .filter((option, index, options) => options.findIndex(([value]) => value === option[0]) === index);
   const toggleGroupValue = (field, value, checked) => setForm((current) => ({
@@ -385,21 +387,16 @@ function Tests({ data, user, mutate }) {
           {canRegisterTest && <button type="button" onClick={() => openTest('create')} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Registrar Novo Teste</button>}
         </div>
         {orderedTests.length === 0 && <p className="mt-4 rounded-md bg-slate-50 p-4 text-center text-sm text-slate-500">Nenhum teste registrado.</p>}
-        {orderedTests.length > 0 && <div className="mt-4 overflow-x-auto pb-1"><ol className="relative mx-auto w-[538px] border-l border-slate-200" aria-label="Linha do tempo dos testes">
-          {orderedTests.map((test) => (
-            <li key={test.id} className="relative mb-6 ml-6 last:mb-0">
-              <span className={`absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white ${test.status === 'APPROVED' ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
-              <article onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-[490px] max-w-[490px] cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+        {orderedTests.length > 0 && <div className="mt-4 overflow-x-auto pb-1"><CentralTimeline items={orderedTests} ariaLabel="Linha do tempo dos testes por Backend e Frontend" renderItem={(test, { sideLabel }) => (
+              <article onClick={() => openTest('view', test)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTest('view', test); }} role="button" tabIndex={0} className="w-[490px] max-w-[calc(100vw-3rem)] cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-start justify-between gap-3">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${test.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{test.status === 'APPROVED' ? 'Aprovado' : 'Não Aprovado'}</span>
+                <div className="flex flex-wrap gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${test.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{test.status === 'APPROVED' ? 'Aprovado' : 'Não Aprovado'}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">{sideLabel}: {test.componentInfo}</span></div>
                 {canChangeTest(test) && <div className="flex gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); openTest('edit', test); }} className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50" aria-label="Editar teste"><Pencil className="h-4 w-4" /></button><button type="button" onClick={(event) => removeTest(event, test)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" aria-label="Excluir teste"><Trash2 className="h-4 w-4" /></button></div>}
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">{formatShortDateTime(test.created_at)}</p>
               <p className="mt-1 text-sm text-slate-500">{test.created_by_name}</p>
               </article>
-            </li>
-          ))}
-        </ol></div>}
+          )} /></div>}
       </section>
       <section className="max-w-xl">
         {canApprove && task.requirements?.approval && (
@@ -437,7 +434,7 @@ function Tests({ data, user, mutate }) {
 
 function Github({ data, user, mutate, saving }) {
   const { task } = data;
-  const emptyGithub = { repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', file_name: '', language: 'auto', code_content: '', explanation: '' };
+  const emptyGithub = { technical_area: 'BACKEND', repository_url: '', branch: '', commit_sha: '', pull_request_url: '', release: '', file_name: '', language: 'auto', code_content: '', explanation: '' };
   const [form, setForm] = useState(emptyGithub);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState('');
@@ -453,6 +450,7 @@ function Github({ data, user, mutate, saving }) {
       || (task.responsibility === 'FRONTEND_ASSIGNEE' && user.id === task.frontend_assignee_id);
   const canDelete = user.permissions?.includes('tasks.manage');
   const cards = data.github_cards || (data.github ? [data.github] : []);
+  const timelineCards = githubTimelineItems(cards);
   const normalizeCard = (card) => ({ ...emptyGithub, ...card, language: card.language || 'plaintext', repository_url: card.repository_url || '', branch: card.branch || '', commit_sha: card.commit_sha || '', pull_request_url: card.pull_request_url || '', release: card.release || '', file_name: card.file_name || '', code_content: card.code_content || '', explanation: card.explanation || card.notes_code || '' });
   const effectiveLanguage = resolveCodeLanguage(form.file_name, form.language);
   const close = () => { codeEditorRef.current = null; setOpen(false); setFormError(''); window.setTimeout(() => lastTrigger.current?.focus(), 0); };
@@ -486,7 +484,7 @@ function Github({ data, user, mutate, saving }) {
     if (!codeContent.trim()) { setFormError('Informe o codigo da anotacao.'); return; }
     if (new TextEncoder().encode(codeContent).byteLength > 200000) { setFormError('O codigo excede o limite de 200 KB.'); return; }
     setFormError('');
-    const payload = { repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: effectiveLanguage, code_content: codeContent, explanation: form.explanation || null };
+    const payload = { technical_area: form.technical_area, repository_url: form.repository_url || null, branch: form.branch || null, commit_sha: form.commit_sha || null, pull_request_url: form.pull_request_url || null, release: form.release || null, file_name: form.file_name || null, language: effectiveLanguage, code_content: codeContent, explanation: form.explanation || null };
     const saved = await mutate(() => form.id ? api.patch(`/tasks/${task.id}/github/${form.id}`, payload) : api.post(`/tasks/${task.id}/github`, payload), form.id ? 'Registro GitHub atualizado.' : 'Registro GitHub adicionado.');
     if (saved) close();
   };
@@ -508,16 +506,18 @@ function Github({ data, user, mutate, saving }) {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800"><span>Os vinculos tecnicos sao registrados manualmente e preservados no dossie da tarefa.</span>{canEdit && <button type="button" onClick={(event) => show(event)} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Adicionar anotacao</button>}</div>
-      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <div className="space-y-4">{cards.map((card) => <article key={card.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {cards.length === 0 ? <p className="rounded-md bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro GitHub.</p> : <CentralTimeline items={timelineCards} ariaLabel="Linha do tempo GitHub por Backend e Frontend" renderItem={(card, { sideLabel }) => <article className="w-[490px] max-w-[calc(100vw-3rem)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"><div className="min-w-0"><p className="flex items-center gap-2 truncate text-sm font-semibold"><FileCode2 className="h-4 w-4 text-indigo-600" />{card.file_name || card.title || 'Trecho sem arquivo'}</p><p className="mt-1 text-xs text-slate-500">{codeLanguageLabel(card.language)} · {card.author_name || 'Autor nao identificado'} · {formatDate(card.created_at || card.updated_at)}</p><p className="mt-1 text-xs text-slate-500">Etapa na criacao: {card.stage_name || 'Nao registrada'} · Etapa atual: {task.stage_name}</p></div><div className="flex flex-wrap items-center gap-2">{card.code_content && <button type="button" onClick={(event) => copyCode(event, card)} className="btn-secondary h-8 px-3 text-xs"><Copy className="mr-1.5 h-3.5 w-3.5" />{copied === card.id ? 'Codigo copiado' : copied === `error:${card.id}` ? 'Falha ao copiar' : 'Copiar codigo'}</button>}{card.code_content && <button type="button" aria-expanded={expanded === card.id} onClick={() => setExpanded(expanded === card.id ? '' : card.id)} className="btn-secondary h-8 px-3 text-xs">{expanded === card.id ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}{expanded === card.id ? 'Recolher' : 'Visualizar codigo'}</button>}{canEdit && <button type="button" onClick={(event) => show(event, card)} className="btn-secondary h-8 px-3 text-xs"><Pencil className="mr-1 h-3.5 w-3.5" />Editar</button>}{canDelete && <button type="button" disabled={saving} onClick={(event) => remove(event, card)} className="btn-danger h-8 px-3 text-xs"><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</button>}</div></header>
+        <p className="border-b border-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">Área técnica: {sideLabel}</p>
         {card.code_content && expanded === card.id && <div className="border-b border-slate-200"><MonacoEditor height="240px" language={card.language || 'plaintext'} value={card.code_content} readOnly theme={editorTheme} options={{ overviewRulerLanes: 0 }} /></div>}
         {card.explanation && <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-6 text-slate-700">{card.explanation}</p>}
         {(card.repository_url || card.branch || card.commit_sha) && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{card.repository_url || 'Repositorio nao informado'}{card.branch ? ` · ${card.branch}` : ''}{card.commit_sha ? ` · ${card.commit_sha}` : ''}</p>}
-      </article>)}</div>}
+      </article>} />}
       {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
         <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="github-dialog-title" className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
           <div className="flex items-center justify-between gap-3"><h2 id="github-dialog-title" className="text-lg font-semibold">{form.id ? 'Editar anotacao GitHub' : 'Adicionar anotacao GitHub'}</h2><button type="button" onClick={close} aria-label="Fechar" className="rounded-md p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
           <form onSubmit={save} className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium sm:col-span-2">Área técnica<select className="field mt-1 sm:max-w-xs" value={form.technical_area} onChange={(event) => setForm({ ...form, technical_area: event.target.value })}><option value="BACKEND">Backend</option><option value="FRONTEND">Frontend</option><option value="BOTH">Backend e Frontend</option></select></label>
             <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2 sm:items-end">
               <Input label="Nome ou caminho do arquivo" value={form.file_name} onChange={(fileName) => setForm({ ...form, file_name: fileName })} placeholder="backend/services/autenticacao.pas" maxLength={500} />
               <label className="text-sm font-medium">Linguagem<select className="field mt-1" value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>{CODE_LANGUAGES.map(([value, text]) => <option key={value} value={value}>{value === 'auto' ? `${text} — ${codeLanguageLabel(effectiveLanguage)} detectado` : text}</option>)}</select></label>
@@ -542,12 +542,13 @@ function Github({ data, user, mutate, saving }) {
 function Attachments({ data, user, mutate }) {
   const [file, setFile] = useState(null);
   const [description, setDescription] = useState('');
+  const [sourceSection, setSourceSection] = useState('backend');
   const upload = () => {
     if (!file) return;
     const body = new FormData();
     body.append('file', file);
     body.append('description', description);
-    body.append('sourceSection', 'geral');
+    body.append('sourceSection', sourceSection);
     mutate(() => api.post(`/tasks/${data.task.id}/attachments`, body), 'Anexo incluído.');
     setFile(null);
     setDescription('');
@@ -557,14 +558,11 @@ function Attachments({ data, user, mutate }) {
       <div className="rounded-lg border-2 border-dashed border-slate-300 p-5 text-center">
         <Upload className="mx-auto h-7 w-7 text-slate-400" />
         <input type="file" onChange={(e) => setFile(e.target.files[0] || null)} className="mt-3 text-sm" />
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field mt-3 max-w-md" />
+        <div className="mx-auto mt-3 grid max-w-md gap-3 sm:grid-cols-2"><input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" className="field" /><label className="sr-only" htmlFor="attachment-source">Origem técnica</label><select id="attachment-source" value={sourceSection} onChange={(event) => setSourceSection(event.target.value)} className="field"><option value="backend">Backend</option><option value="frontend">Frontend</option><option value="geral">Geral</option></select></div>
         <div><button type="button" disabled={!file} onClick={upload} className="btn-primary mt-3">Enviar anexo</button></div>
       </div>
-      <div className="overflow-x-auto pb-1"><ol className="relative mx-auto w-[538px] border-l border-slate-200" aria-label="Linha do tempo dos anexos">
-        {[...data.attachments].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((item) => (
-          <li key={item.id} className="relative mb-6 ml-6 last:mb-0">
-          <span className="absolute -left-8 mt-5 h-4 w-4 rounded-full border-2 border-white bg-indigo-500" aria-hidden="true" />
-          <article className="flex h-[171px] w-[490px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto pb-1"><CentralTimeline items={attachmentTimelineItems(data.attachments)} ariaLabel="Linha do tempo dos anexos por Backend e Frontend" renderItem={(item) => (
+          <article className="flex h-[171px] w-[490px] max-w-[calc(100vw-3rem)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <AttachmentPreview taskId={data.task.id} item={item} />
             <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
               <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="whitespace-nowrap text-sm font-semibold text-slate-700">{formatShortDateTime(item.created_at)}</p><p className="truncate text-xs text-slate-500">{item.created_by_name}</p></div><div className="flex shrink-0 gap-1">
@@ -575,9 +573,7 @@ function Attachments({ data, user, mutate }) {
               <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-800">{item.original_name}</p><p className="truncate text-xs text-slate-500">{Math.ceil(item.size_bytes / 1024)} KB{item.description ? ` · ${item.description}` : ''}</p></div>
             </div>
           </article>
-          </li>
-        ))}
-      </ol></div>
+        )} /></div>
     </div>
   );
 }
@@ -660,11 +656,9 @@ function AttachmentPreview({ taskId, item }) {
 }
 
 function History({ events, timerEvents = [] }) {
-  const combined = [...events, ...timerEvents.map((event) => ({ ...event, event_type: `TIMER_${event.event_type}`, description: `${event.previous_status || '—'} → ${event.new_status || '—'} · ativo ${formatSignedDuration(event.active_elapsed_seconds)}` }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const combined = historyTimelineItems(events, timerEvents);
   return (
-    <ol className="relative mx-auto max-w-3xl border-l border-slate-200">
-      {combined.map((event) => <li key={`${event.event_type}-${event.id}`} className="mb-6 ml-6"><span className="absolute -left-2 flex h-4 w-4 rounded-full border-2 border-white bg-indigo-500" /><div className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{event.event_type}</strong><span className="text-xs text-slate-400">{formatDate(event.created_at)}</span></div><p className="mt-1 text-sm text-slate-600">{event.description}</p><p className="mt-2 text-xs text-slate-400">por {event.actor_name}</p></div></li>)}
-    </ol>
+    <CentralTimeline items={combined} alternate ariaLabel="Linha do tempo histórica alternada em ordem cronológica" renderItem={(event) => <article className="w-[490px] max-w-[calc(100vw-3rem)] rounded-md border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{event.event_type}</strong><span className="text-xs text-slate-400">{formatDate(event.created_at)}</span></div><p className="mt-1 text-sm text-slate-600">{event.isTimerEvent ? `${event.previous_status || '—'} → ${event.new_status || '—'} · ativo ${formatSignedDuration(event.active_elapsed_seconds)}` : event.description}</p><p className="mt-2 text-xs text-slate-400">por {event.actor_name}</p></article>} />
   );
 }
 

@@ -1,6 +1,6 @@
 # Atualizacao, backups e rollback
 
-O DevFlow `0.6.29-alpha` usa um WebUpdater Docker Compose simples, baseado no fluxo operacional do Full Password. Backups continuam independentes: `scripts/update.sh` nao cria, verifica, exige nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups**.
+O DevFlow `0.6.30-alpha` usa um WebUpdater Docker Compose simples, baseado no fluxo operacional do Full Password. Backups continuam independentes: `scripts/update.sh` nao cria, verifica, exige nem restaura backups. O Super Admin decide se deseja criar um ponto de restauracao em **Sistema > Backups**.
 
 ## Fluxo do WebUpdater
 
@@ -43,6 +43,8 @@ Nao use `curl | bash`. O bootstrap clona uma copia temporaria, valida repositori
 ## Backups no painel
 
 As operacoes `create-backup`, `verify-backup`, `restore-backup` e `delete-backup` continuam usando a fila HMAC e o mesmo lock global. Restore possui fluxo proprio com manutencao e backup de seguranca. Essa funcionalidade nao foi alterada pela refatoracao do WebUpdater.
+
+O download usa `GET /api/operations/backups/:id/download` e nao passa pela fila porque e somente leitura. O backend monta `${BACKUP_ARCHIVE_DIR}` em `/var/lib/devflow/backups:ro`; o catalogo fornece o nome allowlisted e o servico valida caminho canonico, tipo regular e tamanho antes de iniciar o streaming. A permissao de grupo operacional e reconciliada pelo daemon para backups existentes e aplicada a cada novo arquivo.
 
 ## CLI
 

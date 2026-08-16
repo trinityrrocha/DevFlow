@@ -53,6 +53,7 @@ async function createTask(req, res) {
 async function listTasks(req, res) {
   const filters = z.object({
     state: z.enum(['ACTIVE', 'PAUSED', 'CANCELED', 'COMPLETED']).optional(),
+    lifecycle: z.enum(['open', 'completed']).optional(),
     stage: z.string().max(64).optional(),
     kind: z.enum(['REQUEST', 'BUG']).optional(),
     priority: z.string().max(64).optional(),
