@@ -55,7 +55,7 @@ async function listTasks(req, res) {
     state: z.enum(['ACTIVE', 'PAUSED', 'CANCELED', 'COMPLETED']).optional(),
     lifecycle: z.enum(['open', 'completed']).optional(),
     stage: z.string().max(64).optional(),
-    kind: z.enum(['REQUEST', 'BUG']).optional(),
+    category: z.enum(['BUG', 'DEV']).optional(),
     priority: z.string().max(64).optional(),
     project_id: z.string().uuid().optional(),
     assignee: z.string().uuid().optional(),
@@ -65,6 +65,17 @@ async function listTasks(req, res) {
     overdue: z.enum(['true', 'false']).optional()
   }).parse(req.query);
   res.json(await taskService.listTasks(req.user, filters));
+}
+
+async function getListPreference(req, res) {
+  res.json(await taskService.getListPreference(req.user));
+}
+
+async function saveListPreference(req, res) {
+  const { grouping } = z.object({
+    grouping: z.enum(['none', 'stage', 'user', 'priority', 'type'])
+  }).strict().parse(req.body);
+  res.json(await taskService.saveListPreference(req.user, grouping));
 }
 
 async function listTrash(req, res) {
@@ -271,7 +282,7 @@ async function deleteAttachment(req, res) {
 }
 
 module.exports = {
-  createTask, listTasks, listTrash, deleteTask, restoreTask, emptyTrash, detail, transition, stateAction, updateAdministration,
+  createTask, listTasks, getListPreference, saveListPreference, listTrash, deleteTask, restoreTask, emptyTrash, detail, transition, stateAction, updateAdministration,
   saveSubmission, addTest, updateTest, deleteTest, addApproval, addGithub, updateGithub, deleteGithub, addComment,
   uploadAttachment, downloadAttachment, deleteAttachment, timerAction
 };

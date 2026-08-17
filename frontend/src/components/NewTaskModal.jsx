@@ -25,6 +25,10 @@ const emptyForm = {
   estimated_duration: ''
 };
 
+const preferredTaskType = (taskTypes, kind) => taskTypes.find((item) => (
+  item.is_active && kind === 'BUG' && item.code === 'BUG_REPORT'
+)) || taskTypes.find((item) => item.is_active && [kind, 'BOTH'].includes(item.applicable_kind));
+
 export default function NewTaskModal({ open, onClose, onCreated }) {
   const [form, setForm] = useState(emptyForm);
   const [catalogs, setCatalogs] = useState(null);
@@ -47,7 +51,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
         setForm((current) => ({
           ...current,
           project_id: current.project_id || project?.id || '',
-          task_type_id: current.task_type_id || data.task_types.find((item) => item.is_active && ['REQUEST', 'BOTH'].includes(item.applicable_kind))?.id || '',
+          task_type_id: current.task_type_id || preferredTaskType(data.task_types, kind)?.id || '',
           priority_id: current.priority_id || data.priorities.find((item) => item.code === 'MEDIUM')?.id || data.priorities.find((item) => item.is_active)?.id || '',
           environment_id: current.environment_id || project?.default_environment_id || data.environments.find((item) => item.is_active)?.id || '',
           workflow_id: current.workflow_id || data.workflows.find((item) => item.is_default && [kind, 'BOTH'].includes(item.task_kind))?.id || '',
@@ -73,7 +77,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
     setForm((current) => {
       const next = { ...current, [field]: value };
       if (field === 'kind' && catalogs) {
-        next.task_type_id = catalogs.task_types.find((item) => item.is_active && [value, 'BOTH'].includes(item.applicable_kind))?.id || '';
+        next.task_type_id = preferredTaskType(catalogs.task_types, value)?.id || '';
         next.workflow_id = catalogs.workflows.find((item) => item.is_default && [value, 'BOTH'].includes(item.task_kind))?.id || '';
       }
       if (field === 'project_id' && catalogs) {

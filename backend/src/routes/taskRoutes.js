@@ -7,6 +7,8 @@ const router = express.Router();
 router.use(requireAuth);
 router.get('/trash', requirePermission('tasks.manage'), controller.listTrash);
 router.delete('/trash', requireSuperAdmin, controller.emptyTrash);
+router.get('/preferences', requirePermission('tasks.view'), controller.getListPreference);
+router.patch('/preferences', requirePermission('tasks.view'), controller.saveListPreference);
 router.get('/', requirePermission('tasks.view'), controller.listTasks);
 router.post('/', requirePermission('tasks.create'), controller.createTask);
 router.get('/:id', requirePermission('tasks.view'), controller.detail);

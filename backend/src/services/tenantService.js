@@ -35,7 +35,7 @@ const TASK_TYPES = [
   ['INTEGRATION', 'Integração', 'REQUEST', 70],
   ['DOCUMENTATION', 'Documentação', 'REQUEST', 80],
   ['OTHER', 'Outro', 'BOTH', 90],
-  ['BUG_REPORT', 'Bug', 'BUG', 100]
+  ['BUG_REPORT', 'Report Bug', 'BUG', 100]
 ];
 
 const stage = (code, name, order, responsibility, requirements, options = {}) => ({

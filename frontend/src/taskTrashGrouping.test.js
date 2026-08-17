@@ -35,7 +35,7 @@ describe('lixeira, categoria e agrupamento de tarefas', () => {
       task({ id: 'backend', task_type_id: 'backend', request_type: 'BACKEND', task_type_name: 'Backend', task_type_sort_order: 20 }),
       task({ id: 'frontend', task_type_id: 'frontend', request_type: 'FRONTEND', task_type_name: 'Frontend', task_type_sort_order: 30 })
     ];
-    expect(groupTasks(items, 'type').map((group) => group.label)).toEqual(['Backend', 'Frontend', 'Report Bug']);
+    expect(groupTasks(items, 'type').map((group) => group.label)).toEqual(['Report Bug', 'Backend', 'Frontend']);
     expect(groupTasks(items, 'type').find((group) => group.label === 'Report Bug').tasks[0].id).toBe('bug');
   });
 
@@ -69,7 +69,7 @@ describe('lixeira, categoria e agrupamento de tarefas', () => {
   it('mantem a paginacao no backend e agrupa somente a pagina ordenada recebida', () => {
     const list = read('pages/Tasks.jsx');
     expect(list).toContain("{ ...filters, lifecycle, page }");
-    expect(list).toContain('groupTasks(data.tasks, groupBy)');
+    expect(list).toContain("groupTasks(data.tasks, groupBy || '')");
     expect(list).not.toContain('limit: 100');
   });
 

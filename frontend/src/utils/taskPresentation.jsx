@@ -22,8 +22,8 @@ export const COMPLETED_TASK_STATES = Object.freeze(['COMPLETED', 'CANCELED']);
 
 export const TASK_CATEGORY_ICONS = Object.freeze({ BUG: Bug, DEV: Code2 });
 
-export function TaskCategoryIcon({ type, showLabel = true }) {
-  const category = getTaskCategory(type);
+export function TaskCategoryIcon({ task, type, showLabel = true }) {
+  const category = getTaskCategory(task || type);
   const Icon = TASK_CATEGORY_ICONS[category];
   const text = category === 'BUG' ? 'Bug' : 'Dev';
   return <span title={text} aria-label={`Categoria: ${text}`} className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${category === 'BUG' ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'}`}><Icon className="h-4 w-4" aria-hidden="true" />{showLabel && text}</span>;

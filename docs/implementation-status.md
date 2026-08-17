@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-16. Versao: `0.6.32-alpha`.
+Data de corte: 2026-08-17. Versao: `0.6.33-alpha`.
+
+Revisao 0.6.33 implementada localmente: a API deriva `task_category` exclusivamente de `task_types.code = BUG_REPORT`; o filtro Bug/Dev usa a mesma expressão SQL, eliminando a divergência anterior com `tasks.kind`. O seletor Agrupar por mantém os cinco modos, persiste `none/stage/user/priority/type` por empresa e usuário na migration 017 e restaura a escolha ao retornar à página ou iniciar nova sessão. Grupos continuam restritos à página server-side recebida. PostgreSQL, sessão real e VPS permanecem pendentes de homologação do usuário.
 
 Revisao 0.6.32 implementada localmente: tarefas podem ser movidas para uma lixeira auditável por Admin ou Super Admin e restauradas com o mesmo ID. O purge permanente é exclusivo de Super Admin, exige frase forte, remove dependências em ordem e usa quarentena de storage com compensação em rollback. A lista apresenta `URGENT_PRODUCTION` como Urgente, classifica apenas `BUG_REPORT` como Bug e agrupa a página corrente por etapa, responsável da etapa, prioridade ou tipo real. PostgreSQL e VPS reais permanecem pendentes de homologação do usuário.
 

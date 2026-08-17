@@ -1,4 +1,4 @@
-# WebUpdater 0.6.32-alpha
+# WebUpdater 0.6.33-alpha
 
 ## Decisao arquitetural
 

@@ -8,6 +8,7 @@ const { recordAudit } = require('./auditService');
 const taskPurgeStorage = require('./taskPurgeStorage');
 const { safeLogError } = require('../utils/safeLogger');
 const dashboardService = require('./dashboardService');
+const { getTaskCategory, taskCategorySql } = require('../domain/taskCategory');
 
 const isAdmin = (user) => user?.is_super_admin === true || user?.roles?.includes('ADMIN') || user?.permissions?.includes('tasks.manage');
 const isRoadmap = (task) => String(task.stage || '').toUpperCase() === 'ROADMAP' || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
@@ -176,6 +177,8 @@ async function createTask(req, payload) {
       priority: priorityResult.rows[0].code,
       environment: environmentResult.rows[0].code,
       request_type: typeResult.rows[0].code,
+      task_type_name: typeResult.rows[0].name,
+      task_category: getTaskCategory(typeResult.rows[0].code),
       project_name: project.name,
       client_name: project.client_name
     };
@@ -213,7 +216,7 @@ async function listTasks(user, filters) {
   if (filters.lifecycle === 'open') conditions.push("t.state IN ('ACTIVE','PAUSED')");
   if (filters.lifecycle === 'completed') conditions.push("t.state IN ('COMPLETED','CANCELED')");
   if (filters.stage) add('(s.id::text=? OR s.code=?)', filters.stage);
-  if (filters.kind) add('t.kind=?', filters.kind);
+  if (filters.category) add(`${taskCategorySql('tt')}=?`, filters.category);
   if (filters.priority) add('(p.id::text=? OR p.code=?)', filters.priority);
   if (filters.project_id) add('t.project_id=?', filters.project_id);
   if (filters.assignee) add('?::uuid IN (t.backend_assignee_id,t.frontend_assignee_id)', filters.assignee);
@@ -248,6 +251,7 @@ async function listTasks(user, filters) {
             p.code AS priority,p.name AS priority_name,p.color_token AS priority_color,p.sort_order AS priority_sort_order,
             e.code AS environment,e.name AS environment_name,
             tt.code AS request_type,tt.name AS task_type_name,tt.sort_order AS task_type_sort_order,
+            ${taskCategorySql('tt')} AS task_category,
             project.name AS project_name,project.code AS project_code,
             client.name AS client_name,
             requester.name AS requester_name,
@@ -316,6 +320,7 @@ async function listTrash(user, filters = {}) {
             stage.code AS stage,stage.name AS stage_name,
             priority.code AS priority,priority.name AS priority_name,
             task_type.code AS request_type,task_type.name AS task_type_name,
+            ${taskCategorySql('task_type')} AS task_category,
             backend.name AS backend_assignee_name,frontend.name AS frontend_assignee_name,
             deleted_user.name AS deleted_by_name
      ${from} WHERE ${conditions.join(' AND ')}
@@ -327,6 +332,28 @@ async function listTrash(user, filters = {}) {
     tasks: result.rows.map((task) => ({ ...task, code: taskCode(task) })),
     pagination: { page, limit, total, total_pages: Math.ceil(total / limit) }
   };
+}
+
+async function getListPreference(user) {
+  const result = await db.query(
+    `SELECT grouping
+     FROM user_task_list_preferences
+     WHERE company_id=$1 AND user_id=$2`,
+    [user.company_id, user.id]
+  );
+  return { grouping: result.rows[0]?.grouping || 'none' };
+}
+
+async function saveListPreference(user, grouping) {
+  const result = await db.query(
+    `INSERT INTO user_task_list_preferences (company_id,user_id,grouping)
+     VALUES ($1,$2,$3)
+     ON CONFLICT (company_id,user_id) DO UPDATE
+     SET grouping=EXCLUDED.grouping,updated_at=CURRENT_TIMESTAMP
+     RETURNING grouping`,
+    [user.company_id, user.id, grouping]
+  );
+  return { grouping: result.rows[0].grouping };
 }
 
 async function softDeleteTask(req, taskId, confirmation) {
@@ -517,6 +544,7 @@ async function getTask(taskId, companyId, queryable = db, user = null) {
             p.code AS priority,p.name AS priority_name,p.color_token AS priority_color,
             e.code AS environment,e.name AS environment_name,
             tt.code AS request_type,tt.name AS task_type_name,
+            ${taskCategorySql('tt')} AS task_category,
             project.name AS project_name,project.code AS project_code,
             client.name AS client_name,
             requester.name AS requester_name,
@@ -1338,6 +1366,8 @@ module.exports = {
   createTask,
   listTasks,
   listTrash,
+  getListPreference,
+  saveListPreference,
   softDeleteTask,
   restoreTask,
   emptyTrash,

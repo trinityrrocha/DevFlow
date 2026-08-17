@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.33-alpha] - 2026-08-17
+
+### Corrigido
+
+- filtro, badge e ícone Bug/Dev passam a usar exclusivamente o tipo real `BUG_REPORT`, eliminando a divergência com `tasks.kind`;
+- cadastro de Bug prefere o tipo canônico `BUG_REPORT`, sem selecionar automaticamente um tipo genérico aplicável a ambos os fluxos;
+- o tipo de sistema preserva código e ID e passa a apresentar o nome de domínio `Report Bug`.
+
+### Adicionado
+
+- preferência de agrupamento da lista persistida por empresa e usuário, com os modos Nenhum, Etapa, Usuário, Prioridade e Tipo de tarefa;
+- regressões automatizadas para filtro, badge, ícones Lucide, grupos sem duplicação e isolamento da preferência entre usuários.
+
+### Validado localmente
+
+- classificação e agrupamento com fixtures, persistência simulada, lint, testes e build;
+- aplicação da migration 017, sessão autenticada e homologação na VPS permanecem pendentes do usuário.
+
 ## [0.6.32-alpha] - 2026-08-16
 
 ### Adicionado

@@ -37,6 +37,7 @@ const qaMigration = read('database/migrations/012_qa_tests_and_attachment_source
 const qaRepairMigration = read('database/migrations/013_qa_tests_idempotency_repair.sql');
 const frontendApprovalMigration = read('database/migrations/014_frontend_approval_stage.sql');
 const taskTrashMigration = read('database/migrations/016_task_trash.sql');
+const taskListPreferencesMigration = read('database/migrations/017_task_list_preferences.sql');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migrations-'));
 
@@ -166,7 +167,17 @@ try {
     && taskTrashMigration.includes("TG_OP = 'DELETE'"));
   check('task deletion closes touch sessions with a dedicated reason',
     taskTrashMigration.includes("'TASK_DELETED'"));
-  if (checks.length !== 31) throw new Error(`Expected 31 checks, got ${checks.length}`);
+  check('task list preferences are incremental and scoped by membership',
+    taskListPreferencesMigration.includes('CREATE TABLE IF NOT EXISTS user_task_list_preferences')
+    && taskListPreferencesMigration.includes('PRIMARY KEY (company_id, user_id)')
+    && taskListPreferencesMigration.includes('REFERENCES company_memberships(company_id, user_id)'));
+  check('task grouping preference accepts only the five supported modes',
+    taskListPreferencesMigration.includes("CHECK (grouping IN ('none', 'stage', 'user', 'priority', 'type'))"));
+  check('Report Bug keeps its canonical code while receiving the domain label',
+    taskListPreferencesMigration.includes("WHERE code = 'BUG_REPORT'")
+    && taskListPreferencesMigration.includes("SET name = 'Report Bug'")
+    && !taskListPreferencesMigration.includes('SET code'));
+  if (checks.length !== 34) throw new Error(`Expected 34 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

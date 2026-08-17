@@ -41,7 +41,7 @@ function groupIdentity(task, groupBy) {
   if (groupBy === 'type') return {
     key: task.task_type_id || task.request_type || 'type-unassigned',
     label: task.task_type_name || 'Não definido',
-    order: Number(task.task_type_sort_order ?? Number.MAX_SAFE_INTEGER)
+    order: null
   };
   return { key: 'all', label: '', order: 0 };
 }
@@ -49,13 +49,14 @@ function groupIdentity(task, groupBy) {
 export function groupTasks(tasks, groupBy) {
   if (!groupBy) return [{ key: 'all', label: '', tasks: [...tasks], order: 0 }];
   const groups = new Map();
-  for (const task of tasks) {
+  for (const [index, task] of tasks.entries()) {
     const identity = groupIdentity(task, groupBy);
-    const existing = groups.get(identity.key) || { ...identity, tasks: [] };
+    const existing = groups.get(identity.key) || { ...identity, firstIndex: index, tasks: [] };
     existing.tasks.push(task);
     groups.set(identity.key, existing);
   }
   return [...groups.values()].sort((left, right) => {
+    if (groupBy === 'type') return left.firstIndex - right.firstIndex;
     if (typeof left.order === 'number' && typeof right.order === 'number' && left.order !== right.order) return left.order - right.order;
     return String(left.label).localeCompare(String(right.label), 'pt-BR');
   });

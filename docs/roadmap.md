@@ -1,5 +1,12 @@
 # Roadmap inicial
 
+## Marco `0.6.33-alpha`
+
+- aplicar a migration 017 e confirmar preferências distintas para usuários reais na mesma empresa;
+- validar que filtro, badge e ícone concordam para tarefas `BUG_REPORT` e para os demais tipos;
+- homologar agrupamentos nas abas Abertas/Concluídas, com filtros, paginação, tema claro/escuro e mobile;
+- manter pendente a homologação real em PostgreSQL/VPS pelo usuário.
+
 ## Marco `0.6.32-alpha`
 
 - aplicar a migration 016 em PostgreSQL de homologação e validar lixeira, restauração e purge com anexos reais;

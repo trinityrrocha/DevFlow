@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.32-alpha`
+## Instalacao isolada `0.6.33-alpha`
 
 - Contrato de fila/status entre backend e updater: `docs/architecture/operational-filesystem-permissions.md`.
 - Regressao obrigatoria de ownership/permissoes: `scripts/validate-operational-permissions.mjs`.
@@ -28,6 +28,13 @@
 | Visibilidade | lista, detalhe, Dashboard, notificações e contadores filtram `deleted_at IS NULL` |
 | Bug/Dev | `getTaskCategory` classifica somente `BUG_REPORT` como Bug; demais tipos são Dev |
 | Agrupamentos | `taskGrouping.js` agrupa a página ordenada por etapa, usuário, prioridade e tipo real |
+
+| Revisao 0.6.33 | Evidencia |
+|---|---|
+| Categoria canônica | `taskCategory.js` e `task_category` usam exclusivamente o código real `BUG_REPORT` |
+| Filtro coerente | `listTasks` filtra `BUG`/`DEV` pela mesma expressão SQL retornada na API, sem usar `tasks.kind` |
+| Preferência individual | migration 017 e `/api/tasks/preferences` persistem o agrupamento por empresa e usuário |
+| Agrupamento real | `taskGrouping.js` conserva TaskRow, ordenação semântica e uma ocorrência por tarefa na página atual |
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|
