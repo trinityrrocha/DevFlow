@@ -76,6 +76,18 @@ async function bootstrap(companyId) {
   };
 }
 
+async function listStages(companyId) {
+  const result = await db.query(
+    `SELECT code,MIN(name) AS name,MIN(sort_order)::integer AS sort_order
+     FROM workflow_stages
+     WHERE company_id=$1 AND is_active=TRUE
+     GROUP BY code
+     ORDER BY MIN(sort_order),MIN(name)`,
+    [companyId]
+  );
+  return result.rows;
+}
+
 function pagination(filters = {}) {
   const page = Number(filters.page) || 1;
   const limit = Math.min(Number(filters.limit) || 20, 100);
@@ -385,7 +397,7 @@ async function createWorkflow(companyId, payload) {
 }
 
 module.exports = {
-  bootstrap, listClients, getClient, createClient, updateClient, deleteClient,
+  bootstrap, listStages, listClients, getClient, createClient, updateClient, deleteClient,
   listProjects, getProject, createProject, updateProject, deleteProject,
   listCatalog, createCatalogItem, updateCatalogItem, createWorkflow
 };

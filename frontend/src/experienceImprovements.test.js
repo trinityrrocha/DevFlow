@@ -77,10 +77,10 @@ describe('melhorias rastreaveis da experiencia operacional', () => {
     expect(tasks).toContain('<OperationalStateIcon');
   });
 
-  it('usa especificamente Lucide Bug apenas para o tipo real BUG_REPORT ou fallback BUG', () => {
+  it('usa especificamente Lucide Bug apenas para o tipo real BUG_REPORT', () => {
     expect(TASK_TYPE_PRESENTATION.BUG_REPORT.icon).toBe(Bug);
     expect(TASK_TYPE_PRESENTATION.NEW_FEATURE.icon).toBe(Sparkles);
-    expect(TaskTypeIcon({ code: 'BUG_REPORT' }).props).toMatchObject({ title: 'Bug', 'aria-label': 'Tipo: Bug' });
+    expect(TaskTypeIcon({ code: 'BUG_REPORT' }).props).toMatchObject({ title: 'Report Bug', 'aria-label': 'Tipo: Report Bug' });
     expect(TaskTypeIcon({ code: 'NEW_FEATURE' }).props.title).toBe('Nova funcionalidade');
     expect(taskPresentation).toContain('dark:bg-slate-800 dark:text-slate-300');
   });

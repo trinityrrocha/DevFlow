@@ -4,11 +4,13 @@ const { resolve } = require('node:path');
 const db = require('../src/config/database');
 const taskController = require('../src/controllers/taskController');
 const taskService = require('../src/services/taskService');
+const catalogService = require('../src/services/catalogService');
 const {
   REPORT_BUG_TASK_TYPE_CODE,
   getTaskCategory,
   taskCategorySql
 } = require('../src/domain/taskCategory');
+const { TASK_PRIORITY_HIERARCHY, taskOrderBy } = require('../src/domain/taskPriority');
 
 const read = (file) => readFileSync(resolve(__dirname, '..', file), 'utf8');
 const user = (id) => ({ id, company_id: '00000000-0000-4000-8000-000000000001', is_super_admin: true });
@@ -25,6 +27,7 @@ describe('categoria canônica e preferência da lista de tarefas', () => {
       expect(getTaskCategory(code)).toBe('DEV');
     }
     expect(taskCategorySql('tt')).toContain("UPPER(tt.code)='BUG_REPORT'");
+    expect(getTaskCategory({ request_type: 'BACKEND', title: 'Bug 404 no cadastro' })).toBe('DEV');
   });
 
   it('filtra Bug e Dev pela mesma expressão do tipo real, não por tasks.kind', async () => {
@@ -50,6 +53,45 @@ describe('categoria canônica e preferência da lista de tarefas', () => {
     await taskController.listTasks(req, res);
     expect(taskService.listTasks).toHaveBeenCalledWith(req.user, expect.objectContaining({ category: 'BUG' }));
     expect(res.json).toHaveBeenCalled();
+  });
+
+  it('combina etapa, categoria, prioridade, ciclo, paginação e ordenação no servidor', async () => {
+    const queries = [];
+    vi.spyOn(db, 'query').mockImplementation(async (sql, values) => {
+      queries.push({ sql: String(sql), values });
+      if (String(sql).includes('SELECT COUNT(*)')) return { rows: [{ total: 38 }] };
+      return { rows: [] };
+    });
+
+    const result = await taskService.listTasks(user('00000000-0000-4000-8000-000000000010'), {
+      lifecycle: 'open', state: 'ACTIVE', stage: 'BACKEND', category: 'DEV',
+      priority: '00000000-0000-4000-8000-000000000099', overdue: 'false',
+      search: 'DF-8', sort_by: 'stage', sort_direction: 'asc', page: 2, limit: 10
+    });
+
+    expect(queries[0].sql).toContain('t.deleted_at IS NULL');
+    expect(queries[0].sql).toContain("t.state IN ('ACTIVE','PAUSED')");
+    expect(queries[0].sql).toContain('(s.id::text=');
+    expect(queries[0].sql).toContain("CASE WHEN UPPER(tt.code)='BUG_REPORT' THEN 'BUG' ELSE 'DEV' END");
+    expect(queries[1].sql).toContain('ORDER BY s.sort_order ASC, t.task_number DESC');
+    expect(queries[1].values.slice(-2)).toEqual([10, 10]);
+    expect(result.pagination).toEqual({ page: 2, limit: 10, total: 38, total_pages: 4 });
+  });
+
+  it('usa a hierarquia canônica e somente expressões permitidas na ordenação', () => {
+    expect(TASK_PRIORITY_HIERARCHY).toEqual(['URGENT_PRODUCTION', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+    expect(taskOrderBy({ sort_by: 'task', sort_direction: 'asc' })).toBe('t.task_number ASC, t.created_at DESC');
+    expect(taskOrderBy({ sort_by: 'created_at', sort_direction: 'desc' })).toBe('t.created_at DESC, t.task_number DESC');
+    expect(taskOrderBy({ sort_by: 'invalid', sort_direction: 'asc' })).toContain('URGENT_PRODUCTION');
+    expect(taskOrderBy({ sort_by: 'invalid', sort_direction: 'asc' })).not.toContain('invalid');
+  });
+
+  it('deriva as etapas ativas do domínio multi-tenant', async () => {
+    vi.spyOn(db, 'query').mockResolvedValue({ rows: [{ code: 'BACKEND', name: 'Backend', sort_order: 20 }] });
+    await expect(catalogService.listStages('00000000-0000-4000-8000-000000000001')).resolves.toEqual([
+      { code: 'BACKEND', name: 'Backend', sort_order: 20 }
+    ]);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM workflow_stages'), ['00000000-0000-4000-8000-000000000001']);
   });
 
   it('persiste a escolha separadamente por empresa e usuário', async () => {

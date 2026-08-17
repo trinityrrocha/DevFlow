@@ -9,6 +9,7 @@ const taskPurgeStorage = require('./taskPurgeStorage');
 const { safeLogError } = require('../utils/safeLogger');
 const dashboardService = require('./dashboardService');
 const { getTaskCategory, taskCategorySql } = require('../domain/taskCategory');
+const { taskOrderBy } = require('../domain/taskPriority');
 
 const isAdmin = (user) => user?.is_super_admin === true || user?.roles?.includes('ADMIN') || user?.permissions?.includes('tasks.manage');
 const isRoadmap = (task) => String(task.stage || '').toUpperCase() === 'ROADMAP' || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
@@ -248,7 +249,8 @@ async function listTasks(user, filters) {
   const result = await db.query(
     `SELECT t.*,s.code AS stage,s.name AS stage_name,s.sort_order AS stage_sort_order,
             s.responsibility AS stage_responsibility,
-            p.code AS priority,p.name AS priority_name,p.color_token AS priority_color,p.sort_order AS priority_sort_order,
+            p.code AS priority,p.name AS priority_name,p.weight AS priority_weight,
+            p.color_token AS priority_color,p.sort_order AS priority_sort_order,
             e.code AS environment,e.name AS environment_name,
             tt.code AS request_type,tt.name AS task_type_name,tt.sort_order AS task_type_sort_order,
             ${taskCategorySql('tt')} AS task_category,
@@ -271,15 +273,7 @@ async function listTasks(user, filters) {
      JOIN users backend ON backend.id=t.backend_assignee_id
      JOIN users frontend ON frontend.id=t.frontend_assignee_id
      WHERE ${conditions.join(' AND ')}
-     ORDER BY CASE
-       WHEN UPPER(p.code) IN ('URGENT_PRODUCTION','URGENTE_PRODUCAO') OR UPPER(p.name) IN ('URGENTE PRODUCAO','URGENTE PRODUÇÃO') THEN 1
-       WHEN t.kind='BUG' OR UPPER(p.code)='BUG' OR UPPER(p.name)='BUG' THEN 2
-       WHEN UPPER(p.code) IN ('CRITICAL','CRITICA') OR UPPER(p.name) IN ('CRITICA','CRÍTICA') THEN 3
-       WHEN UPPER(p.code) IN ('HIGH','ALTA') OR UPPER(p.name)='ALTA' THEN 4
-       WHEN UPPER(p.code) IN ('MEDIUM','MEDIA') OR UPPER(p.name) IN ('MEDIA','MÉDIA') THEN 5
-       WHEN UPPER(p.code) IN ('LOW','BAIXA') OR UPPER(p.name)='BAIXA' THEN 6
-       ELSE 7 END,
-       t.created_at DESC
+     ORDER BY ${taskOrderBy(filters)}
      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
     [...values, limit, (page - 1) * limit]
   );

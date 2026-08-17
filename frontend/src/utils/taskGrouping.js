@@ -9,11 +9,11 @@ export const TASK_GROUP_OPTIONS = Object.freeze([
 ]);
 
 const PRIORITY_ORDER = Object.freeze({
-  URGENT_PRODUCTION: 10,
-  CRITICAL: 20,
-  HIGH: 30,
-  MEDIUM: 40,
-  LOW: 50
+  URGENT_PRODUCTION: 8,
+  CRITICAL: 5,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1
 });
 
 export function currentTaskAssignee(task) {
@@ -36,7 +36,7 @@ function groupIdentity(task, groupBy) {
   if (groupBy === 'priority') return {
     key: task.priority_id || task.priority || 'priority-unassigned',
     label: String(task.priority || '').toUpperCase() === 'URGENT_PRODUCTION' ? 'Urgente' : task.priority_name || 'Não definida',
-    order: PRIORITY_ORDER[String(task.priority || '').toUpperCase()] ?? Number(task.priority_sort_order ?? 999)
+    order: -(Number(task.priority_weight) || PRIORITY_ORDER[String(task.priority || '').toUpperCase()] || 0)
   };
   if (groupBy === 'type') return {
     key: task.task_type_id || task.request_type || 'type-unassigned',

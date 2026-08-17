@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.33-alpha`
+## Instalacao isolada `0.6.34-alpha`
 
 - Contrato de fila/status entre backend e updater: `docs/architecture/operational-filesystem-permissions.md`.
 - Regressao obrigatoria de ownership/permissoes: `scripts/validate-operational-permissions.mjs`.

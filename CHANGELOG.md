@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.34-alpha] - 2026-08-17
+
+### Corrigido
+
+- a categoria visual ignora valores derivados conflitantes e usa exclusivamente o código real `BUG_REPORT`, sem inferência pelo título, fluxo ou `tasks.kind`;
+- a prioridade padrão e a ordenação explícita seguem a hierarquia persistida `Urgente > Crítica > Alta > Média > Baixa`, preservando o código `URGENT_PRODUCTION` e exibindo o rótulo `Urgente`;
+- contagens passam a usar singular/plural natural e durações ausentes são exibidas como `— / —`.
+
+### Adicionado
+
+- filtro de etapa derivado das etapas ativas da empresa, combinável com ciclo, estado, categoria, prioridade, prazo e busca;
+- ordenação server-side por tarefa, etapa, prioridade e criação, com direção acessível e paginação numérica compacta;
+- ação condicional `Limpar filtros`, cabeçalhos de grupo compactos e descrições acessíveis para tipo, estado, prioridade, responsáveis e duração.
+
+### Validado localmente
+
+- regressões de categoria, filtros combinados, etapas, agrupamentos, preferência por usuário, paginação, ordenação, densidade e acessibilidade;
+- homologação com dados reais, migration 017 aplicada e viewport na VPS permanecem pendentes do usuário.
+
 ## [0.6.33-alpha] - 2026-08-17
 
 ### Corrigido

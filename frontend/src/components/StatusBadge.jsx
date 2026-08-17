@@ -15,10 +15,11 @@ const colors = {
   URGENT_PRODUCTION: 'bg-red-600 text-white border-red-600'
 };
 
-export default function StatusBadge({ value }) {
+export default function StatusBadge({ value, context }) {
+  const text = label(value);
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${colors[value] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-      {label(value)}
+    <span title={context ? `${context}: ${text}` : text} aria-label={context ? `${context}: ${text}` : undefined} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${colors[value] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+      {text}
     </span>
   );
 }

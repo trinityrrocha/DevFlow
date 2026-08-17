@@ -63,6 +63,10 @@ async function bootstrap(req, res) {
   res.json(await service.bootstrap(req.user.company_id));
 }
 
+async function listStages(req, res) {
+  res.json({ items: await service.listStages(req.user.company_id) });
+}
+
 async function listClients(req, res) {
   const filters = z.object({
     search: z.string().trim().max(120).optional(),
@@ -171,7 +175,7 @@ async function createWorkflow(req, res) {
 }
 
 module.exports = {
-  bootstrap, listClients, getClient, createClient, updateClient, deleteClient,
+  bootstrap, listStages, listClients, getClient, createClient, updateClient, deleteClient,
   listProjects, getProject, createProject, updateProject, deleteProject,
   listCatalog, createCatalogItem, updateCatalogItem, createWorkflow
 };

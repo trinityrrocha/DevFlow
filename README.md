@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.33-alpha**. Esta revisão unifica filtro, badge e ícone Bug/Dev pelo tipo real `BUG_REPORT` e persiste o agrupamento da lista individualmente por usuário e empresa, sem alterar os dados das tarefas ou a paginação server-side.
+Versao atual: **0.6.34-alpha**. Esta revisão finaliza a lista paginada de tarefas com filtro de etapa, ordenação server-side, paginação numérica, densidade e acessibilidade refinadas. Bug/Dev continua derivado exclusivamente do tipo real `BUG_REPORT`, e o agrupamento permanece individual por usuário e empresa.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/task/trash`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

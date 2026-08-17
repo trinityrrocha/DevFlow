@@ -68,7 +68,9 @@ describe('lixeira, categoria e agrupamento de tarefas', () => {
 
   it('mantem a paginacao no backend e agrupa somente a pagina ordenada recebida', () => {
     const list = read('pages/Tasks.jsx');
-    expect(list).toContain("{ ...filters, lifecycle, page }");
+    expect(list).toContain('...filters,');
+    expect(list).toContain('lifecycle,');
+    expect(list).toContain('page,');
     expect(list).toContain("groupTasks(data.tasks, groupBy || '')");
     expect(list).not.toContain('limit: 100');
   });

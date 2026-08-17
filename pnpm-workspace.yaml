@@ -12,3 +12,5 @@ allowBuilds:
 overrides:
   'brace-expansion@<1.1.18': 1.1.18
   'js-yaml@>=4.0.0 <4.3.1': 4.3.1
+  'nanoid@<3.3.18': 3.3.18
+  'dompurify@<3.4.13': 3.4.13

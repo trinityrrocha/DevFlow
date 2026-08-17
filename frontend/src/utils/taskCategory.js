@@ -6,8 +6,6 @@ export function getTaskTypeCode(value) {
 }
 
 export function getTaskCategory(value) {
-  const apiCategory = typeof value === 'object' ? String(value?.task_category || '').toUpperCase() : '';
-  if (apiCategory === 'BUG' || apiCategory === 'DEV') return apiCategory;
   return String(getTaskTypeCode(value)).trim().toUpperCase() === REPORT_BUG_TASK_TYPE_CODE
     ? 'BUG'
     : 'DEV';

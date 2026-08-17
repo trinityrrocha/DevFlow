@@ -62,7 +62,9 @@ async function listTasks(req, res) {
     search: z.string().trim().max(100).optional(),
     page: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().positive().optional(),
-    overdue: z.enum(['true', 'false']).optional()
+    overdue: z.enum(['true', 'false']).optional(),
+    sort_by: z.enum(['task', 'stage', 'priority', 'created_at']).optional(),
+    sort_direction: z.enum(['asc', 'desc']).optional()
   }).parse(req.query);
   res.json(await taskService.listTasks(req.user, filters));
 }

@@ -30,6 +30,7 @@ describe('regressão real da categoria Bug/Dev', () => {
   it('mantém helper, filtro, badge e Lucide Bug em acordo para Report Bug', () => {
     const reportBug = task('BUG_REPORT', 8);
     expect(getTaskCategory(reportBug)).toBe('BUG');
+    expect(getTaskCategory({ ...reportBug, task_category: 'DEV' })).toBe('BUG');
     expect(taskMatchesCategory(reportBug, 'BUG')).toBe(true);
     expect(taskMatchesCategory(reportBug, 'DEV')).toBe(false);
     expect(TASK_CATEGORY_ICONS[getTaskCategory(reportBug)]).toBe(Bug);
@@ -40,8 +41,9 @@ describe('regressão real da categoria Bug/Dev', () => {
   });
 
   it.each(['BACKEND', 'FRONTEND', 'FIX', 'OTHER'])('%s permanece Dev em filtro, badge e ícone', (code) => {
-    const development = task(code, 3);
+    const development = task(code, 3, { title: 'Bug 404 que continua sendo desenvolvimento' });
     expect(getTaskCategory(development)).toBe('DEV');
+    expect(getTaskCategory({ ...development, task_category: 'BUG' })).toBe('DEV');
     expect(taskMatchesCategory(development, 'DEV')).toBe(true);
     expect(taskMatchesCategory(development, 'BUG')).toBe(false);
     expect(TASK_CATEGORY_ICONS[getTaskCategory(development)]).toBe(Code2);
@@ -75,11 +77,13 @@ describe('agrupamento real e persistente', () => {
 
   it('envia categoria canônica à paginação server-side e exibe label explícito', () => {
     const source = read('pages/Tasks.jsx');
-    expect(source).toContain("category: ''");
+    expect(source).toContain('DEFAULT_TASK_FILTERS');
     expect(source).toContain('filters.category');
     expect(source).toContain('Todas as categorias');
     expect(source).toContain('<span className="mb-1 block">Agrupar por</span>');
-    expect(source).toContain("{ ...filters, lifecycle, page }");
+    expect(source).toContain('...filters,');
+    expect(source).toContain('lifecycle,');
+    expect(source).toContain('page,');
     expect(source).not.toContain('limit: 100');
   });
 });

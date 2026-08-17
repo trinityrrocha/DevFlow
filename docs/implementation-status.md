@@ -1,6 +1,14 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-17. Versao: `0.6.33-alpha`.
+Data de corte: 2026-08-17. Versao: `0.6.34-alpha`.
+
+## Lista operacional de tarefas
+
+- `BUG_REPORT` / `Report Bug` é o único tipo classificado como Bug; todos os demais são Dev, sem inferência por título, fluxo ou natureza legada;
+- agrupamento individual persistido por empresa/usuário: Nenhum, Etapa, Usuário, Prioridade e Tipo de tarefa, sempre sobre a página recebida do servidor;
+- filtros server-side: busca, ciclo Abertas/Concluídas, estado, categoria, etapa, prioridade e prazo;
+- ordenação server-side permitida: tarefa, etapa, prioridade e criação; a prioridade canônica é `URGENT_PRODUCTION (8) > CRITICAL (5) > HIGH (3) > MEDIUM (2) > LOW (1)`;
+- paginação continua server-side e apresenta controles numéricos compactos. Nenhuma migration adicional foi necessária além da `017_task_list_preferences.sql` já existente.
 
 Revisao 0.6.33 implementada localmente: a API deriva `task_category` exclusivamente de `task_types.code = BUG_REPORT`; o filtro Bug/Dev usa a mesma expressão SQL, eliminando a divergência anterior com `tasks.kind`. O seletor Agrupar por mantém os cinco modos, persiste `none/stage/user/priority/type` por empresa e usuário na migration 017 e restaura a escolha ao retornar à página ou iniciar nova sessão. Grupos continuam restritos à página server-side recebida. PostgreSQL, sessão real e VPS permanecem pendentes de homologação do usuário.
 

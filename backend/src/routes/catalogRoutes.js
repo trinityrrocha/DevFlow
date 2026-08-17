@@ -5,6 +5,7 @@ const { requireAuth, requirePermission } = require('../middleware/authMiddleware
 const router = express.Router();
 router.use(requireAuth);
 router.get('/bootstrap', requirePermission('tasks.view'), controller.bootstrap);
+router.get('/stages', requirePermission('tasks.view'), controller.listStages);
 router.get('/clients', requirePermission('clients.view'), controller.listClients);
 router.get('/clients/:id', requirePermission('clients.view'), controller.getClient);
 router.post('/clients', requirePermission('clients.manage'), controller.createClient);

@@ -1,6 +1,11 @@
 # Roadmap inicial
 
-## Marco `0.6.33-alpha`
+## Marco `0.6.34-alpha`
+
+- [x] Finalizar filtro canônico de etapa e filtros combináveis na lista de tarefas.
+- [x] Implementar ordenação server-side segura por tarefa, etapa, prioridade e criação.
+- [x] Refinar paginação, densidade, duração, contraste e descrições acessíveis sem redesenhar a página.
+- [ ] Homologar a lista com dados reais, temas e viewports na VPS Linux.
 
 - aplicar a migration 017 e confirmar preferências distintas para usuários reais na mesma empresa;
 - validar que filtro, badge e ícone concordam para tarefas `BUG_REPORT` e para os demais tipos;
