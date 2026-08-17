@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { attachmentTimelineItems, githubTimelineItems, historyTimelineItems, qaTimelineItems } from './utils/timeline';
+import { Bug, Sparkles } from 'lucide-react';
+import { TASK_TYPE_PRESENTATION, TaskTypeIcon } from './utils/taskPresentation';
 
 const root = resolve(import.meta.dirname, '..');
 const read = (file) => readFileSync(resolve(root, file), 'utf8');
@@ -44,14 +46,16 @@ describe('melhorias rastreaveis da experiencia operacional', () => {
     expect(detail).not.toContain('<section className="card overflow-x-auto p-5"><WorkflowStepper');
   });
 
-  it('organiza SMTP em tres linhas exatas no desktop e responsivas abaixo dele', () => {
+  it('organiza SMTP em quatro linhas compactas dentro do card de 590px', () => {
+    expect(smtp).toContain('max-w-[590px]');
     expect(smtp).toContain('data-smtp-row="connection"');
-    expect(smtp).toContain('lg:grid-cols-[250px_115px_115px_115px]');
+    expect(smtp).toContain('lg:grid-cols-[270px_minmax(0,1fr)_minmax(0,1fr)]');
     expect(smtp).toContain('data-smtp-row="credentials"');
-    expect(smtp).toContain('lg:grid-cols-[250px_200px_minmax(250px,1fr)]');
+    expect(smtp).toContain('lg:grid-cols-[minmax(0,1fr)_135px_135px]');
+    expect(smtp).toContain('data-smtp-row="identity"');
     expect(smtp).toContain('data-smtp-row="addresses"');
-    expect(smtp).toContain('lg:grid-cols-[250px_250px_250px]');
     expect(smtp).toContain('sm:grid-cols-2');
+    expect(smtp).not.toContain('overflow-x-auto');
     expect(smtp).toContain('Mostrar senha SMTP');
   });
 
@@ -71,6 +75,14 @@ describe('melhorias rastreaveis da experiencia operacional', () => {
     expect(taskPresentation).toContain('aria-label={`Tipo: ${presentation.label}`}');
     expect(tasks).toContain('<TaskTypeIcon');
     expect(tasks).toContain('<OperationalStateIcon');
+  });
+
+  it('usa especificamente Lucide Bug apenas para o tipo real BUG_REPORT ou fallback BUG', () => {
+    expect(TASK_TYPE_PRESENTATION.BUG_REPORT.icon).toBe(Bug);
+    expect(TASK_TYPE_PRESENTATION.NEW_FEATURE.icon).toBe(Sparkles);
+    expect(TaskTypeIcon({ code: 'BUG_REPORT' }).props).toMatchObject({ title: 'Bug', 'aria-label': 'Tipo: Bug' });
+    expect(TaskTypeIcon({ code: 'NEW_FEATURE' }).props.title).toBe('Nova funcionalidade');
+    expect(taskPresentation).toContain('dark:bg-slate-800 dark:text-slate-300');
   });
 
   it('separa abertas e finalizadas preservando filtros e resetando pagina', () => {

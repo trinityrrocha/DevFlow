@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(new URL('./pages/Backups.jsx', import.meta.url), 'utf8');
+const download = readFileSync(new URL('./utils/backupDownload.js', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('./pages/Settings.jsx', import.meta.url), 'utf8');
 
 describe('gestao de backups e alerta de update', () => {
@@ -20,6 +21,15 @@ describe('gestao de backups e alerta de update', () => {
     expect(page).toContain("const required = restore ? 'RESTAURAR' : 'EXCLUIR'");
     expect(page).toContain('A restauracao substituira os dados atuais');
     expect(page).toContain('disabled={typed !== required}');
+  });
+
+  it('baixa pelo cliente autenticado sem navegacao cega e apresenta erros', () => {
+    expect(page).toContain('triggerBackupDownload(api, backup)');
+    expect(page).toContain("setMessage({ type: 'error', text: errorMessage(error) })");
+    expect(page).not.toContain('<a className="btn-secondary px-3"');
+    expect(download).toContain("responseType: 'blob'");
+    expect(download).toContain('createObjectURL');
+    expect(download).toContain('revokeObjectURL');
   });
 
   it('mostra o aviso de backup sem impor gate por idade ou quantidade', () => {

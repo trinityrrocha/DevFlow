@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.30-alpha`
+## Instalacao isolada `0.6.31-alpha`
 
 - Contrato de fila/status entre backend e updater: `docs/architecture/operational-filesystem-permissions.md`.
 - Regressao obrigatoria de ownership/permissoes: `scripts/validate-operational-permissions.mjs`.
@@ -13,6 +13,12 @@
 | Dashboard | `dashboardDetails` usa join da tarefa vinculada e `COUNT(*) OVER()` com paginacao, sem N+1 |
 | Historico de usuario | backend limita 21 e o modal pagina sete itens sem recriacao |
 | GitHub | migration 015 adiciona `technical_area` e reinicializa snapshots para formula v3 |
+
+| Revisao 0.6.31 | Evidencia |
+|---|---|
+| Download de backup | `createDownloadHandler` mantém o ID opaco fora de `audit_events.entity_id`; `backupDownload.js` usa Axios Blob e revoga Object URL |
+| SMTP compacto | `SmtpSettings.jsx` organiza os nove campos em quatro linhas dentro de `max-w-[590px]` |
+| Ícone Bug | `TASK_TYPE_PRESENTATION.BUG_REPORT` referencia diretamente `Bug` de `lucide-react` |
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|

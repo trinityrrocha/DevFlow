@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Archive, CheckCircle2, Download, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
+import { triggerBackupDownload } from '../utils/backupDownload';
 
 const terminal = new Set(['completed', 'failed']);
 const size = (bytes) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
@@ -11,6 +12,7 @@ export default function Backups() {
   const [operation, setOperation] = useState(null);
   const [message, setMessage] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [downloadingId, setDownloadingId] = useState('');
   const load = useCallback(async () => {
     try { setCatalog((await api.get('/operations/backups')).data); }
     catch (error) { setMessage({ type: 'error', text: errorMessage(error) }); }
@@ -50,6 +52,14 @@ export default function Backups() {
       setConfirmation(null);
     } catch (error) { setMessage({ type: 'error', text: errorMessage(error) }); }
   };
+  const download = async (backup) => {
+    setMessage(null); setDownloadingId(backup.id);
+    try {
+      const filename = await triggerBackupDownload(api, backup);
+      setMessage({ type: 'success', text: `Download iniciado: ${filename}` });
+    } catch (error) { setMessage({ type: 'error', text: errorMessage(error) }); }
+    finally { setDownloadingId(''); }
+  };
   const busy = operation?.id && !terminal.has(operation.state);
   const operationLabel = { 'create-backup': 'Criando backup...', 'verify-backup': 'Verificando...', 'restore-backup': 'Restaurando...', 'delete-backup': 'Excluindo...' }[operation?.operation];
 
@@ -57,13 +67,13 @@ export default function Backups() {
     <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-2xl font-bold">Backups do DevFlow</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Retencao automatica: {catalog?.retentionDays ?? 30} dias</p></div><button type="button" className="btn-primary" disabled={busy} onClick={() => queue('post', '/operations/backups')}><Plus className="mr-2 h-4 w-4" />Criar backup</button></header>
     {message && <div role="alert" className={`rounded-lg border p-3 text-sm ${message.type === 'error' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'}`}>{message.text}</div>}
     {busy && <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"><Loader2 className="h-4 w-4 animate-spin" />{operationLabel || operation.message}</div>}
-    <section className="card overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"><tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Versao</th><th className="px-4 py-3">Migration</th><th className="px-4 py-3">Tamanho</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Acoes</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{catalog?.backups?.map((backup) => <BackupRow key={backup.id} backup={backup} busy={busy} queue={queue} setConfirmation={setConfirmation} />)}</tbody></table>{catalog && catalog.backups.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Nenhum backup encontrado.</p>}{!catalog && <p className="p-8 text-center text-sm text-slate-500">Carregando backups...</p>}</div></section>
+    <section className="card overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"><tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Versao</th><th className="px-4 py-3">Migration</th><th className="px-4 py-3">Tamanho</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Acoes</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{catalog?.backups?.map((backup) => <BackupRow key={backup.id} backup={backup} busy={busy} downloading={downloadingId === backup.id} download={download} queue={queue} setConfirmation={setConfirmation} />)}</tbody></table>{catalog && catalog.backups.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Nenhum backup encontrado.</p>}{!catalog && <p className="p-8 text-center text-sm text-slate-500">Carregando backups...</p>}</div></section>
     {confirmation && <ConfirmationModal value={confirmation} close={() => setConfirmation(null)} confirm={(typed) => confirmation.type === 'restore' ? queue('post', `/operations/backups/${confirmation.backup.id}/restore`, { confirmation: typed }) : queue('delete', `/operations/backups/${confirmation.backup.id}`, { confirmation: typed })} />}
   </div>;
 }
 
-function BackupRow({ backup, busy, queue, setConfirmation }) {
-  return <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td className="px-4 py-4"><div className="flex items-center gap-2"><Archive className="h-4 w-4 text-indigo-500" />{date(backup.createdAt)}</div><p className="mt-1 max-w-52 truncate text-xs text-slate-400" title={backup.filename}>{backup.filename}</p></td><td className="px-4 py-4">{backup.applicationVersion || '—'}</td><td className="px-4 py-4">{backup.databaseMigration || '—'}</td><td className="px-4 py-4">{size(backup.sizeBytes)}</td><td className="px-4 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${backup.status === 'verified' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{backup.status === 'verified' && <CheckCircle2 className="h-3 w-3" />}{backup.status === 'verified' ? 'Verificado' : 'Disponivel'}</span></td><td className="px-4 py-4"><div className="flex justify-end gap-2"><a className="btn-secondary px-3" href={`${api.defaults.baseURL}/operations/backups/${backup.id}/download`} download={backup.filename}><Download className="mr-1 h-4 w-4" />Download</a><button type="button" className="btn-secondary px-3" disabled={busy} onClick={() => queue('post', `/operations/backups/${backup.id}/verify`)}><RefreshCw className="mr-1 h-4 w-4" />Verificar</button><button type="button" className="btn-secondary px-3" disabled={busy} onClick={() => setConfirmation({ type: 'restore', backup })}><RotateCcw className="mr-1 h-4 w-4" />Restaurar</button><button type="button" className="rounded-md p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40" aria-label={`Excluir ${backup.filename}`} disabled={busy} onClick={() => setConfirmation({ type: 'delete', backup })}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
+function BackupRow({ backup, busy, downloading, download, queue, setConfirmation }) {
+  return <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td className="px-4 py-4"><div className="flex items-center gap-2"><Archive className="h-4 w-4 text-indigo-500" />{date(backup.createdAt)}</div><p className="mt-1 max-w-52 truncate text-xs text-slate-400" title={backup.filename}>{backup.filename}</p></td><td className="px-4 py-4">{backup.applicationVersion || '—'}</td><td className="px-4 py-4">{backup.databaseMigration || '—'}</td><td className="px-4 py-4">{size(backup.sizeBytes)}</td><td className="px-4 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${backup.status === 'verified' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{backup.status === 'verified' && <CheckCircle2 className="h-3 w-3" />}{backup.status === 'verified' ? 'Verificado' : 'Disponivel'}</span></td><td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" className="btn-secondary px-3" disabled={busy || downloading} onClick={() => download(backup)}>{downloading ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}Download</button><button type="button" className="btn-secondary px-3" disabled={busy} onClick={() => queue('post', `/operations/backups/${backup.id}/verify`)}><RefreshCw className="mr-1 h-4 w-4" />Verificar</button><button type="button" className="btn-secondary px-3" disabled={busy} onClick={() => setConfirmation({ type: 'restore', backup })}><RotateCcw className="mr-1 h-4 w-4" />Restaurar</button><button type="button" className="rounded-md p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40" aria-label={`Excluir ${backup.filename}`} disabled={busy} onClick={() => setConfirmation({ type: 'delete', backup })}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
 }
 
 function ConfirmationModal({ value, close, confirm }) {

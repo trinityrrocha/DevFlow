@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-16. Versao: `0.6.30-alpha`.
+Data de corte: 2026-08-16. Versao: `0.6.31-alpha`.
+
+Revisao 0.6.31 implementada localmente: o download administrativo deixa de gravar o ID opaco do backup na coluna UUID da auditoria, preserva esse identificador em `new_values` e transmite o arquivo por streaming. O frontend usa o cliente HTTP autenticado com resposta Blob, filename validado, Object URL temporária e tratamento do erro JSON. O SMTP foi compactado em quatro linhas dentro de um card responsivo de 590px; o tipo `BUG_REPORT` permanece associado diretamente ao ícone `Bug` de `lucide-react`. Download e layout reais na VPS permanecem pendentes de homologação do usuário.
 
 Revisao 0.6.30 implementada localmente: timelines técnicas usam um eixo central com lados Backend/Frontend; Histórico alterna por índice sem alterar a ordenação cronológica; o stepper perdeu o card externo. Backups podem ser transmitidos por endpoint Super Admin usando catálogo sanitizado, raiz canônica, arquivo regular, tamanho validado e streaming. Lista de tarefas, SMTP, histórico administrativo e Dashboard receberam os novos contratos de UX, com detalhes paginados em uma consulta SQL por indicador. Navegador autenticado, PostgreSQL/Docker reais e VPS permanecem pendentes de homologação do usuário.
 

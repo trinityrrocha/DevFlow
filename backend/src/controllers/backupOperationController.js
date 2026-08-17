@@ -51,21 +51,37 @@ async function getBackups(req, res, next) {
   catch (error) { next(error); }
 }
 
-async function download(req, res, next) {
-  try {
-    const resolved = resolveBackupDownload(req.params.id);
-    await recordAudit({ req, operation: 'BACKUP_DOWNLOADED', entityType: 'SYSTEM_BACKUP', entityId: resolved.backup.id, newValues: { backupId: resolved.backup.id, filename: resolved.backup.filename }, strict: true });
-    const encoded = encodeURIComponent(resolved.backup.filename);
-    res.status(200);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Length', String(resolved.size));
-    res.setHeader('Content-Disposition', `attachment; filename="${resolved.backup.filename}"; filename*=UTF-8''${encoded}`);
-    pipeline(fs.createReadStream(resolved.file), res, (error) => {
-      if (error && !res.headersSent) next(error);
-      else if (error) safeLogError('Falha no streaming de backup.', error);
-    });
-  } catch (error) { next(error); }
+function createDownloadHandler({
+  resolver = resolveBackupDownload,
+  auditRecorder = recordAudit,
+  createReadStream = fs.createReadStream,
+  streamPipeline = pipeline
+} = {}) {
+  return async function downloadBackup(req, res, next) {
+    try {
+      const resolved = resolver(req.params.id);
+      await auditRecorder({
+        req,
+        operation: 'BACKUP_DOWNLOADED',
+        entityType: 'SYSTEM_BACKUP',
+        entityId: null,
+        newValues: { backupId: resolved.backup.id, filename: resolved.backup.filename },
+        strict: true
+      });
+      const encoded = encodeURIComponent(resolved.backup.filename);
+      res.status(200);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', String(resolved.size));
+      res.setHeader('Content-Disposition', `attachment; filename="${resolved.backup.filename}"; filename*=UTF-8''${encoded}`);
+      streamPipeline(createReadStream(resolved.file), res, (error) => {
+        if (error && !res.headersSent) next(error);
+        else if (error) safeLogError('Falha no streaming de backup.', error);
+      });
+    } catch (error) { next(error); }
+  };
 }
+
+const download = createDownloadHandler();
 
 async function queue(req, res, next, operation, backupId = null) {
   try {
@@ -116,4 +132,4 @@ async function status(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { getBackups, download, create, verify, restore, remove, status, reconcileTerminalAudits };
+module.exports = { createDownloadHandler, getBackups, download, create, verify, restore, remove, status, reconcileTerminalAudits };

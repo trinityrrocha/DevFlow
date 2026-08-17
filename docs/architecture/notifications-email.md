@@ -1,6 +1,6 @@
 # Notificacoes, e-mail e recuperacao
 
-Versao de referencia: `0.6.30-alpha`. Implementacao destinada a homologacao, nao aprovada para producao.
+Versao de referencia: `0.6.31-alpha`. Implementacao destinada a homologacao, nao aprovada para producao.
 
 ## Fluxo confiavel
 

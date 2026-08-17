@@ -2,12 +2,29 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const express = require('express');
+const request = require('supertest');
 const { readCatalog, assertBackupExists, listBackups, resolveBackupDownload } = require('../src/services/backupOperationService');
 const {
   createSignedRequest, backupIsInActiveOperation, getRequestStatus, operationMessage
 } = require('../src/services/operationalRequestService');
-const { reconcileTerminalAudits } = require('../src/controllers/backupOperationController');
-const { requireSuperAdmin } = require('../src/middleware/authMiddleware');
+const { createDownloadHandler, reconcileTerminalAudits } = require('../src/controllers/backupOperationController');
+const { requireAuth, requireSuperAdmin } = require('../src/middleware/authMiddleware');
+const { errorHandler } = require('../src/middleware/errorMiddleware');
+const { AppError } = require('../src/utils/errors');
+
+const binaryParser = (response, callback) => {
+  const chunks = [];
+  response.on('data', (chunk) => chunks.push(chunk));
+  response.on('end', () => callback(null, Buffer.concat(chunks)));
+};
+
+const downloadApp = (handler) => {
+  const app = express();
+  app.get('/api/operations/backups/:id/download', handler);
+  app.use(errorHandler);
+  return app;
+};
 
 describe('gestao administrativa de backups', () => {
   const filename = 'devflow-20260811T220000Z-deadbeef.dfbackup';
@@ -85,10 +102,56 @@ describe('gestao administrativa de backups', () => {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
+  it('transmite os bytes corretos com headers de attachment e auditoria UUID-safe', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-backup-stream-'));
+    const bytes = Buffer.from('devflow-backup-encrypted-fixture');
+    const backupFile = path.join(root, filename);
+    fs.writeFileSync(backupFile, bytes);
+    const audits = [];
+    try {
+      const handler = createDownloadHandler({
+        resolver: () => ({ backup: { id, filename }, file: backupFile, size: bytes.length }),
+        auditRecorder: async (entry) => audits.push(entry)
+      });
+      const response = await request(downloadApp(handler))
+        .get(`/api/operations/backups/${id}/download`)
+        .buffer(true)
+        .parse(binaryParser)
+        .expect(200);
+      expect(response.headers['content-type']).toMatch(/^application\/octet-stream/);
+      expect(response.headers['content-length']).toBe(String(bytes.length));
+      expect(response.headers['content-disposition']).toContain(`attachment; filename="${filename}"`);
+      expect(response.body).toEqual(bytes);
+      expect(audits).toMatchObject([{ operation: 'BACKUP_DOWNLOADED', entityId: null, newValues: { backupId: id, filename }, strict: true }]);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    ['backup ausente', new AppError('BACKUP_NOT_FOUND', 'Backup nao encontrado.', 404), 404],
+    ['path traversal', new AppError('BACKUP_ID_INVALID', 'Identificador de backup invalido.', 400), 400],
+    ['erro interno real', new Error('disk-failure'), 500]
+  ])('padroniza resposta para %s', async (_scenario, failure, expectedStatus) => {
+    const handler = createDownloadHandler({ resolver: () => { throw failure; } });
+    const response = await request(downloadApp(handler)).get(`/api/operations/backups/${id}/download`).expect(expectedStatus);
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+    expect(response.body).toHaveProperty('error');
+  });
+
   it('nega download administrativo para usuario sem privilegio de Super Admin', () => {
     let denied;
     requireSuperAdmin({ user: { is_super_admin: false } }, {}, (error) => { denied = error; });
     expect(denied).toMatchObject({ code: 'SUPER_ADMIN_REQUIRED', status: 403 });
+  });
+
+  it('permite o middleware somente para Super Admin e exige sessao na rota real', async () => {
+    let allowed = false;
+    requireSuperAdmin({ user: { is_super_admin: true } }, {}, (error) => { expect(error).toBeUndefined(); allowed = true; });
+    expect(allowed).toBe(true);
+    const protectedApp = express();
+    protectedApp.get('/api/operations/backups/:id/download', requireAuth, requireSuperAdmin, (_req, res) => res.sendStatus(204));
+    protectedApp.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: { code: error.code, message: error.message } }));
+    const response = await request(protectedApp).get(`/api/operations/backups/${id}/download`).expect(401);
+    expect(response.body).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
   });
 
   it('recusa symlink e arquivo cujo tamanho diverge do catalogo', () => {
@@ -117,6 +180,17 @@ describe('gestao administrativa de backups', () => {
         expect(() => resolveBackupDownload(id, { catalogFile, backupRoot }))
           .toThrow(expect.objectContaining({ code: 'BACKUP_FILE_UNAVAILABLE' }));
       } catch (error) { if (error.code !== 'EPERM') throw error; }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('retorna 404 quando o arquivo catalogado nao existe fisicamente', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-backup-missing-file-'));
+    try {
+      const catalogFile = makeCatalog(root);
+      const backupRoot = path.join(root, 'backups');
+      fs.mkdirSync(backupRoot);
+      expect(() => resolveBackupDownload(id, { catalogFile, backupRoot }))
+        .toThrow(expect.objectContaining({ code: 'BACKUP_FILE_UNAVAILABLE', status: 404 }));
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -241,7 +315,7 @@ describe('gestao administrativa de backups', () => {
     expect(routes).toContain('requireAuth, requireSuperAdmin');
     expect(routes).toContain("router.get('/:id/download', controller.download)");
     expect(controller).toContain("res.setHeader('Content-Disposition'");
-    expect(controller).toContain('pipeline(fs.createReadStream(resolved.file), res');
+    expect(controller).toContain('streamPipeline(createReadStream(resolved.file), res');
     expect(controller).not.toContain('readFileSync(resolved.file');
     expect(routes).toContain('sensitiveLimiter');
     expect(controller).toContain("confirmation !== 'RESTAURAR'");

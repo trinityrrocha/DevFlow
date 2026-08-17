@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.31-alpha] - 2026-08-16
+
+### Corrigido
+
+- download de backup não tenta mais inserir o ID opaco de 32 caracteres na coluna UUID `audit_events.entity_id`; a auditoria preserva o ID em `new_values` antes do streaming;
+- frontend substitui a navegação por link pelo cliente HTTP autenticado com `responseType: 'blob'`, filename validado, Object URL temporária, revogação e mensagem de erro JSON;
+- formulário SMTP passa a usar um único card responsivo de 590px, organizado nas quatro linhas solicitadas;
+- testes confirmam o uso de `Bug` do `lucide-react` para `BUG_REPORT`, sem aplicação indevida aos demais tipos.
+
+### Validado localmente
+
+- streaming binário, headers, bytes, 400/401/403/404/500, traversal, symlink, arquivo ausente, download Blob, revogação da Object URL e tratamento de erro;
+- homologação com arquivo real, sessão e proxy na VPS permanece pendente do usuário.
+
 ## [0.6.30-alpha] - 2026-08-16
 
 ### Adicionado

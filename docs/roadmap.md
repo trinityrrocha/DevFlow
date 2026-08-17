@@ -1,8 +1,8 @@
 # Roadmap inicial
 
-## Marco `0.6.30-alpha`
+## Marco `0.6.31-alpha`
 
-- homologar download de backup com arquivo real e permissoes `root:devflow-ops 0640` na VPS;
+- homologar download Blob de backup com arquivo real e permissoes `root:devflow-ops 0640` na VPS;
 - validar timelines, tabs de tarefas, SMTP e drill-down do Dashboard com dados reais em desktop/mobile e tema claro/escuro;
 - aplicar a migration 015 e confirmar a recomposicao dos snapshots de metricas;
 - manter restore, update e rollback operacional sob homologacao separada.

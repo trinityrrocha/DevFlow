@@ -4,7 +4,7 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.30-alpha**. Esta revisão aprimora a rastreabilidade visual das tarefas, adiciona download seguro de backups e drill-down paginado dos indicadores do Dashboard, preservando o WebUpdater Docker Compose simples.
+Versao atual: **0.6.31-alpha**. Esta revisão corrige o download autenticado de backups, compacta o formulário SMTP e consolida o ícone Lucide Bug na lista de tarefas, preservando o WebUpdater Docker Compose simples.
 
 Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 

@@ -52,25 +52,27 @@ export default function SmtpSettings() {
     setDirty(true);
   };
   const canTest = settings.host && settings.from_email && (!settings.username || settings.has_password);
-  return <section className="card p-5"><h2 className="mb-5 flex items-center gap-2 text-lg font-semibold"><Mail className="h-5 w-5 text-indigo-600" />Servidor SMTP</h2>
+  return <section className="card mx-auto w-full max-w-[590px] p-5"><h2 className="mb-5 flex items-center gap-2 text-lg font-semibold"><Mail className="h-5 w-5 text-indigo-600" />Servidor SMTP</h2>
     <form onSubmit={save} className="space-y-5">
       <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={settings.enabled} onChange={(event) => field('enabled', event.target.checked)} />SMTP ativo</label>
-      <div className="space-y-4 overflow-x-auto pb-1">
-        <div data-smtp-row="connection" className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-[250px_115px_115px_115px]">
+      <div className="space-y-4">
+        <div data-smtp-row="connection" className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-[270px_minmax(0,1fr)_minmax(0,1fr)]">
           <Field label="Host SMTP" value={settings.host} onChange={(value) => field('host', value)} maxLength={255} />
           <Field label="Porta" type="number" value={settings.port} onChange={(value) => field('port', value)} min={1} max={65535} />
           <label className="text-sm font-medium">Seguranca<select className="field mt-1" value={settings.security} onChange={(event) => updateSecurity(event.target.value)}><option value="starttls">STARTTLS</option><option value="ssl_tls">SSL/TLS</option></select></label>
-          <Field label="Timeout (segundos)" type="number" value={settings.timeout_seconds} onChange={(value) => field('timeout_seconds', value)} min={1} max={120} />
         </div>
-        <div data-smtp-row="credentials" className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-[250px_200px_minmax(250px,1fr)]">
+        <div data-smtp-row="credentials" className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_135px_135px]">
           <Field label="Usuario SMTP" value={settings.username} onChange={(value) => field('username', value)} maxLength={320} autoComplete="username" />
           <label className="text-sm font-medium">Senha SMTP<div className="relative mt-1"><input type={showPassword ? 'text' : 'password'} value={settings.password} onChange={(event) => field('password', event.target.value)} maxLength={4096} autoComplete="new-password" placeholder="Preencha para alterar" className="field pr-10" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={showPassword ? 'Ocultar senha SMTP' : 'Mostrar senha SMTP'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><span className="mt-1 block text-xs font-normal text-slate-500">{settings.has_password ? 'Uma senha esta salva e nunca sera exibida.' : 'Nenhuma senha salva.'}</span></label>
-          <Field label="Nome do remetente" value={settings.from_name} onChange={(value) => field('from_name', value)} maxLength={160} />
+          <Field label="Timeout (segundos)" type="number" value={settings.timeout_seconds} onChange={(value) => field('timeout_seconds', value)} min={1} max={120} />
         </div>
-        <div data-smtp-row="addresses" className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-[250px_250px_250px]">
+        <div data-smtp-row="identity" className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <Field label="Nome do remetente" value={settings.from_name} onChange={(value) => field('from_name', value)} maxLength={160} />
           <Field label="E-mail do remetente" type="email" value={settings.from_email} onChange={(value) => field('from_email', value)} maxLength={320} />
-          <Field label="Reply-To" type="email" value={settings.reply_to} onChange={(value) => field('reply_to', value)} maxLength={320} />
+        </div>
+        <div data-smtp-row="addresses" className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Field label="Destinatario do teste" type="email" value={recipient} onChange={setRecipient} placeholder="Vazio usa o Super Admin" />
+          <Field label="Reply-To" type="email" value={settings.reply_to} onChange={(value) => field('reply_to', value)} maxLength={320} />
         </div>
       </div>
       <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600">Origem atual: <strong>{settings.source === 'environment' ? 'arquivo de ambiente protegido' : 'banco cifrado com AES-256-GCM'}</strong>. A senha nunca e retornada pela API.</div>
