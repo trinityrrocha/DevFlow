@@ -4,9 +4,9 @@ Plataforma multi-tenant de governanca do desenvolvimento. Cada tarefa funciona c
 
 > **O DevFlow encontra-se em fase de homologacao e ainda nao foi aprovado para uso em producao.**
 
-Versao atual: **0.6.31-alpha**. Esta revisão corrige o download autenticado de backups, compacta o formulário SMTP e consolida o ícone Lucide Bug na lista de tarefas, preservando o WebUpdater Docker Compose simples.
+Versao atual: **0.6.32-alpha**. Esta revisão adiciona exclusão lógica, lixeira e restauração de tarefas, purge exclusivo de Super Admin, categoria Bug/Dev e agrupamentos visuais paginados, preservando o tipo e a prioridade armazenados.
 
-Rotas canonicas autenticadas: `/dashboard`, `/task`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
+Rotas canonicas autenticadas: `/dashboard`, `/task`, `/task/trash`, `/team`, `/clients`, `/projects`, `/audit`, `/settings/security/mfa`, `/settings/modules/catalogs`, `/settings/modules/workflows`, `/settings/server/smtp`, `/settings/updates`, `/settings/backups` e `/profile`. As rotas anteriores `/`, `/tasks`, `/users` e `/settings` redirecionam para os destinos equivalentes.
 
 ## Instalacao
 

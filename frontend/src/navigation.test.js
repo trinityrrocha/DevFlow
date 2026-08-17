@@ -17,9 +17,10 @@ describe('navegacao superior', () => {
   it('permite ao Super Admin acessar itens exclusivos', () => {
     expect(canAccessNavigationItem({ is_super_admin: true }, { superAdmin: true })).toBe(true);
     const items = visibleNavigation({ is_super_admin: true }).find((group) => group.label === 'Sistema').items;
-    expect(items).toHaveLength(7);
+    expect(items).toHaveLength(8);
     expect(items).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Servidor SMTP', to: '/settings/server/smtp' }),
+      expect.objectContaining({ label: 'Lixeira de Tarefas', to: '/task/trash' }),
       expect.objectContaining({ label: 'Backups', to: '/settings/backups' })
     ]));
   });

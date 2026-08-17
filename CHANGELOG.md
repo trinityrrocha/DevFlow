@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.32-alpha] - 2026-08-16
+
+### Adicionado
+
+- lixeira administrativa de tarefas com exclusão lógica, restauração pelo mesmo ID e purge permanente exclusivo de Super Admin;
+- confirmação reforçada pelo código da tarefa e pela frase `ESVAZIAR LIXEIRA`, protegidas também no backend;
+- agrupamento visual paginado por etapa, responsável da etapa, prioridade semântica e tipo real da tarefa;
+- categoria resumida `Bug`/`Dev`, usando `Bug` e `Code2` do `lucide-react` com descrição acessível.
+
+### Alterado
+
+- prioridade persistida `URGENT_PRODUCTION` passa a ser apresentada como `Urgente`, sem alterar código ou ID;
+- notificações, métricas e contadores operacionais desconsideram tarefas na lixeira;
+- purge remove dependências em ordem, desvincula relações opcionais e coloca anexos físicos em quarentena transacional antes da remoção.
+
+### Validado localmente
+
+- permissões Admin/Super Admin, confirmações, soft delete, restauração, auditoria, integridade do purge, categorias e cinco modos de agrupamento;
+- aplicação da migration e homologação real da lixeira em PostgreSQL/VPS permanecem pendentes do usuário.
+
 ## [0.6.31-alpha] - 2026-08-16
 
 ### Corrigido

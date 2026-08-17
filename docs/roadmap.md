@@ -1,5 +1,12 @@
 # Roadmap inicial
 
+## Marco `0.6.32-alpha`
+
+- aplicar a migration 016 em PostgreSQL de homologação e validar lixeira, restauração e purge com anexos reais;
+- confirmar exclusão imediata de listas, busca, Dashboard, contadores e notificações;
+- validar agrupamentos em Abertas/Concluídas, desktop/mobile e tema claro/escuro;
+- manter o agrupamento restrito à página retornada pelo backend, preservando escala e ordenação server-side.
+
 ## Marco `0.6.31-alpha`
 
 - homologar download Blob de backup com arquivo real e permissoes `root:devflow-ops 0640` na VPS;

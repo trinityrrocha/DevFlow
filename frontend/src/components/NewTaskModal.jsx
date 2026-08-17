@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bug, FilePlus2, Loader2, X } from 'lucide-react';
 import api, { errorMessage } from '../services/api';
 import { parseDurationInput } from '../utils/timing';
+import { priorityDisplayName } from '../utils/formatters';
 
 const emptyForm = {
   kind: 'REQUEST',
@@ -157,7 +158,7 @@ export default function NewTaskModal({ open, onClose, onCreated }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <Select label="Projeto *" value={form.project_id} onChange={(value) => change('project_id', value)} options={(catalogs?.projects || []).filter((item) => ['ACTIVE', 'DRAFT'].includes(item.status)).map((item) => [item.id, `${item.name} · ${item.client_name}`])} />
             <Select label="Tipo *" value={form.task_type_id} onChange={(value) => change('task_type_id', value)} options={taskTypes.map((item) => [item.id, item.name])} />
-            <Select label="Prioridade *" value={form.priority_id} onChange={(value) => change('priority_id', value)} options={(catalogs?.priorities || []).filter((item) => item.is_active).map((item) => [item.id, item.name])} />
+            <Select label="Prioridade *" value={form.priority_id} onChange={(value) => change('priority_id', value)} options={(catalogs?.priorities || []).filter((item) => item.is_active).map((item) => [item.id, priorityDisplayName(item)])} />
             <Select label="Ambiente *" value={form.environment_id} onChange={(value) => change('environment_id', value)} options={(catalogs?.environments || []).filter((item) => item.is_active).map((item) => [item.id, item.name])} />
             <Select label="Fluxo *" value={form.workflow_id} onChange={(value) => change('workflow_id', value)} options={workflows.map((item) => [item.id, item.name])} />
             <Select label="Solicitante *" value={form.requester_id} onChange={(value) => change('requester_id', value)} options={users.map((user) => [user.id, user.name])} />

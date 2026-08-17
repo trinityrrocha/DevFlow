@@ -12,6 +12,7 @@ import Settings from './pages/Settings';
 import Clients from './pages/Clients';
 import Projects from './pages/Projects';
 import Backups from './pages/Backups';
+import TaskTrash from './pages/TaskTrash';
 import { LEGACY_ROUTES } from './navigation';
 
 function ProtectedRoute({ permission, superAdmin = false, children }) {
@@ -32,6 +33,7 @@ export default function App() {
   else if (/^\/tasks\/[^/]+$/.test(pathname)) page = <Navigate to={pathname.replace('/tasks/', '/task/')} replace />;
   else if (pathname === '/dashboard') page = <Dashboard />;
   else if (pathname === '/task') page = <Tasks />;
+  else if (pathname === '/task/trash') page = <ProtectedRoute permission="tasks.manage"><TaskTrash /></ProtectedRoute>;
   else if (/^\/task\/[^/]+$/.test(pathname)) page = <TaskDetail />;
   else if (pathname === '/profile') page = <Profile />;
   else if (pathname === '/team') page = <ProtectedRoute permission="users.manage"><Users /></ProtectedRoute>;

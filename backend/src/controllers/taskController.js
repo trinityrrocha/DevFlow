@@ -67,6 +67,32 @@ async function listTasks(req, res) {
   res.json(await taskService.listTasks(req.user, filters));
 }
 
+async function listTrash(req, res) {
+  const filters = z.object({
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(25)
+  }).parse(req.query);
+  res.json(await taskService.listTrash(req.user, filters));
+}
+
+async function deleteTask(req, res) {
+  const { confirmation } = z.object({ confirmation: z.string().trim().min(1).max(32) }).parse(req.body);
+  const task = await taskService.softDeleteTask(req, req.params.id, confirmation);
+  res.json({ task });
+}
+
+async function restoreTask(req, res) {
+  const task = await taskService.restoreTask(req, req.params.id);
+  res.json({ task });
+}
+
+async function emptyTrash(req, res) {
+  const { confirmation } = z.object({ confirmation: z.literal('ESVAZIAR LIXEIRA') }).parse(req.body);
+  const result = await taskService.emptyTrash(req, confirmation);
+  res.json(result);
+}
+
 async function detail(req, res) {
   const result = await taskService.getTaskDetail(req.params.id, req.user);
   if (taskService.isRoadmap(result.task)) await recordAudit({ req, operation: 'TASK_ROADMAP_VIEWED', entityType: 'TASK', entityId: result.task.id });
@@ -245,7 +271,7 @@ async function deleteAttachment(req, res) {
 }
 
 module.exports = {
-  createTask, listTasks, detail, transition, stateAction, updateAdministration,
+  createTask, listTasks, listTrash, deleteTask, restoreTask, emptyTrash, detail, transition, stateAction, updateAdministration,
   saveSubmission, addTest, updateTest, deleteTest, addApproval, addGithub, updateGithub, deleteGithub, addComment,
   uploadAttachment, downloadAttachment, deleteAttachment, timerAction
 };

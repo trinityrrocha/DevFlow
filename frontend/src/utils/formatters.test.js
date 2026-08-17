@@ -4,7 +4,7 @@ import { formatDuration, label } from './formatters';
 describe('formatters', () => {
   it('traduz estados e prioridades para português', () => {
     expect(label('ACTIVE')).toBe('Em andamento');
-    expect(label('URGENT_PRODUCTION')).toBe('Urgente Produção');
+    expect(label('URGENT_PRODUCTION')).toBe('Urgente');
     expect(label('FRONTEND_APPROVAL')).toBe('Aprovação do Frontend');
   });
 

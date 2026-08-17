@@ -20,6 +20,10 @@ const tableConfig = {
   }
 };
 
+const presentPriority = (priority) => String(priority?.code || '').toUpperCase() === 'URGENT_PRODUCTION'
+  ? { ...priority, name: 'Urgente' }
+  : priority;
+
 async function bootstrap(companyId) {
   const [clients, projects, environments, priorities, taskTypes, workflows, users] = await Promise.all([
     db.query(
@@ -65,7 +69,7 @@ async function bootstrap(companyId) {
     clients: clients.rows,
     projects: projects.rows,
     environments: environments.rows,
-    priorities: priorities.rows,
+    priorities: priorities.rows.map(presentPriority),
     task_types: taskTypes.rows,
     workflows: workflows.rows,
     users: users.rows
@@ -161,7 +165,7 @@ async function deleteClient(companyId, id) {
 }
 
 const projectSelection = `SELECT p.*,c.name AS client_name,e.name AS default_environment_name,
-            (SELECT COUNT(*)::integer FROM tasks t WHERE t.project_id=p.id AND t.company_id=p.company_id) AS task_count,
+            (SELECT COUNT(*)::integer FROM tasks t WHERE t.project_id=p.id AND t.company_id=p.company_id AND t.deleted_at IS NULL) AS task_count,
             COALESCE((
               SELECT jsonb_agg(jsonb_build_object(
                 'user_id',pr.user_id,'name',u.name,'responsibility_code',pr.responsibility_code
@@ -196,7 +200,7 @@ async function listProjects(companyId, filters = {}) {
   values.push(limit, offset);
   const projects = (await db.query(
     `SELECT p.*,c.name AS client_name,e.name AS default_environment_name,
-            (SELECT COUNT(*)::integer FROM tasks t WHERE t.project_id=p.id AND t.company_id=p.company_id) AS task_count,
+            (SELECT COUNT(*)::integer FROM tasks t WHERE t.project_id=p.id AND t.company_id=p.company_id AND t.deleted_at IS NULL) AS task_count,
             COALESCE((
               SELECT jsonb_agg(jsonb_build_object(
                 'user_id',pr.user_id,'name',u.name,'responsibility_code',pr.responsibility_code
@@ -314,10 +318,11 @@ async function deleteProject(companyId, id) {
 async function listCatalog(companyId, catalog) {
   const config = tableConfig[catalog];
   if (!config) throw new AppError('CATALOG_INVALID', 'Catálogo inválido.', 404);
-  return (await db.query(
+  const items = (await db.query(
     `SELECT * FROM ${config.table} WHERE company_id=$1 ORDER BY sort_order NULLS LAST,name`,
     [companyId]
   )).rows;
+  return catalog === 'priorities' ? items.map(presentPriority) : items;
 }
 
 async function createCatalogItem(companyId, catalog, payload) {

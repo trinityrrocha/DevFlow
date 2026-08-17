@@ -4,10 +4,19 @@ const workflow = require('./workflowService');
 const { notifyStageChange, notifyAssignments, notifyOverdue, notifyCompleted, taskCode } = require('./notificationService');
 const { hasPermission } = require('./tenantService');
 const timing = require('./taskTimingService');
+const { recordAudit } = require('./auditService');
+const taskPurgeStorage = require('./taskPurgeStorage');
+const { safeLogError } = require('../utils/safeLogger');
+const dashboardService = require('./dashboardService');
 
 const isAdmin = (user) => user?.is_super_admin === true || user?.roles?.includes('ADMIN') || user?.permissions?.includes('tasks.manage');
 const isRoadmap = (task) => String(task.stage || '').toUpperCase() === 'ROADMAP' || String(task.stage_name || '').trim().toLowerCase() === 'roadmap';
 const stageTracksTime = (stage) => stage?.tracks_time === true && stage?.completes_task !== true && !isRoadmap(stage);
+
+async function refreshTrashMetrics(companyId) {
+  await dashboardService.refreshCompany(companyId)
+    .catch((error) => safeLogError('Falha ao recompor metricas apos operacao da lixeira.', error));
+}
 
 async function canViewTask(user, task, queryable = db) {
   if (isAdmin(user)) return true;
@@ -234,10 +243,11 @@ async function listTasks(user, filters) {
     values
   );
   const result = await db.query(
-    `SELECT t.*,s.code AS stage,s.name AS stage_name,
-            p.code AS priority,p.name AS priority_name,p.color_token AS priority_color,
+    `SELECT t.*,s.code AS stage,s.name AS stage_name,s.sort_order AS stage_sort_order,
+            s.responsibility AS stage_responsibility,
+            p.code AS priority,p.name AS priority_name,p.color_token AS priority_color,p.sort_order AS priority_sort_order,
             e.code AS environment,e.name AS environment_name,
-            tt.code AS request_type,tt.name AS task_type_name,
+            tt.code AS request_type,tt.name AS task_type_name,tt.sort_order AS task_type_sort_order,
             project.name AS project_name,project.code AS project_code,
             client.name AS client_name,
             requester.name AS requester_name,
@@ -278,6 +288,226 @@ async function listTasks(user, filters) {
       total_pages: Math.ceil(count.rows[0].total / limit)
     }
   };
+}
+
+async function listTrash(user, filters = {}) {
+  assert(isAdmin(user), 'PERMISSION_DENIED', 'Acesso permitido apenas para administradores.', 403);
+  const page = Math.max(1, filters.page || 1);
+  const limit = Math.min(100, Math.max(1, filters.limit || 25));
+  const values = [user.company_id];
+  const conditions = ['t.company_id=$1', 't.deleted_at IS NOT NULL'];
+  if (filters.search) {
+    values.push(`%${filters.search}%`);
+    conditions.push(`(t.title ILIKE $${values.length} OR ('DF-' || LPAD(t.task_number::text,6,'0')) ILIKE $${values.length})`);
+  }
+  const from = `FROM tasks t
+    JOIN workflow_stages stage ON stage.id=t.current_stage_id AND stage.company_id=t.company_id
+    JOIN priorities priority ON priority.id=t.priority_id AND priority.company_id=t.company_id
+    JOIN task_types task_type ON task_type.id=t.task_type_id AND task_type.company_id=t.company_id
+    JOIN users backend ON backend.id=t.backend_assignee_id
+    JOIN users frontend ON frontend.id=t.frontend_assignee_id
+    LEFT JOIN users deleted_user ON deleted_user.id=t.deleted_by`;
+  const total = Number((await db.query(
+    `SELECT COUNT(*) ${from} WHERE ${conditions.join(' AND ')}`,
+    values
+  )).rows[0].count);
+  const result = await db.query(
+    `SELECT t.id,t.task_number,t.title,t.kind,t.deleted_at,t.deleted_by,
+            stage.code AS stage,stage.name AS stage_name,
+            priority.code AS priority,priority.name AS priority_name,
+            task_type.code AS request_type,task_type.name AS task_type_name,
+            backend.name AS backend_assignee_name,frontend.name AS frontend_assignee_name,
+            deleted_user.name AS deleted_by_name
+     ${from} WHERE ${conditions.join(' AND ')}
+     ORDER BY t.deleted_at DESC,t.task_number DESC
+     LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, (page - 1) * limit]
+  );
+  return {
+    tasks: result.rows.map((task) => ({ ...task, code: taskCode(task) })),
+    pagination: { page, limit, total, total_pages: Math.ceil(total / limit) }
+  };
+}
+
+async function softDeleteTask(req, taskId, confirmation) {
+  assert(isAdmin(req.user), 'PERMISSION_DENIED', 'Somente administradores podem excluir tarefas.', 403);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const task = (await client.query(
+      `SELECT t.*,stage.code AS stage,stage.name AS stage_name,stage.tracks_time,stage.completes_task
+       FROM tasks t JOIN workflow_stages stage
+         ON stage.id=t.current_stage_id AND stage.company_id=t.company_id
+       WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NULL
+       FOR UPDATE OF t`,
+      [taskId, req.user.company_id]
+    )).rows[0];
+    assert(task, 'TASK_NOT_FOUND', 'Tarefa não encontrada.', 404);
+    const code = taskCode(task);
+    assert(confirmation === code, 'TASK_DELETE_CONFIRMATION_INVALID', `Digite ${code} para confirmar a exclusão.`, 400);
+    const timerSnapshot = timing.timingSnapshot(task);
+    await addEvent(client, req, task.id, 'task_deleted', `${code} movida para a lixeira.`, {}, {
+      deleted_by: req.user.id,
+      previous_stage_id: task.current_stage_id
+    });
+    await client.query(
+      `UPDATE task_stage_touch_sessions
+       SET ended_at=CURRENT_TIMESTAMP,
+           active_seconds=GREATEST(0,EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-started_at))::bigint),
+           end_reason='TASK_DELETED'
+       WHERE company_id=$1 AND task_id=$2 AND ended_at IS NULL`,
+      [req.user.company_id, task.id]
+    );
+    await client.query(
+      `UPDATE task_stage_intervals SET ended_at=CURRENT_TIMESTAMP
+       WHERE company_id=$1 AND task_id=$2 AND ended_at IS NULL`,
+      [req.user.company_id, task.id]
+    );
+    const deleted = (await client.query(
+      `UPDATE tasks SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$3,
+         active_elapsed_seconds=CASE WHEN timer_status='running' THEN $4 ELSE active_elapsed_seconds END,
+         timer_status=CASE WHEN timer_status='running' THEN 'paused' ELSE timer_status END,
+         timer_last_started_at=CASE WHEN timer_status='running' THEN NULL ELSE timer_last_started_at END,
+         timer_paused_at=CASE WHEN timer_status='running' THEN CURRENT_TIMESTAMP ELSE timer_paused_at END,
+         updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL RETURNING *`,
+      [task.id, req.user.company_id, req.user.id, timerSnapshot.active_elapsed_seconds]
+    )).rows[0];
+    await recordAudit({
+      req, operation: 'task_deleted', entityType: 'TASK', entityId: task.id,
+      previousValues: { deleted_at: null, stage_id: task.current_stage_id },
+      newValues: { deleted_at: deleted.deleted_at, deleted_by: req.user.id },
+      queryable: client, strict: true
+    });
+    await client.query('COMMIT');
+    await refreshTrashMetrics(req.user.company_id);
+    return { ...deleted, code, stage: task.stage, stage_name: task.stage_name };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function restoreTask(req, taskId) {
+  assert(isAdmin(req.user), 'PERMISSION_DENIED', 'Somente administradores podem restaurar tarefas.', 403);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const task = (await client.query(
+      `SELECT t.*,stage.code AS stage,stage.name AS stage_name,stage.tracks_time,stage.completes_task
+       FROM tasks t JOIN workflow_stages stage
+         ON stage.id=t.current_stage_id AND stage.company_id=t.company_id
+       WHERE t.id=$1 AND t.company_id=$2 AND t.deleted_at IS NOT NULL
+       FOR UPDATE OF t`,
+      [taskId, req.user.company_id]
+    )).rows[0];
+    assert(task, 'TASK_NOT_FOUND', 'Tarefa não encontrada na lixeira.', 404);
+    const reopensStage = task.state === 'ACTIVE' && stageTracksTime(task);
+    const restored = (await client.query(
+      `UPDATE tasks SET deleted_at=NULL,deleted_by=NULL,updated_at=CURRENT_TIMESTAMP,
+         current_stage_entered_at=CASE WHEN $3 THEN CURRENT_TIMESTAMP ELSE current_stage_entered_at END
+       WHERE id=$1 AND company_id=$2 AND deleted_at IS NOT NULL RETURNING *`,
+      [task.id, req.user.company_id, reopensStage]
+    )).rows[0];
+    if (reopensStage) {
+      await client.query(
+        `INSERT INTO task_stage_intervals (
+           company_id,task_id,stage_id,stage_code_snapshot,stage_name_snapshot,started_at
+         ) VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP)`,
+        [req.user.company_id, task.id, task.current_stage_id, task.stage, task.stage_name]
+      );
+    }
+    const code = taskCode(task);
+    await addEvent(client, req, task.id, 'task_restored', `${code} restaurada da lixeira.`, {
+      deleted_at: task.deleted_at,
+      deleted_by: task.deleted_by
+    }, { deleted_at: null, deleted_by: null });
+    await recordAudit({
+      req, operation: 'task_restored', entityType: 'TASK', entityId: task.id,
+      previousValues: { deleted_at: task.deleted_at, deleted_by: task.deleted_by },
+      newValues: { deleted_at: null, deleted_by: null }, queryable: client, strict: true
+    });
+    await client.query('COMMIT');
+    await refreshTrashMetrics(req.user.company_id);
+    return { ...restored, code, stage: task.stage, stage_name: task.stage_name };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function emptyTrash(req, confirmation) {
+  assert(req.user?.is_super_admin === true, 'SUPER_ADMIN_REQUIRED', 'Ação permitida apenas para o Super Admin.', 403);
+  assert(confirmation === 'ESVAZIAR LIXEIRA', 'TASK_TRASH_CONFIRMATION_INVALID', 'Confirmação da lixeira inválida.', 400);
+  const client = await db.pool.connect();
+  let quarantined = null;
+  try {
+    await client.query('BEGIN');
+    const trashed = (await client.query(
+      `SELECT id,task_number,title,deleted_at,deleted_by FROM tasks
+       WHERE company_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at FOR UPDATE`,
+      [req.user.company_id]
+    )).rows;
+    if (!trashed.length) {
+      await client.query('COMMIT');
+      return { permanently_deleted: 0 };
+    }
+    const ids = trashed.map((task) => task.id);
+    const attachmentKeys = (await client.query(
+      'SELECT storage_key FROM task_attachments WHERE company_id=$1 AND task_id=ANY($2::uuid[])',
+      [req.user.company_id, ids]
+    )).rows.map((item) => item.storage_key);
+    quarantined = await taskPurgeStorage.quarantine(attachmentKeys);
+    for (const task of trashed) {
+      await recordAudit({
+        req, operation: 'task_permanently_deleted', entityType: 'TASK', entityId: task.id,
+        previousValues: { task_number: task.task_number, deleted_at: task.deleted_at, deleted_by: task.deleted_by },
+        newValues: { permanently_deleted: true }, queryable: client, strict: true
+      });
+    }
+    await recordAudit({
+      req, operation: 'task_trash_emptied', entityType: 'TASK_TRASH', entityId: null,
+      newValues: { permanently_deleted: trashed.length, task_ids: ids }, queryable: client, strict: true
+    });
+    await client.query("SET LOCAL devflow.task_purge = 'enabled'");
+    await client.query(
+      `UPDATE tasks SET related_task_id=NULL,updated_at=CURRENT_TIMESTAMP
+       WHERE company_id=$1 AND related_task_id=ANY($2::uuid[]) AND NOT (id=ANY($2::uuid[]))`,
+      [req.user.company_id, ids]
+    );
+    await client.query(
+      `DELETE FROM email_outbox WHERE notification_id IN (
+         SELECT id FROM notifications WHERE company_id=$1 AND task_id=ANY($2::uuid[])
+       )`, [req.user.company_id, ids]
+    );
+    for (const table of [
+      'task_attachments', 'task_github_metadata', 'notifications',
+      'task_stage_touch_sessions', 'task_timer_events', 'task_stage_submissions',
+      'task_stage_intervals', 'task_approvals', 'task_tests', 'task_comments', 'task_events'
+    ]) {
+      await client.query(`DELETE FROM ${table} WHERE company_id=$1 AND task_id=ANY($2::uuid[])`, [req.user.company_id, ids]);
+    }
+    await client.query('DELETE FROM tasks WHERE company_id=$1 AND id=ANY($2::uuid[])', [req.user.company_id, ids]);
+    await client.query(
+      `UPDATE metric_refresh_state SET status='IDLE',error_code=NULL
+       WHERE company_id=$1 AND status<>'RUNNING'`,
+      [req.user.company_id]
+    );
+    await client.query('COMMIT');
+    await quarantined.finalize().catch((error) => safeLogError('Falha ao limpar quarentena de anexos expurgados.', error));
+    await refreshTrashMetrics(req.user.company_id);
+    return { permanently_deleted: trashed.length };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    await quarantined?.rollback().catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function getTask(taskId, companyId, queryable = db, user = null) {
@@ -1107,6 +1337,10 @@ module.exports = {
   addEvent,
   createTask,
   listTasks,
+  listTrash,
+  softDeleteTask,
+  restoreTask,
+  emptyTrash,
   getTask,
   getTaskDetail,
   transitionTask,

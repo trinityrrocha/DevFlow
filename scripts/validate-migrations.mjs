@@ -36,6 +36,7 @@ const migrationSource = read('backend/scripts/migrate.js');
 const qaMigration = read('database/migrations/012_qa_tests_and_attachment_sources.sql');
 const qaRepairMigration = read('database/migrations/013_qa_tests_idempotency_repair.sql');
 const frontendApprovalMigration = read('database/migrations/014_frontend_approval_stage.sql');
+const taskTrashMigration = read('database/migrations/016_task_trash.sql');
 const initialMigration = resolve(root, 'database/migrations/001_initial_schema.sql');
 const temporary = mkdtempSync(resolve(tmpdir(), 'devflow-migrations-'));
 
@@ -153,7 +154,19 @@ try {
     && frontendApprovalMigration.includes('ORDER BY sort_order DESC')
     && frontendApprovalMigration.includes("'{\"approval\": true}'::jsonb")
     && !frontendApprovalMigration.includes('RAISE EXCEPTION'));
-  if (checks.length !== 27) throw new Error(`Expected 27 checks, got ${checks.length}`);
+  check('task trash adds deletion actor and partial index incrementally',
+    taskTrashMigration.includes('ADD COLUMN IF NOT EXISTS deleted_by UUID')
+    && taskTrashMigration.includes('CREATE INDEX IF NOT EXISTS idx_tasks_trash')
+    && taskTrashMigration.includes('WHERE deleted_at IS NOT NULL'));
+  check('task trash deletion actor keeps tenant membership integrity',
+    taskTrashMigration.includes('tasks_deleted_by_membership_fk')
+    && taskTrashMigration.includes('REFERENCES company_memberships(company_id, user_id)'));
+  check('immutable dossier deletion requires explicit transactional purge flag',
+    taskTrashMigration.includes("current_setting('devflow.task_purge', TRUE) = 'enabled'")
+    && taskTrashMigration.includes("TG_OP = 'DELETE'"));
+  check('task deletion closes touch sessions with a dedicated reason',
+    taskTrashMigration.includes("'TASK_DELETED'"));
+  if (checks.length !== 31) throw new Error(`Expected 31 checks, got ${checks.length}`);
   console.log(`Migration tests passed: ${checks.length} scenarios.`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

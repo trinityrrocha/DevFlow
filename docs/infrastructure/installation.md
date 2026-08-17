@@ -1,6 +1,6 @@
 # Instalacao isolada
 
-O DevFlow `0.6.31-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
+O DevFlow `0.6.32-alpha` possui um unico modo de instalacao. O host deve usar Ubuntu 22.04/24.04, AMD64/ARM64, ter DNS A valido e reservar as portas 80/443 exclusivamente ao DevFlow.
 
 A fila privada do updater e persistida em `${DEVFLOW_UPDATER_ROOT}/requests` (por padrao, `/opt/devflow/updater/requests`) e a raiz do host e montada no backend e no updater como `/var/lib/devflow/updater`. O backend grava exclusivamente em `DEVFLOW_UPDATER_QUEUE_DIR=/var/lib/devflow/updater/requests`; o daemon monitora exatamente esse subdiretorio. O updater nao recria seu proprio container durante a solicitacao em andamento.
 

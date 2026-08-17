@@ -1,6 +1,8 @@
 # Estado de implementacao
 
-Data de corte: 2026-08-16. Versao: `0.6.31-alpha`.
+Data de corte: 2026-08-16. Versao: `0.6.32-alpha`.
+
+Revisao 0.6.32 implementada localmente: tarefas podem ser movidas para uma lixeira auditável por Admin ou Super Admin e restauradas com o mesmo ID. O purge permanente é exclusivo de Super Admin, exige frase forte, remove dependências em ordem e usa quarentena de storage com compensação em rollback. A lista apresenta `URGENT_PRODUCTION` como Urgente, classifica apenas `BUG_REPORT` como Bug e agrupa a página corrente por etapa, responsável da etapa, prioridade ou tipo real. PostgreSQL e VPS reais permanecem pendentes de homologação do usuário.
 
 Revisao 0.6.31 implementada localmente: o download administrativo deixa de gravar o ID opaco do backup na coluna UUID da auditoria, preserva esse identificador em `new_values` e transmite o arquivo por streaming. O frontend usa o cliente HTTP autenticado com resposta Blob, filename validado, Object URL temporária e tratamento do erro JSON. O SMTP foi compactado em quatro linhas dentro de um card responsivo de 590px; o tipo `BUG_REPORT` permanece associado diretamente ao ícone `Bug` de `lucide-react`. Download e layout reais na VPS permanecem pendentes de homologação do usuário.
 

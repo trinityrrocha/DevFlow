@@ -1,6 +1,6 @@
 # Rastreabilidade
 
-## Instalacao isolada `0.6.31-alpha`
+## Instalacao isolada `0.6.32-alpha`
 
 - Contrato de fila/status entre backend e updater: `docs/architecture/operational-filesystem-permissions.md`.
 - Regressao obrigatoria de ownership/permissoes: `scripts/validate-operational-permissions.mjs`.
@@ -19,6 +19,15 @@
 | Download de backup | `createDownloadHandler` mantém o ID opaco fora de `audit_events.entity_id`; `backupDownload.js` usa Axios Blob e revoga Object URL |
 | SMTP compacto | `SmtpSettings.jsx` organiza os nove campos em quatro linhas dentro de `max-w-[590px]` |
 | Ícone Bug | `TASK_TYPE_PRESENTATION.BUG_REPORT` referencia diretamente `Bug` de `lucide-react` |
+
+| Revisao 0.6.32 | Evidencia |
+|---|---|
+| Soft delete | migration 016 adiciona `deleted_by`; `softDeleteTask` grava autoria, fecha intervalos e mantém o dossiê |
+| Restauração | `restoreTask` remove a marcação e mantém tarefa, histórico, comentários, anexos e relacionamentos no mesmo ID |
+| Purge | `emptyTrash` exige Super Admin, quarentena arquivos, remove dependências em ordem e persiste auditoria global |
+| Visibilidade | lista, detalhe, Dashboard, notificações e contadores filtram `deleted_at IS NULL` |
+| Bug/Dev | `getTaskCategory` classifica somente `BUG_REPORT` como Bug; demais tipos são Dev |
+| Agrupamentos | `taskGrouping.js` agrupa a página ordenada por etapa, usuário, prioridade e tipo real |
 
 | Revisao 0.6.25 | Evidencia |
 |---|---|

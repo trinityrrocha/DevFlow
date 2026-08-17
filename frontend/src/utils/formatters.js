@@ -19,7 +19,7 @@ export const LABELS = {
   MEDIUM: 'Média',
   HIGH: 'Alta',
   CRITICAL: 'Crítica',
-  URGENT_PRODUCTION: 'Urgente Produção',
+  URGENT_PRODUCTION: 'Urgente',
   DEVELOPMENT: 'Desenvolvimento',
   HOMOLOGATION: 'Homologação',
   PRODUCTION_ENV: 'Produção',
@@ -43,6 +43,13 @@ export const LABELS = {
 
 export const label = (value) => LABELS[value]
   || (value ? String(value).toLowerCase().replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase()) : '—');
+
+export const priorityDisplayName = (priority) => {
+  const code = typeof priority === 'object' ? priority?.priority || priority?.code : priority;
+  if (String(code || '').toUpperCase() === 'URGENT_PRODUCTION') return 'Urgente';
+  const name = typeof priority === 'object' ? priority?.name || priority?.priority_name : null;
+  return name || label(code);
+};
 
 export const formatDate = (value) => value
   ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))

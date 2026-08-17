@@ -98,7 +98,7 @@ const digestTree = (directory) => createHash('sha256')
 
 try {
   const current = validateDirectory(root);
-  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.31-alpha');
+  check('main with current version', current.status === 0 && current.stdout.trim() === '0.6.32-alpha');
 
   const patchFixture = resolve(temporary, 'patch');
   writeFixture(patchFixture, '0.6.25-alpha');

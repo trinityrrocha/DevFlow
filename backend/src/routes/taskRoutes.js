@@ -1,13 +1,17 @@
 const express = require('express');
 const controller = require('../controllers/taskController');
 const attachmentService = require('../services/attachmentService');
-const { requireAuth, requirePermission } = require('../middleware/authMiddleware');
+const { requireAuth, requirePermission, requireSuperAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 router.use(requireAuth);
+router.get('/trash', requirePermission('tasks.manage'), controller.listTrash);
+router.delete('/trash', requireSuperAdmin, controller.emptyTrash);
 router.get('/', requirePermission('tasks.view'), controller.listTasks);
 router.post('/', requirePermission('tasks.create'), controller.createTask);
 router.get('/:id', requirePermission('tasks.view'), controller.detail);
+router.delete('/:id', requirePermission('tasks.manage'), controller.deleteTask);
+router.post('/:id/restore', requirePermission('tasks.manage'), controller.restoreTask);
 router.post('/:id/transition', requirePermission('tasks.operate'), controller.transition);
 router.post('/:id/state', requirePermission('tasks.manage'), controller.stateAction);
 router.patch('/:id/administration', requirePermission('tasks.manage'), controller.updateAdministration);

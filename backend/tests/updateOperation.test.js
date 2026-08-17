@@ -13,7 +13,7 @@ describe('fila privada de atualizacao', () => {
     ['malformado', { ok: true, status: 200, text: async () => '# sem secao da versao' }]
   ])('mantem update disponivel quando o changelog esta %s', async (_label, changelogResponse) => {
     const responses = [
-      { ok: true, status: 200, text: async () => '0.6.31-alpha\n' },
+      { ok: true, status: 200, text: async () => '0.6.32-alpha\n' },
       { ok: true, status: 200, text: async () => JSON.stringify({ sha: 'f'.repeat(40) }) },
       changelogResponse
     ];
@@ -22,7 +22,7 @@ describe('fila privada de atualizacao', () => {
       globalThis.fetch = async () => responses.shift();
       const capabilities = await getUpdateCapabilities();
       expect(capabilities).toMatchObject({
-        availableVersion: '0.6.31-alpha',
+        availableVersion: '0.6.32-alpha',
         availableCommit: 'f'.repeat(40),
         updateAvailable: true,
         changelog: ''

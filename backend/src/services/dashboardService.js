@@ -44,7 +44,8 @@ async function calculateGeneral(client, companyId) {
     client.query(
       `SELECT i.stage_code_snapshot AS stage,i.stage_name_snapshot AS stage_name,
               COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(i.ended_at,CURRENT_TIMESTAMP)-i.started_at))),0)::bigint AS average_seconds
-       FROM task_stage_intervals i WHERE i.company_id=$1
+       FROM task_stage_intervals i JOIN tasks task ON task.id=i.task_id AND task.company_id=i.company_id
+       WHERE i.company_id=$1 AND task.deleted_at IS NULL
          AND UPPER(i.stage_code_snapshot)<>'ROADMAP'
          AND LOWER(TRIM(i.stage_name_snapshot))<>'roadmap'
        GROUP BY i.stage_code_snapshot,i.stage_name_snapshot ORDER BY i.stage_name_snapshot`,
@@ -78,6 +79,7 @@ async function calculateDevelopers(client, companyId) {
                   THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-session.started_at))
                   ELSE 0 END AS seconds
        FROM task_stage_touch_sessions session
+       JOIN tasks active_task ON active_task.id=session.task_id AND active_task.company_id=session.company_id AND active_task.deleted_at IS NULL
        JOIN workflow_stages stage
          ON stage.id=session.stage_id AND stage.company_id=session.company_id
        WHERE session.company_id=$1
@@ -128,7 +130,7 @@ async function calculateDevelopers(client, companyId) {
          SELECT parent.backend_assignee_id AS user_id WHERE bug.bug_area IN ('BACKEND','BOTH')
          UNION SELECT parent.frontend_assignee_id WHERE bug.bug_area IN ('FRONTEND','BOTH')
        ) affected
-       WHERE bug.company_id=$1 AND bug.kind='BUG' AND bug.deleted_at IS NULL
+       WHERE bug.company_id=$1 AND bug.kind='BUG' AND bug.deleted_at IS NULL AND parent.deleted_at IS NULL
        GROUP BY affected.user_id
      )
      SELECT u.id,u.name,u.email,

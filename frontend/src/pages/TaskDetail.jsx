@@ -1,17 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock3, Copy, Download, File, FileArchive, FileCode2, FileSpreadsheet, FileText, FileVideo2, GitBranch, Loader2, MessageSquare, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Save, Send, ShieldCheck, TestTube2, Trash2, Upload, X, XCircle } from 'lucide-react';
-import { Link, useParams } from '../router';
+import { Link, useNavigate, useParams } from '../router';
 import { useAuth } from '../context/AuthContext';
 import api, { errorMessage } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import WorkflowStepper from '../components/WorkflowStepper';
 import StagePrerequisiteChecklist from '../components/StagePrerequisiteChecklist';
 import CentralTimeline from '../components/CentralTimeline';
-import { formatDate, formatDuration, label } from '../utils/formatters';
+import { formatDate, formatDuration, label, priorityDisplayName } from '../utils/formatters';
 import { durationInput, formatSignedDuration, parseDurationInput } from '../utils/timing';
 import { CODE_LANGUAGES, codeLanguageLabel, resolveCodeLanguage } from '../utils/codeLanguages';
 import useEditorTheme from '../hooks/useEditorTheme';
 import { attachmentTimelineItems, githubTimelineItems, historyTimelineItems, qaTimelineItems } from '../utils/timeline';
+import StrongConfirmationModal from '../components/StrongConfirmationModal';
 
 const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
@@ -40,6 +41,7 @@ const tabs = [
 
 export default function TaskDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState('summary');
@@ -47,6 +49,7 @@ export default function TaskDetail() {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [timerPending, setTimerPending] = useState(false);
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -85,7 +88,8 @@ export default function TaskDetail() {
   const currentIndex = workflowStages.findIndex((stage) => stage.id === task.current_stage_id);
   const nextStage = workflowStages[currentIndex + 1];
   const previousStage = workflowStages[currentIndex - 1];
-  const canManage = user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER');
+  const canManage = user.is_super_admin || user.permissions?.includes('tasks.manage') || user.profiles?.includes('MANAGER');
+  const canDeleteTask = user.is_super_admin || user.permissions?.includes('tasks.manage');
   const canOperate = canManage
     || (task.responsibility === 'ANY' && user.permissions?.includes('tasks.operate'))
     || (task.responsibility === 'BACKEND_ASSIGNEE' && user.id === task.backend_assignee_id)
@@ -115,6 +119,16 @@ export default function TaskDetail() {
       setTimerPending(false);
     }
   };
+  const deleteTask = async (confirmation) => {
+    setSaving(true); setError(''); setMessage('');
+    try {
+      await api.delete(`/tasks/${id}`, { data: { confirmation } });
+      navigate('/task');
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+      setDeleteConfirmationOpen(false);
+    } finally { setSaving(false); }
+  };
 
   return (
     <div className="animate-fadeIn space-y-6">
@@ -128,6 +142,7 @@ export default function TaskDetail() {
           </div>
           <div className="flex flex-wrap gap-2">
             {canManage && ['PAUSED', 'CANCELED', 'COMPLETED'].includes(task.state) && <button onClick={reopenTask} className="btn-secondary"><Play className="mr-2 h-4 w-4" />Reabrir</button>}
+            {canDeleteTask && <button type="button" onClick={() => setDeleteConfirmationOpen(true)} className="btn-danger"><Trash2 className="mr-2 h-4 w-4" />Excluir tarefa</button>}
           </div>
         </div>
       </header>
@@ -178,6 +193,7 @@ export default function TaskDetail() {
               </div>
             </div>}
       </section>
+      {deleteConfirmationOpen && <StrongConfirmationModal title={`Excluir a tarefa ${task.code}?`} message="A tarefa será movida para a lixeira e deixará de aparecer nas áreas operacionais do DevFlow." confirmationText={task.code} actionLabel="Excluir tarefa" busy={saving} onCancel={() => setDeleteConfirmationOpen(false)} onConfirm={deleteTask} />}
     </div>
   );
 }
@@ -252,7 +268,7 @@ function Summary({ data, user, mutate }) {
   const detailRows = [
     ['Etapa', task.stage_name],
     ['Estado', label(task.state)],
-    ['Prioridade', task.priority_name],
+    ['Prioridade', priorityDisplayName(task)],
     ['Ambiente', task.environment_name],
     ['Responsável Backend', task.backend_assignee_name],
     ['Responsável Frontend', task.frontend_assignee_name],
@@ -283,7 +299,7 @@ function Summary({ data, user, mutate }) {
         <form onSubmit={(event) => { event.preventDefault(); const estimate = admin.estimated_duration ? parseDurationInput(admin.estimated_duration) : undefined; mutate(() => api.patch(`/tasks/${task.id}/administration`, { priority_id: admin.priority_id, backend_assignee_id: admin.backend_assignee_id, frontend_assignee_id: admin.frontend_assignee_id, estimated_duration_seconds: estimate }), 'Administração atualizada.'); }} className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
           <h3 className="font-semibold text-indigo-900">Administração da tarefa</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <Select value={admin.priority_id} onChange={(value) => setAdmin({ ...admin, priority_id: value })} options={priorities.map((item) => [item.id, item.name])} />
+            <Select value={admin.priority_id} onChange={(value) => setAdmin({ ...admin, priority_id: value })} options={priorities.map((item) => [item.id, priorityDisplayName(item)])} />
             <Select value={admin.backend_assignee_id} onChange={(value) => setAdmin({ ...admin, backend_assignee_id: value })} options={users.map((item) => [item.id, `Backend: ${item.name}`])} />
             <Select value={admin.frontend_assignee_id} onChange={(value) => setAdmin({ ...admin, frontend_assignee_id: value })} options={users.map((item) => [item.id, `Frontend: ${item.name}`])} />
             {!summaryIsRoadmap && <input aria-label="Tempo estimado dd-hh-mm" pattern="[0-9]{2,3}-[0-9]{2}-[0-9]{2}" placeholder="Estimativa dd-hh-mm" value={admin.estimated_duration} onChange={(event) => setAdmin({ ...admin, estimated_duration: event.target.value.replace(/[^0-9-]/g, '').slice(0, 9) })} className="field" />}

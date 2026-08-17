@@ -3,7 +3,7 @@ import { AlertTriangle, Bug, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Co
 import api, { errorMessage } from '../services/api';
 import MetricCard from '../components/MetricCard';
 import { Link } from '../router';
-import { formatDuration, label } from '../utils/formatters';
+import { formatDuration, label, priorityDisplayName } from '../utils/formatters';
 
 const metricCards = [
   ['total_tasks', 'Total de tarefas', ListTodo, 'indigo'],
@@ -61,7 +61,7 @@ export default function Dashboard() {
 }
 
 function Distribution({ dimension, general }) {
-  return <article className="card p-5"><h2 className="font-semibold">{dimension === 'priority' ? 'Por prioridade' : dimension === 'environment' ? 'Por ambiente' : 'Por tipo'}</h2><div className="mt-4 space-y-3">{(general.distributions?.[dimension] || []).map((item) => <div key={item.value}><div className="mb-1 flex justify-between text-sm"><span className="text-slate-600">{item.label || label(item.value)}</span><strong>{item.total}</strong></div><svg viewBox="0 0 100 8" preserveAspectRatio="none" className="h-2 w-full overflow-hidden rounded-full" aria-hidden="true"><rect width="100" height="8" className="fill-slate-100" /><rect width={Math.max(5, (item.total / Math.max(1, general.total_tasks)) * 100)} height="8" className="fill-indigo-500" /></svg></div>)}</div></article>;
+  return <article className="card p-5"><h2 className="font-semibold">{dimension === 'priority' ? 'Por prioridade' : dimension === 'environment' ? 'Por ambiente' : 'Por tipo'}</h2><div className="mt-4 space-y-3">{(general.distributions?.[dimension] || []).map((item) => <div key={item.value}><div className="mb-1 flex justify-between text-sm"><span className="text-slate-600">{dimension === 'priority' ? priorityDisplayName({ code: item.value, name: item.label }) : item.label || label(item.value)}</span><strong>{item.total}</strong></div><svg viewBox="0 0 100 8" preserveAspectRatio="none" className="h-2 w-full overflow-hidden rounded-full" aria-hidden="true"><rect width="100" height="8" className="fill-slate-100" /><rect width={Math.max(5, (item.total / Math.max(1, general.total_tasks)) * 100)} height="8" className="fill-indigo-500" /></svg></div>)}</div></article>;
 }
 
 function DeveloperMetrics({ data }) {
